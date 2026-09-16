@@ -2,7 +2,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.v1.ping import router as ping_router
+from app.api.v1 import (
+    capabilities_router,
+    categories_router,
+    manage_router,
+    market_router,
+    ping_router,
+)
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_request_id, register_request_logging
@@ -24,7 +30,19 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title=settings.service_name, lifespan=lifespan)
 register_request_logging(app)
 register_exception_handlers(app)
+# 注册顺序：固定路径（ping / market / manage）先于含路径参数的路由，
+# 避免 /{capability_id} 抢占 /manage、/market 等固定路径。
 app.include_router(ping_router, prefix="/api/capability", tags=["capability"])
+app.include_router(
+    market_router, prefix="/api/capability/market", tags=["capability-market"]
+)
+app.include_router(manage_router, prefix="/api/capability", tags=["capability-manage"])
+app.include_router(
+    categories_router, prefix="/api/capability/categories", tags=["capability-category"]
+)
+app.include_router(
+    capabilities_router, prefix="/api/capability", tags=["capability-write"]
+)
 
 
 @app.get("/health", response_model=Result)

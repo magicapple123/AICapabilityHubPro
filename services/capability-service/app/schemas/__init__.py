@@ -1,2 +1,45 @@
-"""Pydantic 请求与响应模型；模板暂不包含业务 Schema。"""
-# TODO: 按接口契约补充本服务的 Pydantic Schema。
+"""本服务的 Pydantic 请求与响应模型。"""
+
+from app.schemas.capability import (
+    CapabilityCreateRequest,
+    CapabilityDeleteOut,
+    CapabilityManageOut,
+    CapabilityMarketDetailOut,
+    CapabilityMarketOut,
+    CapabilityStatusOut,
+    CapabilityStatusUpdateRequest,
+    CapabilityUpdateRequest,
+)
+from app.schemas.category import (
+    CategoryCreateRequest,
+    CategoryDeleteOut,
+    CategoryOut,
+    CategoryUpdateRequest,
+    MarketCategoryOut,
+)
+from app.schemas.common import (
+    PAGE_SIZE_DEFAULT,
+    PAGE_SIZE_MAX,
+    build_list_data,
+    build_page_data,
+)
+
+__all__ = [
+    "PAGE_SIZE_DEFAULT",
+    "PAGE_SIZE_MAX",
+    "CapabilityCreateRequest",
+    "CapabilityDeleteOut",
+    "CapabilityManageOut",
+    "CapabilityMarketDetailOut",
+    "CapabilityMarketOut",
+    "CapabilityStatusOut",
+    "CapabilityStatusUpdateRequest",
+    "CapabilityUpdateRequest",
+    "CategoryCreateRequest",
+    "CategoryDeleteOut",
+    "CategoryOut",
+    "CategoryUpdateRequest",
+    "MarketCategoryOut",
+    "build_list_data",
+    "build_page_data",
+]
