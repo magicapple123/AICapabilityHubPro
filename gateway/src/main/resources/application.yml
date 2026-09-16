@@ -53,6 +53,25 @@ spring:
             allow-credentials: true
             max-age: 3600
 
+gateway:
+  # 按路由 ID（= 服务名）限流，窗口内超限返回 429 + code=4001。
+  # 阈值可用环境变量覆盖，无需改代码；enabled=false 可临时关闭。
+  rate-limit:
+    enabled: ${GATEWAY_RATE_LIMIT_ENABLED:true}
+    rules:
+      - resource: user-service
+        count: ${GATEWAY_RATE_LIMIT_USER_QPS:50}
+        interval-sec: 1
+      - resource: capability-service
+        count: ${GATEWAY_RATE_LIMIT_CAPABILITY_QPS:50}
+        interval-sec: 1
+      - resource: billing-service
+        count: ${GATEWAY_RATE_LIMIT_BILLING_QPS:50}
+        interval-sec: 1
+      - resource: ai-chat-service
+        count: ${GATEWAY_RATE_LIMIT_CHAT_QPS:20}
+        interval-sec: 1
+
 security:
   jwt:
     # 本地启动前设置 JWT_SECRET，且 UTF-8 编码后至少 32 字节。
