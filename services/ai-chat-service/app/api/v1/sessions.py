@@ -7,6 +7,7 @@ from app.core.result import Result
 from app.core.security import UserContext, current_user
 from app.db.session import get_db
 from app.repository.chat_repository import chat_repository
+from app.schemas.session import ChatMessageResponse, ChatSessionResponse
 
 
 router = APIRouter()
@@ -25,18 +26,15 @@ async def list_sessions(
     user: UserContext = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> Result:
+    """当前用户的会话列表，按最后消息时间倒序。"""
+
     user_id = _required_user(user)
     sessions, total = chat_repository.list_sessions(
         db, user_id, page=page, page_size=page_size
     )
     data = {
         "list": [
-            {
-                "id": item.id,
-                "title": item.title,
-                "create_time": item.create_time,
-                "update_time": item.update_time,
-            }
+            ChatSessionResponse.model_validate(item).model_dump(mode="json")
             for item in sessions
         ],
         "total": total,
@@ -52,24 +50,18 @@ async def list_messages(
     user: UserContext = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> Result:
+    """会话内的消息列表；会话不存在或不属于当前用户返回 4004。"""
+
     user_id = _required_user(user)
     session = chat_repository.find_session(db, user_id, session_id)
     if session is None:
-        raise BizException(4004, "会话不存在")
+        raise BizException(4004, "会话不存在或不属于当前用户")
     messages = chat_repository.list_messages(db, session)
-    return Result.ok(
-        {
-            "list": [
-                {
-                    "id": item.id,
-                    "session_id": item.session_id,
-                    "role": item.role,
-                    "content": item.content,
-                    "create_time": item.create_time,
-                }
-                for item in messages
-            ],
-            "total": len(messages),
-        },
-        request_id=get_request_id(),
-    )
+    data = {
+        "list": [
+            ChatMessageResponse.model_validate(item).model_dump(mode="json")
+            for item in messages
+        ],
+        "total": len(messages),
+    }
+    return Result.ok(data, request_id=get_request_id())

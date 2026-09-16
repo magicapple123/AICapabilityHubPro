@@ -1,5 +1,5 @@
-"""SQLAlchemy 模型；模板暂不包含业务模型。"""
-# TODO: 按接口契约补充本服务的 SQLAlchemy 模型。
+"""SQLAlchemy 模型：只映射 ai_chat_db 中的表。"""
+
 from app.models.chat import ChatMessage, ChatSession
 
 __all__ = ["ChatMessage", "ChatSession"]

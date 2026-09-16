@@ -31,10 +31,18 @@ class Settings(BaseSettings):
 
     db_url: str = "mysql+pymysql://root:root@127.0.0.1:3306/ai_chat_db?charset=utf8mb4"
     internal_call_timeout: float = Field(default=10.0, gt=0)
-    enable_internal_chain: bool = False
+    # 内部链路开关：开启后按指南 11.2 调用 user 校验积分、调用 billing 上报计费。
+    enable_internal_chain: bool = True
     user_service_name: str = "user-service"
     billing_service_name: str = "billing-service"
     points_cost: int = Field(default=1, ge=0)
+
+    # 模型地址 / Key / USE_MOCK 由 Nacos 热更新（三个字段，见 README）；
+    # 下面的对话参数走环境变量，属于部署期配置，不参与热更新。
+    model_timeout: float = Field(default=30.0, gt=0)
+    model_max_tokens: int = Field(default=1024, ge=1, le=32768)
+    default_system_prompt: str = "你是一个严谨的中文 AI 助手，回答尽量简洁。"
+    default_temperature: float = Field(default=0.7, ge=0, le=2)
 
     use_mock: bool = True
     model_base_url: str = "https://api.example.com/v1"
