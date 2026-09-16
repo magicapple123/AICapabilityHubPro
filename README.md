@@ -170,7 +170,7 @@ ai-chat-service 默认读取 Nacos 配置 `ai-chat-service-model.json`，统一�
     pnpm install
     pnpm dev
 
-打开 http://localhost:5173。前端工作台包含六个页面，全部经网关 `/api/**` 访问后端：
+打开 http://localhost:5173（若端口被占用，改 `web/.env` 的 `VITE_PORT` 即可，网关 CORS 已放行本地任意端口）。前端工作台包含六个页面，全部经网关 `/api/**` 访问后端：
 
 | 页面 | 路由 | 数据来源 |
 |---|---|---|
@@ -250,7 +250,7 @@ ai-chat-service 默认读取 Nacos 配置 `ai-chat-service-model.json`，统一�
 - 返回 1001：缺少或过期 JWT；检查 Authorization: Bearer 和 JWT_SECRET 是否与签发工具一致。
 - 下游没有身份头：只有经网关才会自动注入；直连调试需手动添加 X-User-Id 等头。
 - Python 连不上 MySQL：检查 3306、对应库名和账号；示例路由不要求数据库连接，建表脚本可在库创建后执行。
-- 跨域：CORS 只在网关允许 http://localhost:5173；前端不要直连 Python 端口。
+- 跨域：网关的 CORS 只放行 `http://localhost:[任意端口]` 与 `http://127.0.0.1:[任意端口]`（本地 Vite 端口可能被占用而调整，例如 5173 → 5174）；非本地来源一律拒绝，前端不要直连 Python 端口。
 - 端口占用：按指南端口表释放占用后再启动，不要随意改变服务名与路由约定。
 - 跨主机联调：可把 Uvicorn 改为 `--host 0.0.0.0`，同时将 `SERVICE_HOST` 设置为网关可访问的实际 IP，禁止向 Nacos 注册 `0.0.0.0`。
 - 依赖安装失败：保持锁定的大版本，禁止擅自换到 Python 3.13、Boot 4、Nacos 3 或 MySQL 9。

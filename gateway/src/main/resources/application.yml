@@ -38,8 +38,12 @@ spring:
         add-to-simple-url-handler-mapping: true
         cors-configurations:
           '[/**]':
-            allowed-origins:
-              - http://localhost:5173
+            # 本地开发允许 localhost / 127.0.0.1 的任意端口：Vite 端口可能被占用而调整
+            # （例如 5173 被其它项目占用时改用 5174）。非本地来源仍被拒绝；
+            # 生产环境经 Nginx 同源访问，不依赖 CORS。
+            allowed-origin-patterns:
+              - http://localhost:[*]
+              - http://127.0.0.1:[*]
             allowed-methods:
               - GET
               - POST
