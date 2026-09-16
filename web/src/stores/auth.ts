@@ -16,7 +16,13 @@ export const useAuthStore = create<AuthState>()(
       token: '',
       userId: '',
       userName: '',
-      setAuth: (data) => set({ token: data.token, userId: data.user_id || '', userName: data.user_name || '' }),
+      // user-service 的 user_id 是数字，占位登录是字符串，这里统一成字符串存储。
+      setAuth: (data) =>
+        set({
+          token: data.token,
+          userId: data.user_id === undefined ? '' : String(data.user_id),
+          userName: data.user_name || data.username || '',
+        }),
       clearAuth: () => set({ token: '', userId: '', userName: '' }),
     }),
     { name: 'ai-capability-auth', storage: createJSONStorage(() => localStorage) },

@@ -7,9 +7,12 @@ import { CapabilitiesPage } from '@/pages/CapabilitiesPage'
 import { ChatPage } from '@/pages/ChatPage'
 import { UsagePage } from '@/pages/UsagePage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { ConsolePage } from '@/pages/ConsolePage'
 
 export const router = createBrowserRouter([
+  // 登录与注册共用同一组件，由路径决定模式。
   { path: '/login', element: <LoginPage /> },
+  { path: '/register', element: <LoginPage /> },
   {
     element: <AuthGuard />,
     children: [
@@ -19,8 +22,9 @@ export const router = createBrowserRouter([
           { index: true, element: <OverviewPage /> },
           { path: 'capabilities', element: <CapabilitiesPage /> },
           { path: 'chat', element: <ChatPage /> },
-          { path: 'settings', element: <SettingsPage /> },
           { path: 'usage', element: <UsagePage /> },
+          { path: 'settings', element: <SettingsPage /> },
+          { path: 'console', element: <ConsolePage /> },
         ],
       },
     ],
