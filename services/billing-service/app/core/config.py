@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     db_url: str = "mysql+pymysql://root:root@127.0.0.1:3306/billing_db?charset=utf8mb4"
     internal_call_timeout: float = Field(default=10.0, gt=0)
 
+    # 扣分只能调用 user-service 的内部契约，不允许直接读写 user_db。
+    user_service_name: str = "user-service"
+    # 用量统计默认回看天数（未显式传 start_date / end_date 时生效）。
+    stat_default_range_days: int = Field(default=30, ge=1)
+
     use_mock: bool = True
     model_base_url: str = "https://api.example.com/v1"
     model_api_key: str = "replace-me"
