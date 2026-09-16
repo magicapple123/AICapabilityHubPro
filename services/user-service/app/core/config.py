@@ -6,6 +6,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.constants import DEFAULT_INITIAL_POINTS
+
 
 class Settings(BaseSettings):
     """服务运行配置，环境变量名称与字段名一一对应。"""
@@ -31,6 +33,14 @@ class Settings(BaseSettings):
 
     db_url: str = "mysql+pymysql://root:root@127.0.0.1:3306/user_db?charset=utf8mb4"
     internal_call_timeout: float = Field(default=10.0, gt=0)
+
+    # 登录签发的 JWT 必须与网关同密钥、同 issuer，否则经网关访问会返回 1001。
+    jwt_secret: str = ""
+    jwt_issuer: str = "ai-capability-hub"
+    jwt_ttl_hours: int = Field(default=24, ge=1)
+
+    # 注册赠送的初始积分；整型存储，不使用浮点（指南 5.5）。
+    initial_points: int = Field(default=DEFAULT_INITIAL_POINTS, ge=0)
 
     use_mock: bool = True
     model_base_url: str = "https://api.example.com/v1"
