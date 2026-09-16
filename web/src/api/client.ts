@@ -3,6 +3,9 @@ import type { Result } from './types'
 import { env } from '@/utils/env'
 import { useAuthStore } from '@/stores/auth'
 
+// baseURL 已包含 /api 前缀。调用方传 url 时只写网关路由之后的剩余路径，
+// 例如 request({ url: '/capability/market' })；写成 '/api/xxx' 会被拼成
+// /api/api/xxx 而 404。
 export const apiClient = axios.create({
   baseURL: env.apiBaseUrl,
   timeout: 15_000,
