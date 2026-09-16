@@ -1,6 +1,6 @@
 # AI 能力开放平台（AI Capability Hub）
 
-这是按《AI能力开放平台-开发指南》搭建的可运行 Monorepo 骨架。本次只提供治理、注册发现、统一响应、示例接口和前端登录占位，不实现业务 CRUD，也不连接真实大模型；ai-chat-service 在 USE_MOCK=true 时返回固定 Mock 回复。Nginx 作为前端生产入口，负责静态资源托管和 `/api/**` 反向代理，Spring Cloud Gateway 仍是唯一后端网关。
+这是按《AI能力开放平台-开发指南》实现的可运行 Monorepo：Spring Cloud Gateway 承担统一治理（JWT 鉴权、身份透传、Sentinel 限流、`/internal/**` 隔离），四个 Python 服务各自独立建库并完成业务闭环——user-service（注册登录、API Key、积分账户与流水）、capability-service（分类、能力登记与上下架、能力市场）、billing-service（幂等记账、扣分联动、用量统计）、ai-chat-service（多轮对话落库，Mock 或 OpenAI 兼容真实模型，超时自动降级不计费）。前端包含登录/注册、能力市场、在线调试台、调用记录、开发者中心与运营后台六个页面，全部经网关访问。Nginx 作为前端生产入口，负责静态资源托管和 `/api/**` 反向代理，Spring Cloud Gateway 仍是唯一后端网关。
 
 ## 架构简图
 
@@ -67,15 +67,18 @@ Docker Desktop 必须处于运行状态。首次启动前在仓库根目录设�
 
 这条命令会启动 MySQL、Nacos、Sentinel，并构建启动 Nginx。Nginx 默认监听 `http://localhost`，把 `/api/**` 转发到宿主机的 `host.docker.internal:8080`。如果网关部署在别处，在 `deploy/.env` 修改 `NGINX_GATEWAY_UPSTREAM=主机名或IP:端口` 后重新执行 `docker compose up -d --build nginx`。只启动中间件时可执行 `docker compose up -d mysql nacos sentinel`。
 
-MySQL 首次创建数据卷时会执行 mysql/init/01_create_databases.sql，创建四个库。若已有旧数据卷，初始化脚本不会重复执行；请在 MySQL 中只读检查库是否存在，再按需手动执行脚本。
+MySQL 首次创建数据卷时会按文件名顺序执行 `deploy/mysql/init/` 下的全部脚本：`01_create_databases.sql` 创建四个库，`02_user_service.sql` ~ `05_ai_chat_service.sql` 建各服务业务表并写入演示数据（`demo` / `demopoor` / `demodisabled` 三个用户，口令均为 `demo123456`；2 个分类、3 个能力；若干调用流水）。**首次 `docker compose up -d` 后库表与演示数据即就绪，无需手工导入。**
 
-四个服务各自提供一张骨架示例表。首次启动可在仓库根目录执行：
+这些文件是从 `services/*/sql/*.sql` 复制生成，修改请以服务目录为准并同步本文件。若已有旧数据卷（初始化脚本不会重复执行），可在仓库根目录手动导入（脚本均幂等，`CREATE ... IF NOT EXISTS` 与 `INSERT ... ON DUPLICATE KEY UPDATE`）：
 
     Set-Location D:\AICapabilityHub
     $dbPassword = if ($env:MYSQL_ROOT_PASSWORD) { $env:MYSQL_ROOT_PASSWORD } else { 'root' }
     Get-Content .\services\user-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
+    Get-Content .\services\user-service\sql\02_seed.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
     Get-Content .\services\capability-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
+    Get-Content .\services\capability-service\sql\02_seed.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
     Get-Content .\services\billing-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
+    Get-Content .\services\billing-service\sql\02_seed.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
     Get-Content .\services\ai-chat-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
 
 ### 2. 启动网关
@@ -143,6 +146,8 @@ ai-chat-service 默认读取 Nacos 配置 `ai-chat-service-model.json`，统一�
 
 服务启动时先通过 Nacos 配置接口拉取配置，之后每 5 秒检查一次变更；发布有效变更后会更新运行时快照，无需重启服务。配置读取不启用 SDK 磁盘快照，不把模型 Key 写入工作区缓存。本地 `.env` 中的同名配置是安全回退：Nacos 暂不可用、配置为空或格式无效时，服务继续使用本地值或最近一次有效配置。
 
+`use_mock=true` 时 ai-chat-service 返回固定 Mock 回复且不访问任何外部地址；`use_mock=false` 时按 `model_base_url + /chat/completions` 调用 OpenAI 兼容接口（超时、最大 token、系统提示词走 `.env`）。模型超时（`5001`）或响应异常（`5002`）时返回兜底话术、标记 `degraded` 且**不计费**，闭环不中断。
+
 以下 Windows PowerShell 示例发布 ai-chat-service 的配置；若要测试统一基座，把 `$dataId` 改为 `demo-service-model.json`。示例只使用占位值 `replace-me`，命令不打印配置内容；不要把真实 Key 写入共享脚本、终端输出或日志。
 
     $dataId = 'ai-chat-service-model.json'
@@ -165,7 +170,19 @@ ai-chat-service 默认读取 Nacos 配置 `ai-chat-service-model.json`，统一�
     pnpm install
     pnpm dev
 
-打开 http://localhost:5173。前端工作台包含登录、能力市场、在线调试、调用记录和开发者中心页面，使用 Tailwind CSS 4 完成布局与视觉样式，GSAP ScrollTrigger 负责首页滚动动效。默认前端使用本地占位登录，不会调用真实登录接口；在 web/.env 设置 VITE_USE_MOCK_LOGIN=false 可切换到网关 /api/user/login，VITE_DEV_TOKEN 可配置本地演示 Token（仅开发用途）。
+打开 http://localhost:5173。前端工作台包含六个页面，全部经网关 `/api/**` 访问后端：
+
+| 页面 | 路由 | 数据来源 |
+|---|---|---|
+| 登录 / 注册 | `/login`、`/register` | `/api/user/login`、`/api/user/register` |
+| 工作台首页 | `/` | 视觉首页（GSAP ScrollTrigger） |
+| 能力市场 | `/capabilities` | `/api/capability/market`、`/market/categories` |
+| 在线调试台 | `/chat` | `/api/chat/completions`、`/chat/sessions`、`/chat/sessions/{id}/messages` |
+| 调用记录 | `/usage` | `/api/user/points`、`/api/billing/usage`、`/api/billing/records` |
+| 开发者中心 | `/settings` | `/api/user/profile`、`/apikeys`、`/points`、`/points/logs` |
+| 运营后台 | `/console` | `/api/capability/categories`、`/api/capability`（登记/上下架）、`/api/capability/manage`、`/api/billing/stat/overview` |
+
+使用 Tailwind CSS 4 完成布局与视觉样式，GSAP ScrollTrigger 负责首页滚动动效。**默认前端使用本地占位登录**（`VITE_USE_MOCK_LOGIN=true`），签发的是占位 Token 而非合法 JWT，因此除首页外的数据页面会在顶部显示提示条并返回 401；请在 `web/.env` 把 `VITE_USE_MOCK_LOGIN` 设为 `false` 后重启，用演示账号 `demo / demo123456` 登录，或把 `VITE_DEV_TOKEN` 配置为 `DevTokenTool` 签发的 JWT（仅开发用途）。
 
 此时也可以使用 Nginx 提供的生产构建：打开 http://localhost，或执行 `curl.exe http://localhost/nginx-health` 检查 Nginx。Nginx 镜像构建时使用 `deploy/.env` 中的 `VITE_API_BASE_URL` 和 `VITE_USE_MOCK_LOGIN`；切换这些值后需要重新构建 `nginx` 服务。
 
@@ -218,7 +235,7 @@ ai-chat-service 默认读取 Nacos 配置 `ai-chat-service-model.json`，统一�
     curl.exe http://localhost:8080/billing-service/health
     curl.exe http://localhost:8080/ai-chat-service/health
 
-/health、注册/登录和能力市场白名单不需要 Token；任何外部 /internal/** 请求都返回 403。业务错误仍用 HTTP 200，通过 code 判断；网关认证失败是 HTTP 401、code=1001。
+/health、注册/登录和能力市场白名单不需要 Token；任何外部 /internal/** 请求都返回 403。业务错误仍用 HTTP 200，通过 code 判断；网关认证失败是 HTTP 401、code=1001；触发限流是 HTTP 429、code=4001（规则见 `application.yml` 的 `gateway.rate-limit`，默认按路由 ID 限流，可用 `GATEWAY_RATE_LIMIT_*_QPS` 环境变量覆盖，`GATEWAY_RATE_LIMIT_ENABLED=false` 可临时关闭）。
 
 ## 常见问题
 
