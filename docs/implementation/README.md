@@ -19,9 +19,17 @@
 ## 公共任务已由项目侧完成的部分
 
 - Pro 工作区和 `develop` 基线建立。
+- 新 GitHub 仓库 `magicapple123/AICapabilityHubPro` 的 `main` 与 `develop` 基线分支已建立；CI 工作流在两个分支均成功运行。
+- 原项目 GitHub 中的 5 个远程分支全部保留；此次迁移未删除或覆盖原仓库分支。
 - 原项目只读来源配置，避免将升级提交推回原项目。
 - 旧项目基线测试和工具链检查。
 - 任务看板、验收矩阵、风险记录和质量门禁脚本。
 - GitHub Actions 质量门禁工作流骨架。
 
 公共质量门禁不会替代成员对自己服务、契约、SQL 和页面的实现责任。
+
+## D1 需要组长核实的 GitHub 设置
+
+- 新仓库当前有 `main` 和 `develop` 两个分支，默认分支为 `main`。
+- 添加其余成员协作者后，配置 PR Review、必需 CI 检查和禁止直接推送的 branch protection。成员 GitHub 登录名尚未提供，暂不能代为邀请。
+- `CONTRIBUTING.md` 说明 `main` 受保护；GitHub 仓库目前尚未配置该保护规则。由黄岑果在成员加入后配置并验证。
