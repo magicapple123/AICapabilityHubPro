@@ -1,0 +1,13 @@
+# Use alongside docker-compose.yml when the original project is also running.
+# !override replaces each port list instead of appending conflicting ports.
+services:
+  mysql:
+    ports: !override
+      - "127.0.0.1:3307:3306"
+  nacos:
+    ports: !override
+      - "127.0.0.1:8849:8848"
+      - "127.0.0.1:9849:9848"
+  sentinel:
+    ports: !override
+      - "127.0.0.1:8859:8858"

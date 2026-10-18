@@ -198,7 +198,7 @@ export function LoginPage() {
             </span>
           </div>
           <p className="mt-4 text-xs leading-5 text-white/30">
-            默认使用本地占位登录。将 `VITE_USE_MOCK_LOGIN` 设为 false 后接入网关登录与注册接口。
+             默认使用真实网关登录；如需脱离后端做页面演示，可在 web/.env 显式设置 `VITE_USE_MOCK_LOGIN=true`。
           </p>
         </div>
         <p className="text-center text-xs text-white/25">安全连接 · 统一身份透传 · 可观测调用</p>

@@ -11,6 +11,8 @@
 - [ ] 聊天/摘要执行器与 billing 能力 ID、单价、requestId 联动
 - [ ] Chat 页面能力选择、Schema 表单、价格、状态和追踪信息
 - [ ] Gateway/ai-chat 单测与端到端回归
+- [x] 在新 Pro 仓库配置 `main`/`develop` PR 保护、1 人 Review、8 项必需 CI、对话解决和禁止强推/删除
+- [ ] 添加其余成员到 Pro 仓库并验证其 PR 权限
 - [ ] 最终集成、README、发布 Tag 和演示脚本
 
 ## 领取记录

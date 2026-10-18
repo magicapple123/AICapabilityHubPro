@@ -1,6 +1,46 @@
-# AI 能力开放平台（AI Capability Hub）
+# AI 能力开放平台 Pro
 
-这是按《AI能力开放平台-开发指南》实现的可运行 Monorepo：Spring Cloud Gateway 承担统一治理（JWT 鉴权、身份透传、Sentinel 限流、`/internal/**` 隔离），四个 Python 服务各自独立建库并完成业务闭环——user-service（注册登录、API Key、积分账户与流水）、capability-service（分类、能力登记与上下架、能力市场）、billing-service（幂等记账、扣分联动、用量统计）、ai-chat-service（多轮对话落库，Mock 或 OpenAI 兼容真实模型，超时自动降级不计费）。前端包含登录/注册、能力市场、在线调试台、调用记录、开发者中心与运营后台六个页面，全部经网关访问。Nginx 作为前端生产入口，负责静态资源托管和 `/api/**` 反向代理，Spring Cloud Gateway 仍是唯一后端网关。
+这是 AI 能力开放平台 Pro 的可运行 Monorepo：Spring Cloud Gateway 承担统一治理（JWT 鉴权、身份透传、Sentinel 限流、`/internal/**` 隔离），四个 Python 服务各自独立建库并完成业务闭环——user-service（注册登录、API Key、积分账户与流水）、capability-service（分类、能力登记与上下架、能力市场）、billing-service（幂等记账、扣分联动、用量统计）、ai-chat-service（多轮对话落库，Mock 或 OpenAI 兼容真实模型，超时自动降级不计费）。前端包含登录/注册、能力市场、在线调试台、调用记录、开发者中心与运营后台六个页面，全部经网关访问。Nginx 作为前端生产入口，负责静态资源托管和 `/api/**` 反向代理，Spring Cloud Gateway 仍是唯一后端网关。
+
+## Pro 升级新增能力
+
+在前三周版本基础上，本项目后续由三位成员实现以下可区分功能：
+
+- 能力市场一键体验：从市场选择能力后进入对应调试表单。
+- Schema 驱动输入和按能力价格预览：表单、参数校验和费用展示与能力目录保持一致。
+- API Key 兑换短期 JWT：Key 从管理项扩展为可实际换取调用凭证的开发者能力。
+- user/admin 双角色治理：管理接口由后端实时校验，不能只靠前端隐藏按钮。
+- 能力 ID、登记单价、积分扣减、账单和 requestId 全链路可追踪。
+
+本仓库当前公共基础、质量门禁、CI 和三人任务槽位已完成；三位成员的业务实现仍按 `docs/升级实施看板.md` 认领。默认前端使用真实登录，Mock 登录只在显式配置时启用。
+
+## Pro 首次使用
+
+新仓库为 `magicapple123/AICapabilityHubPro`，从 `develop` 创建个人功能分支。原项目仓库和原有分支全部保留。
+
+```powershell
+Set-Location D:\AICapabilityHubPro
+python scripts/init_dev.py --install
+.\scripts\Test-ProEnvironment.ps1
+python scripts/start_dev.py middleware
+```
+
+初始化只创建缺失配置，为网关和用户服务生成同一组本地密钥，保留全部既有 `.env`；配置值不会输出到日志。Docker Desktop 需已运行。Pro 使用 `aihub-pro-*` 容器和独立 `aihub-pro-mysql-data` 数据卷，不读取旧版数据卷；原版仍在运行时，应先人工处理端口冲突。
+
+分别在六个终端启动网关、四个服务和 Web：
+
+```powershell
+python scripts/start_dev.py gateway
+python scripts/start_dev.py user-service
+python scripts/start_dev.py capability-service
+python scripts/start_dev.py billing-service
+python scripts/start_dev.py ai-chat-service
+python scripts/start_dev.py web
+```
+
+各命令均在项目根目录运行，进程占用当前终端，使用 Ctrl+C 停止；工具不终止其它进程。启动完成后运行 `python scripts/smoke_check.py`，检查公开市场、认证和内部路径隔离。它不注册用户、扣分或改数据库。
+
+公共离线检查运行 `.\scripts\Invoke-QualityGate.ps1 -SkipWebInstall`，结果输出到唯一的 `artifacts/quality/` 目录；数据库集成结果以 CI 隔离 MySQL 的 JUnit 报告为准。详见 `docs/上手与联调.md`、`docs/质量门禁说明.md`、`docs/验收用例.md`。
 
 ## 架构简图
 
@@ -50,9 +90,7 @@ Nginx 不替代网关：网关仍负责 JWT、限流、路由和身份透传。�
     pnpm -v
     docker -v
 
-Docker Desktop 必须处于运行状态。首次启动前在仓库根目录设置网关签名密钥（至少 32 个 UTF-8 字节）：
-
-    $env:JWT_SECRET = 'change-this-local-secret-to-at-least-32-bytes'
+Docker Desktop 必须处于运行状态。建议用上面的初始化和启动脚本，它们为各组件使用一致的本地密钥。下面保留的手工启动方式仅用于排查：手工启动 Gateway 时，须从本地配置设置与 user-service 相同的 `JWT_SECRET`，至少 32 个 UTF-8 字节，不要另设一个示例值。
 
 不要把真实 .env、Token、密码或模型 Key 提交到仓库。
 
@@ -69,22 +107,22 @@ Docker Desktop 必须处于运行状态。首次启动前在仓库根目录设�
 
 MySQL 首次创建数据卷时会按文件名顺序执行 `deploy/mysql/init/` 下的全部脚本：`01_create_databases.sql` 创建四个库，`02_user_service.sql` ~ `05_ai_chat_service.sql` 建各服务业务表并写入演示数据（`demo` / `demopoor` / `demodisabled` 三个用户，口令均为 `demo123456`；2 个分类、3 个能力；若干调用流水）。**首次 `docker compose up -d` 后库表与演示数据即就绪，无需手工导入。**
 
-这些文件是从 `services/*/sql/*.sql` 复制生成，修改请以服务目录为准并同步本文件。若已有旧数据卷（初始化脚本不会重复执行），可在仓库根目录手动导入（脚本均幂等，`CREATE ... IF NOT EXISTS` 与 `INSERT ... ON DUPLICATE KEY UPDATE`）：
+这些文件是从 `services/*/sql/*.sql` 复制生成，修改请以服务目录为准并同步本文件。下面手动导入命令只适用于隔离的本地演示库。种子脚本会更新同名演示数据，不是保留既有数据的结构迁移。现存业务库升级须由成员编写独立增量迁移，不能通过重复导入 seed 或删除数据卷升级。
 
-    Set-Location D:\AICapabilityHub
+    Set-Location D:\AICapabilityHubPro
     $dbPassword = if ($env:MYSQL_ROOT_PASSWORD) { $env:MYSQL_ROOT_PASSWORD } else { 'root' }
-    Get-Content .\services\user-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
-    Get-Content .\services\user-service\sql\02_seed.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
-    Get-Content .\services\capability-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
-    Get-Content .\services\capability-service\sql\02_seed.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
-    Get-Content .\services\billing-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
-    Get-Content .\services\billing-service\sql\02_seed.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
-    Get-Content .\services\ai-chat-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-mysql mysql -uroot
+    Get-Content .\services\user-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-pro-mysql mysql -uroot
+    Get-Content .\services\user-service\sql\02_seed.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-pro-mysql mysql -uroot
+    Get-Content .\services\capability-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-pro-mysql mysql -uroot
+    Get-Content .\services\capability-service\sql\02_seed.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-pro-mysql mysql -uroot
+    Get-Content .\services\billing-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-pro-mysql mysql -uroot
+    Get-Content .\services\billing-service\sql\02_seed.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-pro-mysql mysql -uroot
+    Get-Content .\services\ai-chat-service\sql\01_init.sql -Raw | docker exec -i -e MYSQL_PWD=$dbPassword aihub-pro-mysql mysql -uroot
 
 ### 2. 启动网关
 
     Set-Location ..\gateway
-    $env:JWT_SECRET = 'change-this-local-secret-to-at-least-32-bytes'
+    # JWT_SECRET 必须预先设为本地 user-service 使用的同一个值。
     mvn -q -DskipTests package
     mvn spring-boot:run
 
@@ -98,7 +136,7 @@ MySQL 首次创建数据卷时会按文件名顺序执行 `deploy/mysql/init/` �
 
 窗口一，启动 user-service：
 
-    Set-Location D:\AICapabilityHub\services\user-service
+    Set-Location D:\AICapabilityHubPro\services\user-service
     python -m venv .venv
     .\.venv\Scripts\Activate.ps1
     python -m pip install -r requirements.txt
@@ -107,7 +145,7 @@ MySQL 首次创建数据卷时会按文件名顺序执行 `deploy/mysql/init/` �
 
 窗口二，启动 capability-service：
 
-    Set-Location D:\AICapabilityHub\services\capability-service
+    Set-Location D:\AICapabilityHubPro\services\capability-service
     python -m venv .venv
     .\.venv\Scripts\Activate.ps1
     python -m pip install -r requirements.txt
@@ -116,7 +154,7 @@ MySQL 首次创建数据卷时会按文件名顺序执行 `deploy/mysql/init/` �
 
 窗口三，启动 billing-service：
 
-    Set-Location D:\AICapabilityHub\services\billing-service
+    Set-Location D:\AICapabilityHubPro\services\billing-service
     python -m venv .venv
     .\.venv\Scripts\Activate.ps1
     python -m pip install -r requirements.txt
@@ -125,7 +163,7 @@ MySQL 首次创建数据卷时会按文件名顺序执行 `deploy/mysql/init/` �
 
 窗口四，启动 ai-chat-service：
 
-    Set-Location D:\AICapabilityHub\services\ai-chat-service
+    Set-Location D:\AICapabilityHubPro\services\ai-chat-service
     python -m venv .venv
     .\.venv\Scripts\Activate.ps1
     python -m pip install -r requirements.txt
@@ -166,7 +204,7 @@ ai-chat-service 默认读取 Nacos 配置 `ai-chat-service-model.json`，统一�
 
 ### 4. 启动前端
 
-    Set-Location D:\AICapabilityHub\web
+    Set-Location D:\AICapabilityHubPro\web
     pnpm install
     pnpm dev
 
@@ -182,13 +220,13 @@ ai-chat-service 默认读取 Nacos 配置 `ai-chat-service-model.json`，统一�
 | 开发者中心 | `/settings` | `/api/user/profile`、`/apikeys`、`/points`、`/points/logs` |
 | 运营后台 | `/console` | `/api/capability/categories`、`/api/capability`（登记/上下架）、`/api/capability/manage`、`/api/billing/stat/overview` |
 
-使用 Tailwind CSS 4 完成布局与视觉样式，GSAP ScrollTrigger 负责首页滚动动效。**默认前端使用本地占位登录**（`VITE_USE_MOCK_LOGIN=true`），签发的是占位 Token 而非合法 JWT，因此除首页外的数据页面会在顶部显示提示条并返回 401；请在 `web/.env` 把 `VITE_USE_MOCK_LOGIN` 设为 `false` 后重启，用演示账号 `demo / demo123456` 登录，或把 `VITE_DEV_TOKEN` 配置为 `DevTokenTool` 签发的 JWT（仅开发用途）。
+使用 Tailwind CSS 4 完成布局与视觉样式，GSAP ScrollTrigger 负责首页滚动动效。**Pro 默认使用真实登录**（`VITE_USE_MOCK_LOGIN=false`），用演示账号 `demo / demo123456` 登录；如需纯前端占位演示，才在 `web/.env` 显式设置 `VITE_USE_MOCK_LOGIN=true`。也可以把 `VITE_DEV_TOKEN` 配置为 `DevTokenTool` 签发的 JWT（仅开发用途）。
 
 此时也可以使用 Nginx 提供的生产构建：打开 http://localhost，或执行 `curl.exe http://localhost/nginx-health` 检查 Nginx。Nginx 镜像构建时使用 `deploy/.env` 中的 `VITE_API_BASE_URL` 和 `VITE_USE_MOCK_LOGIN`；切换这些值后需要重新构建 `nginx` 服务。
 
 如果只想使用 Nginx 而不启动 Vite：
 
-    Set-Location D:\AICapabilityHub\deploy
+    Set-Location D:\AICapabilityHubPro\deploy
     docker compose up -d --build nginx
 
 默认 Nginx 端口为 80；端口被占用时，在 `deploy/.env` 设置 `NGINX_PORT=8088`，然后访问 http://localhost:8088。
@@ -197,9 +235,9 @@ ai-chat-service 默认读取 Nacos 配置 `ai-chat-service-model.json`，统一�
 
 网关配置的密钥与工具必须一致。先在同一 PowerShell 设置 JWT_SECRET，再执行：
 
-    Set-Location D:\AICapabilityHub\gateway
+    Set-Location D:\AICapabilityHubPro\gateway
     mvn -q -DskipTests package
-    .\mvnw.cmd -q exec:java '-Dexec.mainClass=com.aicapabilityhub.gateway.tool.DevTokenTool' '-Dexec.args=1 dev-user'
+    mvn -q exec:java '-Dexec.mainClass=com.aicapabilityhub.gateway.tool.DevTokenTool' '-Dexec.args=1 dev-user'
 
 工具会打印 Token 并立即用同一密钥校验。请把输出临时放入环境变量，不要写入仓库：
 
@@ -270,7 +308,7 @@ ai-chat-service 默认读取 Nacos 配置 `ai-chat-service-model.json`，统一�
 
 ## 目录
 
-    D:\AICapabilityHub
+    D:\AICapabilityHubPro
     ├─ deploy/                       # Nginx、MySQL、Nacos、Sentinel
     │  └─ nginx/                     # Nginx 配置与前端多阶段构建文件
     ├─ gateway/                      # 唯一 Java 网关
