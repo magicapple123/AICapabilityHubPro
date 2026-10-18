@@ -90,19 +90,19 @@ export function LoginPage() {
         </div>
         <div className="relative max-w-2xl">
           <p className="mb-7 text-xs uppercase tracking-[.28em] text-[#c9f05b]">
-            A workspace for useful intelligence
+            Capability-driven execution · Pro
           </p>
           <h1 className="max-w-4xl text-[clamp(3rem,5vw,5.5rem)] font-medium leading-[.95] tracking-[-.07em]">
-            让每一种
+            让每一次
             <br />
-            <span className="text-[#c9f05b]">AI 能力</span>都有入口。
+            <span className="text-[#c9f05b]">AI 调用</span>都可核验。
           </h1>
           <p className="mt-7 max-w-md text-base leading-7 text-white/55">
-            连接、验证、组合。把实验室里的模型，变成团队可以依赖的能力。
+            选择聊天或文本摘要能力，按要求填写参数；在同一条调用链中核对执行结果、积分费用与追踪记录。
           </p>
         </div>
         <p className="relative text-xs uppercase tracking-[.2em] text-white/35">
-          AI Capability Hub · Developer Preview
+          AICapabilityHub Pro · Execution / Billing / Tracing
         </p>
       </section>
 
@@ -146,7 +146,7 @@ export function LoginPage() {
                   value={form.password}
                   onChange={(event) => setForm({ ...form, password: event.target.value })}
                   className="w-full bg-transparent text-base outline-none placeholder:text-white/25"
-                  placeholder={isRegister ? '至少 8 位' : '本地 Mock 登录可留空'}
+                  placeholder={isRegister ? '至少 8 位' : '请输入账号密码'}
                   autoComplete={isRegister ? 'new-password' : 'current-password'}
                 />
               </span>

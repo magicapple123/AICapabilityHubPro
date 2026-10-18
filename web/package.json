@@ -1,5 +1,6 @@
 {
-  "name": "ai-capability-hub-web",
+  "name": "aicapabilityhub-pro-web",
+  "description": "AICapabilityHub Pro developer workspace for schema-aware AI execution, per-capability billing, and request tracing.",
   "private": true,
   "version": "0.1.0",
   "type": "module",

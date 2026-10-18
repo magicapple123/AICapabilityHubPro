@@ -1,4 +1,8 @@
-# capability-service
+# AICapabilityHub Pro · 能力目录服务
+
+`capability-service` 维护 Pro 执行所需的能力 ID、Schema、登记价格和上架状态。现有公开市场详情可供显式 `market` 兼容模式读取；内部详情端点、实时管理员授权及市场体验按钮传 ID 仍待本模块负责人完成。
+
+模块状态以 [根 README](../../README.md)、[实施看板](../../docs/升级实施看板.md)和当前接口契约为准；不能把现有目录展示等同于所有登记能力均可执行。
 
 能力目录服务（FastAPI）。负责能力分类与能力登记、上下架、公开能力市场和运营列表，
 独立使用 `capability_db`，不依赖也不调用其它服务。
