@@ -7,15 +7,39 @@
 """
 
 import importlib
+import pytest
 
 from app.core.config import settings
 from app.core.constants import DEGRADED_REPLY, CallStatus, ModelErrorCode
 from app.service.model_client import ModelReply
+from app.schemas.capability import CapabilityDefinition
 from tests.conftest import OTHER_HEADERS, USER_HEADERS
 
 # `app.service` 包导出的 `chat_service` 是实例，会遮蔽同名模块属性；
 # 这里用 importlib 直接取模块对象，保证 monkeypatch 打在服务真正使用的符号上。
 chat_module = importlib.import_module("app.service.chat_service")
+
+
+@pytest.fixture(autouse=True)
+def approved_catalog_snapshot(monkeypatch):
+    """Service tests replace only the catalog boundary; catalog transport has its own tests."""
+    async def fetch(capability_id):
+        return CapabilityDefinition(
+            id=capability_id, code="chat-completions", status="online", price_per_call=5,
+            param_schema={"type": "object", "required": ["messages"],
+                          "properties": {"messages": {"type": "array", "minItems": 1}}},
+        )
+    monkeypatch.setattr(chat_module.capability_client, "fetch", fetch)
+
+
+def internal_reply(path, kwargs):
+    if path == "/internal/user/check":
+        return {"user_id": int(kwargs["params"]["user_id"]), "status": "normal",
+                "balance": 100, "available": True, "points_cost": kwargs["params"]["points_cost"]}
+    payload = kwargs["json"]
+    return {"record_id": 1, "request_id": payload["request_id"], "user_id": payload["user_id"],
+            "capability_id": payload["capability_id"], "cost": payload["points"],
+            "call_status": payload["status"]}
 
 
 class _FakeSnapshot:
@@ -161,7 +185,7 @@ def test_internal_chain_forwards_request_id(client, monkeypatch) -> None:
 
     async def fake_call_internal(service_name, method, path, **kwargs):
         calls.append((service_name, method, path, kwargs))
-        return {"available": True}
+        return internal_reply(path, kwargs)
 
     monkeypatch.setattr(settings, "enable_internal_chain", True)
     monkeypatch.setattr(chat_module, "call_internal", fake_call_internal)
@@ -179,7 +203,9 @@ def test_internal_chain_forwards_request_id(client, monkeypatch) -> None:
     billing_payload = calls[1][3]["json"]
     assert billing_payload["request_id"] == "chain-request"
     assert billing_payload["status"] == CallStatus.SUCCESS.value
-    assert billing_payload["points"] == settings.points_cost
+    assert billing_payload["points"] == 5
+    assert billing_payload["unit_price"] == 5
+    assert billing_payload["capability_id"] == 1
     assert billing_payload["duration_ms"] >= 0
 
 
@@ -201,7 +227,7 @@ def test_degraded_model_reply_is_reported_without_charge(client, monkeypatch) ->
     async def fake_call_internal(service_name, method, path, **kwargs):
         if path == "/internal/billing/record":
             billing_calls.append(kwargs["json"])
-        return {"available": True}
+        return internal_reply(path, kwargs)
 
     monkeypatch.setattr(settings, "enable_internal_chain", True)
     monkeypatch.setattr(chat_module, "call_internal", fake_call_internal)

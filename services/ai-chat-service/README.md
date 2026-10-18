@@ -1,6 +1,17 @@
 # ai-chat-service
 
-对话能力服务：独立使用 ai_chat_db，提供多轮对话（Mock / OpenAI 兼容真实模型）、会话与消息落库查询，以及 user/billing 内部链路（校验积分 → 执行能力 → 上报计费）。
+Pro 能力执行服务：独立会话库，先读取能力目录校验上架状态、code、Schema 和登记价，再执行聊天或文本摘要，并联动 user/billing。模型/Mock、会话历史及降级保持兼容。
+
+## Pro 运行与契约
+
+- 默认 `CAPABILITY_CATALOG_MODE=internal`，依赖 `GET /internal/capability/{id}`；该接口由 capability 负责人交接。异常失败关闭，不使用过期缓存或静默回退。
+- 兼容旧目录时，从项目根运行 `python scripts/start_leader_dev.py ai-chat-service --catalog-mode market`。这是明确的过渡配置，既有 `.env` 保留。
+- `POST /api/chat/completions` 增加 `capability_id` 与 `input`，旧 `messages` 缺省映射能力 1。摘要使用 `input.text`，不伪装成不兼容的聊天请求；详情见 `docs/api-contract/ai-chat-service.md` 第 8 节。
+- `GET /api/chat/executors` 返回受支持的 `chat-completions`、`long-summary` 及当前目录模式，必须通过网关登录访问。
+- `POINTS_COST` 仅保留旧配置兼容，Pro 不再据此决定费用。`ENABLE_INTERNAL_CHAIN=false` 的结果会标为 `not_reported`，不能作为计费验收。
+- 本轮无需数据库结构迁移，不跨库；内部模式和显式市场兼容模式都每次查询可信目录，服务/path/URL 不参与模型分发。
+- 真实外部模型需要本地配置可用地址与 Key。本项目 E2E 使用本地 HTTP 模型替身；不会把模型替身测试宣称为真实供应商已验收。
+- 本地事务不保证远端 billing 与最终消息 commit 原子提交；发生不一致须按 requestId 对账，不能盲目重试模型。其余旧版运行说明仅用于理解基础组件。
 
 ## 启动
 

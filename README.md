@@ -12,7 +12,24 @@
 - user/admin 双角色治理：管理接口由后端实时校验，不能只靠前端隐藏按钮。
 - 能力 ID、登记单价、积分扣减、账单和 requestId 全链路可追踪。
 
-本仓库当前公共基础、质量门禁、CI 和三人任务槽位已完成；三位成员的业务实现仍按 `docs/升级实施看板.md` 认领。默认前端使用真实登录，Mock 登录只在显式配置时启用。
+公共基础已完成；组长的 Gateway 可信身份、能力校验/定价执行链、聊天/摘要调试台及真实服务 E2E 已实现。user/billing 的角色与 Key 升级、capability 的内部详情/运营权限/市场入口仍由其负责人实现。默认前端使用真实登录，Mock 登录只在显式配置时启用。
+
+### 组长功能的当前运行方式
+
+内部详情接口尚未交接时，显式使用旧市场兼容模式；它只读取已上架详情，仍按目录价预检和计费。默认内部模式遇到依赖缺失会明确报错，不会自动绕过。原项目并行端口见 `docs/双项目并行联调.md`。
+
+```powershell
+# 先按初始化/中间件步骤启动 user、capability、billing；下面各占一个终端
+python scripts/start_leader_dev.py ai-chat-service --catalog-mode market
+python scripts/start_leader_dev.py gateway
+python scripts/start_leader_dev.py web
+```
+
+打开 `http://localhost:5173/chat?capability_id=1` 调试聊天，或选择能力 2 生成摘要。当前演示目录价格分别为 5 / 3 积分；实际费用以执行时的新鲜目录快照为准。模型模拟执行会明确标记，真实模型故障降级不收费。
+
+内部接口就绪后，仅将 AI 启动参数切回 `--catalog-mode internal`，并使用相同 E2E 验证严格模式。新环境和旧环境都不需要为组长模块增加数据库列，现有会话与账单表即可使用；其他成员的数据结构迁移由对应成员提供。
+
+详细操作、验收与协作边界见 [组长功能演示与交接](docs/组长功能演示与交接.md)。尚未完成其他两位成员的业务、Review 及最终集成前，不发布最终版 Tag。
 
 ## Pro 首次使用
 
