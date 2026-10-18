@@ -32,6 +32,6 @@
 
 ## D1 需要组长核实的 GitHub 设置
 
-- 新仓库当前有 `main` 和 `develop` 两个分支，默认分支为 `main`。
-- 添加其余成员协作者后，配置 PR Review、必需 CI 检查和禁止直接推送的 branch protection。成员 GitHub 登录名尚未提供，暂不能代为邀请。
-- `CONTRIBUTING.md` 将分支保护列为团队目标；GitHub 强制规则尚未配置，由黄岑果在成员加入后配置并验证。
+- 新仓库 `main` 与 `develop` 已设置保护，强制 PR、至少 1 个审批、最后一次 push 后审批、8 个 CI 检查、对话解决及管理员也适用；禁止强推/删除。
+- 其余成员协作者需用 GitHub 登录名邀请；登录名尚未提供。邀请后由组长验证协作权限及 PR Review。
+- PR #1 公共基础变更 CI 全绿，当前因 Review 规则保持 OPEN，不绕过组员审核。

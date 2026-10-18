@@ -28,7 +28,7 @@ git push -u origin feature/user-login
 
 随后在 Pro GitHub 仓库创建目标为 `develop` 的 Pull Request。任何人不得直接推送到 `main` 或 `develop`，不得用强制推送覆盖他人提交。合并统一采用 Squash and merge；原仓库的旧分支不参与 Pro 开发。
 
-当前新仓库的 GitHub 强制分支保护尚待组长在成员加入后配置。上述规定为团队协作要求，不代表平台已替团队强制执行。
+当前新仓库 `main`/`develop` 已配置 GitHub branch protection：必须 PR、1 个 approval、最后一次 push 后审批、全部 CI 检查通过、解决 review conversation；管理员亦受保护，禁止 force push 和删除。添加其余成员后须验证协作者权限。
 
 ## 提交信息
 
