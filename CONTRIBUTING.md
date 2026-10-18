@@ -1,13 +1,15 @@
 # 协作规范
 
+本项目升级仓库为 `https://github.com/magicapple123/AICapabilityHubPro`。原 `AICapabilityHub` 仅作为历史基线保留，不再作为 Pro 的推送目标。
+
 本文档是《AI能力开放平台-开发指南》第 10 章的执行摘要。开发动作以权威指南为准。
 
 ## 分支模型
 
 | 分支 | 用途 | 规则 |
 |---|---|---|
-| `main` | 始终可运行的稳定版本 | 受保护，禁止直接推送，仅组长合并 |
-| `develop` | 日常集成 | 只通过 Pull Request 合并 |
+| `main` | 始终可运行的稳定版本 | 团队目标为保护分支，仅通过 Review 后的 PR 合并 |
+| `develop` | 日常集成 | 团队目标为保护分支，只通过 Pull Request 合并 |
 | `feature/服务-功能` | 功能开发 | 从最新 `develop` 创建 |
 | `fix/服务-问题` | 缺陷修复 | 从最新 `develop` 创建 |
 
@@ -24,7 +26,9 @@ git commit -m "feat(user): 实现登录接口与JWT签发"
 git push -u origin feature/user-login
 ```
 
-随后在 GitHub 创建目标为 `develop` 的 Pull Request。任何人不得直接推送到 `main` 或 `develop`，不得用强制推送覆盖他人提交。合并统一采用 Squash and merge。
+随后在 Pro GitHub 仓库创建目标为 `develop` 的 Pull Request。任何人不得直接推送到 `main` 或 `develop`，不得用强制推送覆盖他人提交。合并统一采用 Squash and merge；原仓库的旧分支不参与 Pro 开发。
+
+当前新仓库的 GitHub 强制分支保护尚待组长在成员加入后配置。上述规定为团队协作要求，不代表平台已替团队强制执行。
 
 ## 提交信息
 
@@ -58,7 +62,7 @@ fix(chat): 修复模型超时未降级问题
 提交前至少完成以下检查：
 
 - Python 服务能导入 `app.main`，并通过 `/docs` 与网关路径自测。
-- 网关执行 `mvn -q -DskipTests package` 成功。
-- 前端执行 `pnpm build` 成功。
+- 网关执行 `mvn -q test` 成功。
+- 前端执行 `pnpm lint` 与 `pnpm build` 成功。
 - 日志包含 `requestId`，且未输出密码、JWT 或 API Key。
 

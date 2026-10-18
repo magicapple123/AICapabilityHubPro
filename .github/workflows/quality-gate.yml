@@ -83,8 +83,17 @@ jobs:
           docker exec -i -e "MYSQL_PWD=${MYSQL_ROOT_PASSWORD}" "$container_id" \
             mysql --protocol=tcp -uroot \
             < "$sql_file"
-      - run: python -m pytest -q -rs
+      - run: python -m pytest -q -rs --junitxml=test-results.xml
+      - name: Require executed database tests with zero skips
+        run: python ../../scripts/check_test_report.py test-results.xml
       - run: python -c "import app.main; print('import ok')"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pytest-${{ matrix.service }}
+          path: services/${{ matrix.service }}/test-results.xml
+          retention-days: 14
+          if-no-files-found: error
 
   web:
     name: Web lint and build
@@ -113,3 +122,27 @@ jobs:
         with:
           python-version: '3.12'
       - run: python scripts/contract_lint.py
+      - run: docker compose -f deploy/docker-compose.yml config --quiet
+      - run: python -m pip install 'pytest>=8,<9'
+      - run: python -m pytest tests/tooling -q
+
+  tooling-windows:
+    name: Windows public tooling
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'pytest>=8,<9'
+      - run: python -m pytest tests/tooling -q
+      - name: Validate PowerShell syntax and portable baseline guard
+        shell: pwsh
+        run: |
+          foreach ($file in Get-ChildItem scripts/*.ps1) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count) { throw "PowerShell parse failed: $($file.Name)" }
+          }
+          ./scripts/Assert-ProjectBaseline.ps1 -ProjectRoot $PWD -SourceRoot "$env:RUNNER_TEMP/not_present_source"

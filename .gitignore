@@ -31,3 +31,7 @@ Thumbs.db
 deploy/data/
 nacos-data/
 *.log
+
+# Local verification reports, safety snapshots, and generated evidence
+artifacts/
+test-results*.xml

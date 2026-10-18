@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import ast
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -46,7 +47,9 @@ def check_env_templates(errors: list[str]) -> None:
     expected = [
         ROOT / "deploy" / ".env.example",
         ROOT / "web" / ".env.example",
-        *SERVICE_DIR.glob("*/.env.example"),
+        *(SERVICE_DIR / name / ".env.example" for name in (
+            "user-service", "billing-service", "capability-service", "ai-chat-service"
+        )),
     ]
     for path in expected:
         if not path.exists():
@@ -86,17 +89,22 @@ def check_service_boundaries(errors: list[str]) -> None:
 
 
 def check_secret_hygiene(errors: list[str]) -> None:
-    patterns = (".env", ".pem", ".key", "credentials.json", "token.txt")
-    tracked = []
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or ".git" in path.parts or "node_modules" in path.parts:
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=ROOT, capture_output=True, check=True,
+    )
+    # Ignored local .env files are expected. Only staged/tracked and publishable
+    # untracked candidates are checked; dependency directories are not walked.
+    for value in set(result.stdout.decode("utf-8").split("\0")) - {""}:
+        path = Path(value)
+        name = path.name.lower()
+        if name == ".env.example":
             continue
-        if path.name == ".env.example":
-            continue
-        if any(path.name.lower().endswith(suffix) for suffix in patterns):
-            tracked.append(path)
-    for path in tracked:
-        errors.append(f"possible local secret file in workspace: {path.relative_to(ROOT)}")
+        sensitive = name == ".env" or name.startswith(".env.") or name.endswith((
+            ".pem", ".key", "credentials.json", "token.txt"
+        ))
+        if sensitive:
+            errors.append(f"possible credential file among Git candidates: {value}")
 
 
 def main() -> int:
@@ -104,7 +112,10 @@ def main() -> int:
     check_contracts(errors)
     check_env_templates(errors)
     check_service_boundaries(errors)
-    check_secret_hygiene(errors)
+    try:
+        check_secret_hygiene(errors)
+    except (OSError, subprocess.CalledProcessError):
+        errors.append("Git candidate scan failed; secret hygiene was not verified")
     result = {"root": str(ROOT), "errors": errors, "passed": not errors}
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if not errors else 1
