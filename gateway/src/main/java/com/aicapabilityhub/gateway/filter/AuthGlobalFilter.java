@@ -1,11 +1,12 @@
 package com.aicapabilityhub.gateway.filter;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 import java.util.UUID;
 
 import com.aicapabilityhub.gateway.security.JwtIdentity;
 import com.aicapabilityhub.gateway.security.JwtService;
+import com.aicapabilityhub.gateway.security.TrustedIdentityHeaders;
+import com.aicapabilityhub.gateway.security.InternalPaths;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -58,7 +59,9 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                     exchange, requestId, "anonymous");
         }
 
-        if (isWhitePath(path) || exchange.getRequest().getMethod() == org.springframework.http.HttpMethod.OPTIONS) {
+        boolean exchangePath = "/api/user/apikeys/exchange".equals(path)
+                && exchange.getRequest().getMethod() == org.springframework.http.HttpMethod.POST;
+        if (exchangePath || isWhitePath(path) || exchange.getRequest().getMethod() == org.springframework.http.HttpMethod.OPTIONS) {
             return withAccessLog(
                     chain.filter(withIdentityHeaders(exchange, null, requestId)),
                     exchange, requestId, "anonymous");
@@ -99,15 +102,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             ServerWebExchange exchange, JwtIdentity identity, String requestId) {
         ServerHttpRequest request = exchange.getRequest().mutate()
                 .headers(headers -> {
-                    // 丢弃客户端伪造的身份，只信任当前网关解析出的声明。
-                    headers.remove(HEADER_USER_ID);
-                    headers.remove(HEADER_USER_NAME);
-                    headers.remove(HEADER_REQUEST_ID);
-                    headers.set(HEADER_REQUEST_ID, requestId);
-                    if (identity != null) {
-                        headers.set(HEADER_USER_ID, identity.userId());
-                        headers.set(HEADER_USER_NAME, identity.userName());
-                    }
+                    TrustedIdentityHeaders.replace(headers, identity, requestId);
                 })
                 .build();
         return exchange.mutate().request(request).build();
@@ -121,11 +116,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private boolean isInternalPath(String path) {
-        String normalized = normalizePath(path).toLowerCase(Locale.ROOT);
-        return normalized.equals("/internal")
-                || normalized.startsWith("/internal/")
-                || normalized.endsWith("/internal")
-                || normalized.contains("/internal/");
+        return InternalPaths.containsInternalSegment(path);
     }
 
     private boolean isHealthPath(String path) {

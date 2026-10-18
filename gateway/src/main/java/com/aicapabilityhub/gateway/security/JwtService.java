@@ -42,10 +42,18 @@ public class JwtService {
 
         String userId = claims.getSubject();
         String userName = firstTextClaim(claims, "username", "user_name", "userName");
-        if (!StringUtils.hasText(userId) || !StringUtils.hasText(userName)) {
+        if (!StringUtils.hasText(userId) || !userId.matches("[1-9][0-9]{0,18}")
+                || !StringUtils.hasText(userName) || claims.getExpiration() == null) {
             throw new IllegalArgumentException("JWT 缺少用户身份声明");
         }
-        return new JwtIdentity(userId, userName);
+        String role = claims.get("role", String.class);
+        if (role == null) {
+            role = "user"; // 兼容旧登录 Token，绝不由请求头补出管理员角色。
+        }
+        if (!role.equals("user") && !role.equals("admin")) {
+            throw new IllegalArgumentException("JWT 角色声明无效");
+        }
+        return new JwtIdentity(userId, userName, role);
     }
 
     public String createDevToken(String userId, String userName) {

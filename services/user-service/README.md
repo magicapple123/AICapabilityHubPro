@@ -1,4 +1,8 @@
-# user-service
+# AICapabilityHub Pro · 用户与积分服务
+
+`user-service` 为 Pro 能力执行提供真实账号、JWT、Key 管理、余额预检和积分流水。角色/实时管理员授权、API Key 兑换短期 JWT 属于待交接升级，不能将既有 Key 管理接口等同于可用的凭证兑换。
+
+模块状态以 [根 README](../../README.md)、[实施看板](../../docs/升级实施看板.md)和当前接口契约为准；以下接口数量与技术细节描述已实现的基础服务。
 
 用户服务（FastAPI）。负责注册登录、JWT 签发、API Key、积分账户与积分流水，
 独立使用 `user_db`，**不调用任何其它服务**；被 `ai-chat-service`（校验积分）与

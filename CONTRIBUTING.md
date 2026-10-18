@@ -1,8 +1,8 @@
-# 协作规范
+# AICapabilityHub Pro · 协作与交付规范
 
 本项目升级仓库为 `https://github.com/magicapple123/AICapabilityHubPro`。原 `AICapabilityHub` 仅作为历史基线保留，不再作为 Pro 的推送目标。
 
-本文档是《AI能力开放平台-开发指南》第 10 章的执行摘要。开发动作以权威指南为准。
+Pro 的交付目标是能力目录、Schema、受控执行、计量和追踪形成一致链路。通用架构约定参考《AI能力开放平台-开发指南》；升级行为以已确认的 Pro 项目计划、当前 API 契约和验收记录为准。统一产品名称与文案见 [项目定位与描述规范](docs/项目定位与描述规范.md)。
 
 ## 分支模型
 
@@ -26,7 +26,7 @@ git commit -m "feat(user): 实现登录接口与JWT签发"
 git push -u origin feature/user-login
 ```
 
-随后在 Pro GitHub 仓库创建目标为 `develop` 的 Pull Request。任何人不得直接推送到 `main` 或 `develop`，不得用强制推送覆盖他人提交。合并统一采用 Squash and merge；原仓库的旧分支不参与 Pro 开发。
+日常集成在 Pro 仓库创建目标为 `develop` 的 PR；当前公共基础 PR #1 和业务 PR #2 已按项目负责人要求改以 `main` 为目标，尚未解除 Review 条件。后续以本次任务约定和实际 PR 目标为准。不得直接推送到受保护分支或强推覆盖他人提交；合并统一采用 Squash and merge，保留原仓库旧分支。
 
 当前新仓库 `main`/`develop` 已配置 GitHub branch protection：必须 PR、1 个 approval、最后一次 push 后审批、全部 CI 检查通过、解决 review conversation；管理员亦受保护，禁止 force push 和删除。添加其余成员后须验证协作者权限。
 

@@ -1,4 +1,8 @@
-# billing-service
+# AICapabilityHub Pro · 调用计量与账单服务
+
+`billing-service` 负责 Pro 调用明细、积分结算和用量查询。AI 执行链已按目录价格上报 `capability_id` 与 `points`，实际账单 cost、积分流水及 requestId 完成对齐；进一步的单价字段存储、管理员统计授权与迁移仍由本模块负责人交接。
+
+模块状态以 [根 README](../../README.md)、[实施看板](../../docs/升级实施看板.md)和当前接口契约为准；本地事务不代表跨服务分布式原子性。
 
 计量服务（FastAPI）。负责调用明细、幂等记账、按次扣分与用量统计，独立使用
 `billing_db`；扣分只通过 `user-service` 的 `/internal/user/points/deduct`，

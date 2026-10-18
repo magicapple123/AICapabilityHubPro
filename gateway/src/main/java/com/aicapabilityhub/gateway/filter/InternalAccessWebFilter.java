@@ -1,20 +1,18 @@
 package com.aicapabilityhub.gateway.filter;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 import java.util.UUID;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.aicapabilityhub.gateway.security.InternalPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.io.buffer.DataBuffer;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
 import org.springframework.web.server.WebFilterChain;
@@ -52,14 +50,7 @@ public final class InternalAccessWebFilter implements WebFilter, Ordered {
     }
 
     private boolean isInternalPath(String path) {
-        if (!StringUtils.hasText(path)) {
-            return false;
-        }
-        String normalized = path.length() > 1 && path.endsWith("/")
-                ? path.substring(0, path.length() - 1)
-                : path;
-        String lower = normalized.toLowerCase(Locale.ROOT);
-        return lower.equals("/internal") || lower.startsWith("/internal/");
+        return InternalPaths.containsInternalSegment(path);
     }
 
     private Mono<Void> writeForbidden(ServerWebExchange exchange, String requestId) {

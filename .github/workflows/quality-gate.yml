@@ -111,6 +111,7 @@ jobs:
           cache: true
           require-lockfile: true
       - run: pnpm lint
+      - run: node --experimental-strip-types --test tests/chat-schema.test.ts
       - run: pnpm build
 
   repository:
@@ -146,3 +147,60 @@ jobs:
             if ($parseErrors.Count) { throw "PowerShell parse failed: $($file.Name)" }
           }
           ./scripts/Assert-ProjectBaseline.ps1 -ProjectRoot $PWD -SourceRoot "$env:RUNNER_TEMP/not_present_source"
+
+  leader-integration:
+    name: Leader real-service integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      nacos:
+        image: nacos/nacos-server:v2.5.1
+        env:
+          MODE: standalone
+          JVM_XMS: 256m
+          JVM_XMX: 512m
+        ports:
+          - 8848:8848
+          - 9848:9848
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: services/*/requirements.txt
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Install isolated service environments
+        run: |
+          python - <<'PY'
+          import subprocess, sys
+          from pathlib import Path
+          for service in sorted(Path('services').glob('*-service')):
+              environment = service / '.venv'
+              subprocess.run([sys.executable, '-m', 'venv', str(environment)], check=True)
+              subprocess.run([str(environment / 'bin/python'), '-m', 'pip', 'install', '-r', str(service / 'requirements.txt')], check=True)
+          PY
+      - name: Test and package Gateway
+        run: mvn -q -f gateway/pom.xml package
+      - uses: pnpm/setup@v3
+        with:
+          version: '11'
+          runtime: node@24
+          working-directory: web
+          cache: true
+          require-lockfile: true
+      - name: Install Chromium for browser acceptance
+        run: pnpm --dir web exec playwright install --with-deps chromium
+      - name: Verify leader chain with the existing published catalog
+        run: python scripts/run_leader_e2e.py --nacos 127.0.0.1:8848 --catalog-mode market --browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: leader-real-service-evidence
+          path: artifacts/leader-e2e/
+          retention-days: 14
+          if-no-files-found: error

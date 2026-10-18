@@ -9,14 +9,24 @@ export interface ChatMessagePayload {
 }
 
 export interface ChatCompletionPayload {
+  capability_id?: number
+  input?: Record<string, unknown>
   /** 为空时新建会话；传入时必须是自己会话，否则返回 4004。 */
   session_id?: number
   model?: string
-  messages: ChatMessagePayload[]
+  messages?: ChatMessagePayload[]
   temperature?: number
 }
 
 export interface ChatCompletionData {
+  capability_id: number
+  capability_code: string
+  price_per_call: number
+  cost: number
+  request_id: string
+  record_id: number | null
+  billing_status: 'recorded' | 'not_reported'
+  catalog_source: 'internal' | 'market'
   id: string
   object: string
   created: number
@@ -56,7 +66,7 @@ export interface ChatHistoryMessage {
 }
 
 export const completeChat = (data: ChatCompletionPayload) =>
-  request<ChatCompletionData>({ method: 'POST', url: '/chat/completions', data })
+  request<ChatCompletionData>({ method: 'POST', url: '/chat/completions', data, timeout: 90_000 })
 
 export const fetchChatSessions = (params: { page?: number; page_size?: number } = {}) =>
   request<PageData<ChatSession>>({ method: 'GET', url: '/chat/sessions', params })

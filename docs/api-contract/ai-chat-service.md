@@ -1,5 +1,7 @@
 # ai-chat-service 接口契约
 
+> **Pro 已实施（2026-10-19）：** 第 8 节为现行升级契约。第 1–7 节保留兼容字段说明；其“固定单价”和旧执行顺序由第 8 节替代。
+
 > 负责人：黄岑果
 > 服务名：`ai-chat-service`
 > 数据库：`ai_chat_db`（只有本服务可访问）
@@ -146,6 +148,48 @@
 | `POINTS_COST` | `1` | 每次成功对话扣减的积分（降级为 0） |
 
 禁止提交真实 `.env`、模型 Key 与 Token。
+
+## 8. Pro 能力执行契约（现行）
+
+调用方仍使用 `POST /api/chat/completions`，统一响应为 `code/message/data/requestId`。
+
+聊天请求：
+
+```json
+{"capability_id":1,"input":{"messages":[{"role":"user","content":"你好"}]}}
+```
+
+摘要请求：
+
+```json
+{"capability_id":2,"input":{"text":"待概括的材料","max_length":200}}
+```
+
+- `capability_id` 必须是正整数，兼容旧请求时缺省为 1；旧顶层 `messages` 仍可用，但必须重新读取目录，不绕过状态/Schema/价格。
+- `input` 与非空顶层 `messages` 互斥；`stream=true`、请求中的价格/URL 等未知字段均返回 `2001`。
+- 聊天仅接受 1–40 条消息，最后一条须为 user；单条内容 1–12000 字符。摘要接受非空白 `text`（≤12000）和整数 `max_length`（30–1000，缺省 200）。摘要不接受 `session_id`，每次保存独立会话。
+- 执行顺序：验证身份 → 新鲜目录快照 → online/code/Schema/执行器输入校验 → 按目录价检查积分 → 会话归属/消息落库 → 模型/Mock → 助手落库 → 计量收据核对 → 本地提交。
+- allowlist 只有 `chat-completions`、`long-summary`；未知 code 返回 `2008`。目录中的 service/path/URL 不参与执行目标选择。
+- Schema 使用 JSON Schema Draft 2020-12；限制结构大小、深度，禁止 `$ref`、动态引用和 `$id`，不允许 Schema 触发远程读取。目录 Schema 无效为 `4002`；输入不匹配为 `2001`。
+- 默认 `CAPABILITY_CATALOG_MODE=internal`，经 `call_internal` 读取 `GET /internal/capability/{id}`。要求返回 `id/code/status/param_schema/price_per_call`；缺失、类型错误、ID 不符、依赖异常均失败关闭，绝不自动切换数据来源。
+- 显式 `CAPABILITY_CATALOG_MODE=market` 用于内部接口尚未交接的本地兼容联调，仅经服务发现读取已存在、固定路径的 `GET /api/capability/market/{id}`。该端点只返回 online 记录；404/业务 2002 不可执行。此模式不是内部详情接口已验收的证据。
+- 计量上报包含 `capability_id`、`unit_price`、`points`、用户 ID、requestId、状态、模型、耗时。`points` 为目录价；降级为 0，单价仍保留真实目录价。现有 billing 使用 `points` 持久化 cost，新增 `unit_price` 的独立存储由其负责人扩展。
+- user 预检必须回传相符 user_id、正常状态、余额、points_cost 和 available；billing 收据必须匹配 requestId/user_id/capability_id/cost/status，否则不能报成功。
+- `ENABLE_INTERNAL_CHAIN=false` 只供测试，仍执行目录/Schema 校验；响应标记 `billing_status=not_reported`，不能作为计费通过证据。
+
+成功 data 保留原 OpenAI/会话字段，新增：
+
+```json
+{"capability_id":2,"capability_code":"long-summary","price_per_call":3,"cost":3,
+ "request_id":"与外层requestId及响应头相同","record_id":12,"billing_status":"recorded",
+ "catalog_source":"internal"}
+```
+
+`GET /api/chat/executors`（需要登录）返回 `codes`、`input_schemas`、`catalog_mode`，供调试台识别已实现的执行器；不表示目录中的所有能力都可用。
+
+本地消息事务失败会回滚。远端扣分/billing 已提交而本地最终 commit 失败时，不能声称全局回滚，须按 requestId 对账；不得盲目重试模型或宣称分布式事务原子性。
+
+Gateway 冻结的兑换入口为精确 `POST /api/user/apikeys/exchange`；每个直接连接地址每分钟最多 10 次，响应禁止缓存。role 只来自已验证签名 JWT，`X-User-*`、role 别名及客户端 requestId 被替换。管理实时授权、Key 校验/TTL 仍由相关服务负责人实现。
 
 ## 7. 测试数据
 
