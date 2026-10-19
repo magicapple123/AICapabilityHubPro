@@ -4,6 +4,8 @@
 
 本模块提供 Pro 的开发者界面：能力市场、Schema 驱动调试、聊天与文本摘要、会话历史、积分与用量查询。浏览器只访问 Gateway 的 `/api/**`，不直连 Python 服务。
 
+PR #1/#2已合入main；当前开发入口为[Pro指南](../AICapabilityHubPro-开发指南.md)、[共享契约](../docs/api-contract/pro-shared.md)和[文档索引](../docs/README.md)，不再从旧develop或归档分工重建前端。
+
 ## 当前页面
 
 | 页面 | 路径 | 当前范围 |

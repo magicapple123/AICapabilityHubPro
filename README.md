@@ -4,6 +4,8 @@
 
 按能力执行，让参数、费用与调用结果可追踪。
 
+**开发入口：** [AICapabilityHub Pro 开发指南](AICapabilityHubPro-开发指南.md) · [文档索引](docs/README.md) · [跨成员共享契约](docs/api-contract/pro-shared.md)。原指南与旧阶段分工已归档，不再指导当前开发。
+
 AICapabilityHub Pro 面向 AI 能力的接入、调试与调用核验。开发者选择能力后，平台读取该能力的最新状态、输入 Schema 和积分单价，通过受控的聊天或文本摘要执行器完成请求，并将能力 ID、实际费用、账单和积分流水串联到同一个 requestId。
 
 本项目由前三周的 AICapabilityHub 基础版本演进而来。Pro 的重点是**能力目录驱动的执行闭环**：把“选择什么能力、提交哪些参数、消耗多少积分、在哪里核对结果”放到同一条链路中。当前处于团队集成阶段，已实现范围和待交接内容见下表。
@@ -34,7 +36,7 @@ AICapabilityHub Pro 面向 AI 能力的接入、调试与调用核验。开发�
 | 角色与权限 | JWT role 可信传递 | 业务端实时管理员授权、角色数据与迁移待成员完成 |
 | API Key 兑换 | Gateway 精确 POST 白名单、限流、no-store | Key 校验、有效期和短期 JWT 签发待成员完成 |
 
-“已实现”描述本说明对应的 Pro 业务代码。当前代码通过 PR #2 提交，`main` 是否已具备这些内容，以实际合并状态为准。其他成员尚未交付的权限、Key 兑换和内部目录接口不列为已完成能力。完整最终版尚未发布。
+“已实现”描述本说明对应的 Pro 业务代码。PR #1/#2 已合入 main 的 1b89ce8，合并后 CI 9/9；其他成员尚未交付的权限、Key 兑换和内部目录接口不列为已完成能力。完整最终版尚未发布。
 
 视觉理解、语音转写、知识检索等不属于本期可执行能力。平台只调用代码中明确允许的执行器，不执行用户传入的目标 URL，也不把目录中的 service/path 当作任意代理地址。
 
@@ -80,8 +82,7 @@ Gateway 使用 JDK 21、Maven 3.9.x、Spring Boot 3.5 / Spring Cloud 2025；前�
 ```powershell
 git clone https://github.com/magicapple123/AICapabilityHubPro.git
 Set-Location AICapabilityHubPro
-# PR #2 尚未合并时，先切到对应业务分支；合并后可使用 main。
-git switch feature/pro-leader-business
+git switch main
 
 python scripts/init_dev.py --install
 .\scripts\Test-ProEnvironment.ps1
@@ -156,7 +157,7 @@ python scripts/run_leader_e2e.py --catalog-mode market --browser
 
 数据库 pytest 含测试行清理逻辑，应连接专用验收实例，不能直接使用开发数据库。CI 为四个服务提供隔离 MySQL，并用 `scripts/check_test_report.py` 拒绝空报告、跳过、失败和错误。E2E 单独创建数据库/进程/端口，模型端使用本地 HTTP 测试替身，测试后保留日志和数据卷以供复核。
 
-2026-10-19 的业务基线提交 `3678cbb` 已验证：
+2026-10-19 的已合并 main 基线 `1b89ce8`（业务来源 `3678cbb`，主分支 CI `39155554390`）已验证：
 
 | 范围 | 结果 |
 |---|---|
@@ -190,7 +191,7 @@ AICapabilityHubPro/
 
 黄岑果负责 Gateway、AI 执行链、调试台与集成；黄禹菲负责用户/计量、角色、Key 和设置；夏思凯负责目录、运营授权、Schema 与市场入口。当前边界和待办以 [实施看板](docs/升级实施看板.md) 为准。
 
-`main` 承载经评审合入的版本，`develop` 用于团队集成，功能通过 PR 交付。现有 PR #1/#2 以 `main` 为合并目标；保护规则和 Review 以 GitHub 当前配置为准，不通过文档更新绕过审批。原仓库、旧分支与原始数据保留。
+当前从最新 origin/main 开发并提交目标 main 的 PR；develop 尚未同步这批 Pro 升级，主动同步确认前不作为成员起点。PR #1/#2 已在用户授权的单次 Review 例外下合并，原保护已恢复；例外不等于组员人工 Review，也不授权后续取消审批。原仓库、旧分支与原始数据保留。
 
 项目统一名称、简介、About 和对外表达见 [项目定位与描述规范](docs/项目定位与描述规范.md)。详细协作流程见 [CONTRIBUTING](CONTRIBUTING.md)，接口以 [Pro 执行契约](docs/api-contract/ai-chat-service.md) 和各服务契约为准。
 

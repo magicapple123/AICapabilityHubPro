@@ -1,4 +1,6 @@
-# user-service 接口契约
+# AICapabilityHub Pro · user-service 接口契约
+
+**实现状态（2026-10-19，main 1b89ce8）：** 下文现有账号、Key 管理、积分和内部扣分已实现；第 7 节的 role、实时授权及 Key exchange 为已明确的 Pro 待实现任务。统一规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)及[共享契约](pro-shared.md)，不得再按原版“仅展示 Key”的目标删掉凭证校验基础。
 
 > 负责人：黄禹菲
 > 服务名：`user-service`
@@ -11,14 +13,14 @@
 
 ## 0. 通用约定
 
-- **登录要求**：`/api/user/register`、`/api/user/login` 属网关白名单（**精确路径**，不带尾斜杠）；`/api/user/profile`、`/api/user/apikeys/**`、`/api/user/points/**` 需要网关 JWT。`/health` 不需要登录。
-- **内部接口**：`/internal/user/**` 只允许其它后端服务经基座 `call_internal` 调用。网关对外部访问 `/internal/**` 一律返回 403；本服务另校验 `X-User-Id`（身份）与 `X-Request-Id`（幂等键），二者缺失或身份与目标用户不一致时返回 `1001`。
+- **登录要求**：register/login 为公开入口，其余已实现用户接口需 JWT；精确 POST `/api/user/apikeys/exchange` 已有 Gateway 白名单，但 user 服务端尚未实现，不将 Key 列表/管理接口变成匿名。health 公开，ping 经网关需认证。
+- **内部接口**：`/internal/user/**` 只允许可信后端经call_internal调用，Gateway对外403。现有内部依赖检查X-User-Id/Request-Id存在与ID格式；扣分另外比较body.user_id与调用者，不符1001。GET check当前未单独比较query.user_id与调用者，这是Pro待补强项，不能写成已完成该校验。
 - **身份来源**：从网关注入的 `X-User-Id` / `X-User-Name` / `X-Request-Id` 读取，服务内不重复解析 JWT。`X-User-Id` 必须是正整数，否则按未认证处理。
 - **账号状态校验**：网关只校验 JWT 签名与有效期，**不知道账号是否已被禁用**，因此被禁用账号在 Token 过期前仍能通过网关。除 `register` / `login` / `/health` 外，所有接口都会自行校验账号状态（user-service 拥有 `t_user`，一次主键查询即完成）；账号不存在或 `status=disabled` 一律返回 `1005`。`register` / `login` 不做该校验，以便被禁用用户仍能收到明确的 `1005` 提示。
 - **分页格式**：`data = {"list": [...], "total": 100, "page": 1, "page_size": 10}`；`page_size` 默认 10、最大 100。API Key 列表不分页（单个用户 Key 数量少，前端一次取全）。
 - **软删除**：所有查询默认过滤 `is_deleted=0`；本期没有物理删除接口。
 - **时间格式**：`create_time` / `update_time` 返回 `YYYY-MM-DD HH:MM:SS`（Asia/Shanghai）；登录响应的 `expire_at` 为 **UTC** 时间，格式同上。
-- **金额语义**：积分一律整型（个），不使用浮点（指南 5.5）。
+- **金额语义**：amount、points_cost、price_per_call、cost 均为整数积分；AI 已按最新目录价传 points_cost，正常收费同价、降级零费。
 - **口令安全**：口令以 PBKDF2-HMAC-SHA256 加盐哈希存储，格式 `pbkdf2_sha256$<iterations>$<salt_hex>$<hash_hex>`；任何出参都不包含 `password` / `password_hash`。日志不打印口令、Token 与密钥。
 - **JWT 签发**：`HS256`，必须携带 `iss`（默认 `ai-capability-hub`）、`sub`（用户 ID）、`username` claim 与过期时间，密钥取自 `JWT_SECRET`（UTF-8 后 ≥ 32 字节）。`.env` 中的 `JWT_SECRET` / `JWT_ISSUER` 必须与网关一致，否则登录成功但经网关访问返回 1001。
 
@@ -33,7 +35,7 @@
 | `password_hash` | VARCHAR(255) | NOT NULL | PBKDF2 自描述哈希串，禁止明文 |
 | `nickname` | VARCHAR(32) | NOT NULL DEFAULT '' | 昵称，缺省等于 `username` |
 | `status` | VARCHAR(16) | NOT NULL DEFAULT 'normal' | `normal` 正常 / `disabled` 禁用 |
-| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见指南 5.5 |
+| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见Pro开发指南第9节及当前sql/01_init.sql |
 
 ### `t_api_key`
 
@@ -47,9 +49,9 @@
 | `secret_mask` | VARCHAR(32) | NOT NULL DEFAULT '' | 展示掩码，如 `sk_****a1b2` |
 | `status` | VARCHAR(16) | NOT NULL DEFAULT 'enabled' | `enabled` / `disabled` |
 | `expire_time` | DATETIME | NULL | 过期时间，NULL 表示永不过期 |
-| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见指南 5.5 |
+| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见Pro开发指南第9节及当前sql/01_init.sql |
 
-> **对附录 B 的扩展说明**：附录 B 只列出 `secret_mask`。若仅存掩码则无法校验密钥，因此本服务额外增加 `secret_hash` 列，用摘要替代明文；`secret_mask` 仅用于展示。需在契约 Review 时确认该扩展。
+> secret_hash 是现有真实实现，secret_mask 仅供展示；两者职责不同，不能删掉摘要来恢复原版附录。现有创建响应字段为 access_key 和仅一次返回的 secret_key，后续兑换沿用其凭证语义。
 
 ### `t_points_account`
 
@@ -60,7 +62,7 @@
 | `balance` | BIGINT | NOT NULL DEFAULT 0 | 可用积分余额，条件更新下永不为负 |
 | `frozen` | BIGINT | NOT NULL DEFAULT 0 | 冻结积分，本期不做冻结，恒为 0 |
 | `version` | INT | NOT NULL DEFAULT 0 | 变更次数，便于对账 |
-| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见指南 5.5 |
+| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见Pro开发指南第9节及当前sql/01_init.sql |
 
 ### `t_points_log`
 
@@ -74,7 +76,7 @@
 | `biz_type` | VARCHAR(32) | NOT NULL DEFAULT '' | `register` 注册赠送 / `call` 能力调用 |
 | `request_id` | VARCHAR(64) | NOT NULL | **幂等键**；注册赠送为 `register-{user_id}`，调用扣分复用全链路 requestId |
 | `remark` | VARCHAR(255) | NOT NULL DEFAULT '' | 备注 |
-| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见指南 5.5 |
+| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见Pro开发指南第9节及当前sql/01_init.sql |
 
 **索引**：`UNIQUE(request_id, is_deleted)` 是扣分幂等的最终防线；`INDEX(user_id, is_deleted, create_time)` 支撑流水分页。
 
@@ -215,20 +217,20 @@
 | 3001 | 积分不足 | 余额 < `points_cost`，或扣分时条件更新影响行数为 0 | 3xxx |
 | 4003 | 系统内部错误 | 未预期异常、`JWT_SECRET` 未正确配置 | 4xxx |
 
-> **号段说明**：用户/认证类错误使用 `10xx`；积分不足按指南 5.2 与 3.4 使用计费号段 `3001`，与 billing-service 判定口径一致。`request_id` 冲突属于幂等重放，不算错误，返回 `code=0` + `duplicated=true`。
+> 用户/认证使用10xx，积分不足3001与billing一致。扣分request_id重复且实际语义可重放时返回duplicated=true；不同字段冲突处理以实现/测试和共享契约记录，不应把所有冲突都概括为正常重放。
 
-## 7. 待确认事项（需在契约 Review 时与组长确认）
+## 7. Pro 待实现与兼容要求
 
-1. **`t_api_key.secret_hash` 扩展列**：附录 B 只列 `secret_mask`，本服务为支持密钥校验新增 `secret_hash`。若确认 API Key 本期只做管理展示、不参与鉴权，可去掉该列。
-2. **账号状态校验放在哪里**：本期采用「网关只认证 + 各业务服务自查状态」的方案——网关无数据库、也无 Token 吊销能力，`JWT_SECRET` 一致即放行，所以 user-service 在每个需要登录的接口上做一次主键查询校验。代价是每个请求多一次索引查询（本服务自己的库，可接受），收益是不需要引入 Redis/黑名单等本期非目标组件。若后续要彻底解决（禁用即时生效、减少重复查询），候选方案：① 网关或专用服务维护 Token 黑名单；② 缩短 `JWT_TTL` 并配合刷新令牌。**请确认本期方案即可。**
-3. **运营/管理权限**：禁用用户、查看他人数据等运营动作本期没有对外接口（`status` 只能由 SQL 或后续运营接口变更）。平台尚无角色体系，与 capability-service 契约第 6 节同类问题。被禁用账号的 API Key 也不会被自动吊销，需运营在账号层面处理。
-4. **积分单位与 `price_per_call` 口径**：本服务 `amount` 为整数积分数；需确认与 capability-service 的 `price_per_call`（每次调用积分单价）同口径。当前 ai-chat 用配置项 `POINTS_COST` 上报，未按 `capability_id` 查单价，因此 billing 侧 `capability_id` 缺省为 0。
-5. **API Key 是否需要参与网关鉴权**：本期网关只接受 JWT，API Key 仅做管理；若后续要求 `Authorization: ApiKey <key>` 鉴权，需要网关与 `secret_hash` 校验联动。
-6. **`frozen` / `version` 语义**：`frozen` 本期恒为 0；`version` 仅作对账计数，未做乐观锁版本号比较（扣分靠条件更新的 `balance >= cost` 保证）。如需真正的版本号乐观锁（读改写场景），需要重新评审。
+1. **角色与迁移**：当前 user 数据模型/登录响应尚未交付角色。新增 user/admin，注册默认 user，拒绝通过注册/资料指定 admin；数据库增量迁移保留旧用户，提供受控本地管理员初始化。Gateway 已验证签名 role，缺失 role 的旧 JWT 默认 user。
+2. **实时授权**：实现 GET `/internal/user/authorization?user_id=<当前用户ID>&required_role=admin`，校验身份一致及当前 DB 状态/角色。成功返回 user_id/status/role/authorized；1001 身份、1005 禁用、不满足 admin 为新增 **1007**。现有 **1006 继续表示 API Key 不存在**，不得复用。完整约定见 [pro-shared](pro-shared.md)。
+3. **Key exchange**：固定 POST `/api/user/apikeys/exchange`，凭证在 JSON body，沿用 access_key/secret_key 语义。核验摘要、所有者、当前账号、Key 状态/过期，TTL 可配且有硬上限，身份/角色不可由客户端指定。请求精确字段与 TTL 需随实现补齐契约和测试；当前不能宣称兑换可用。
+4. **凭证与账号边界**：secret 只创建时展示，列表不返回 secret/hash，错误凭证不泄露 Key 是否存在；禁用账号不得因 Key 尚未禁用而继续兑换或管理。实时管理授权由业务调用方接入，不在 Gateway 伪造 DB 权限。
+5. **积分一致性**：AI已按capability_id关联目录价，billing points映射实际cost；保留余额条件更新。user现有扣分按requestId命中即返回旧流水，尚未像billing一样严格比较所有重放字段，需补齐冲突负例及兼容处理。GET check也需比较query.user_id与调用者。frozen当前恒0、version为更新计数，不误称读版本比较的乐观锁。
+6. **验收**：权限撤销/依赖故障、Key 失效/过期/摘要错误、TTL 上限、余额不足和迁移保留均需负例。单测替身与真实联调分别记录，禁止使用开发库跑会清理 qa 行的夹具。
 
 ## 8. 测试数据计划
 
-按指南 13.2，提供可重复导入的初始化数据（`sql/02_seed.sql`），口令均为公开演示口令 `demo123456`：
+隔离示例库使用 `sql/02_seed.sql`，口令均为公开本地演示口令 `demo123456`：
 
 | 用户 | 状态 | 余额 | 用途 |
 |---|---|---|---|
@@ -236,4 +238,4 @@
 | `demopoor` | `normal` | 0 | 积分不足分支：`3001` |
 | `demodisabled` | `disabled` | 50 | 禁用用户分支：`1005` |
 
-脚本使用 `INSERT ... ON DUPLICATE KEY UPDATE`（MySQL 8.0.19+ 语法），可重复执行；口令哈希为 PBKDF2-HMAC-SHA256（240000 次迭代）真实哈希，可直接登录，不含任何真实密钥。
+脚本重复执行会更新同名示例数据，不是保留业务数据的迁移。口令哈希为 PBKDF2-HMAC-SHA256 真实演示哈希；只用于明确的隔离/首次示例环境，现有业务库升级必须走增量迁移。

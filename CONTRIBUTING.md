@@ -1,68 +1,51 @@
-# AICapabilityHub Pro · 协作与交付规范
+# AICapabilityHub Pro 协作与交付规范
 
-本项目升级仓库为 `https://github.com/magicapple123/AICapabilityHubPro`。原 `AICapabilityHub` 仅作为历史基线保留，不再作为 Pro 的推送目标。
+开发规则从 [Pro 开发指南](AICapabilityHubPro-开发指南.md)、[共享契约](docs/api-contract/pro-shared.md)和本人任务出发。原指南仅历史参考，不能要求重新搭建或降低 Pro 权限/计费标准。
 
-Pro 的交付目标是能力目录、Schema、受控执行、计量和追踪形成一致链路。通用架构约定参考《AI能力开放平台-开发指南》；升级行为以已确认的 Pro 项目计划、当前 API 契约和验收记录为准。统一产品名称与文案见 [项目定位与描述规范](docs/项目定位与描述规范.md)。
+## 分支与仓库
 
-## 分支模型
-
-| 分支 | 用途 | 规则 |
-|---|---|---|
-| `main` | 始终可运行的稳定版本 | 团队目标为保护分支，仅通过 Review 后的 PR 合并 |
-| `develop` | 日常集成 | 团队目标为保护分支，只通过 Pull Request 合并 |
-| `feature/服务-功能` | 功能开发 | 从最新 `develop` 创建 |
-| `fix/服务-问题` | 缺陷修复 | 从最新 `develop` 创建 |
-
-## 标准流程
+唯一 Pro 推送仓库为 magicapple123/AICapabilityHubPro，原仓库/分支保留。PR #1/#2 已合并 main 的1b89ce8；develop尚未同步这批Pro功能，当前从最新origin/main开发、PR目标main。
 
 ```powershell
-git checkout develop
-git pull origin develop
-git checkout -b feature/user-login
-
-# 开发并完成本地自测后，小步提交。
-git add .
-git commit -m "feat(user): 实现登录接口与JWT签发"
-git push -u origin feature/user-login
+git fetch origin
+git switch -c feature/pro-自己的任务 origin/main
+# 自测、检查git diff并明确选择文件暂存后提交
+git commit -m "feat(user): implement current-role authorization"
+git push -u origin feature/pro-自己的任务
 ```
 
-日常集成在 Pro 仓库创建目标为 `develop` 的 PR；当前公共基础 PR #1 和业务 PR #2 已按项目负责人要求改以 `main` 为目标，尚未解除 Review 条件。后续以本次任务约定和实际 PR 目标为准。不得直接推送到受保护分支或强推覆盖他人提交；合并统一采用 Squash and merge，保留原仓库旧分支。
+不要从旧develop缺失Pro代码，也不要强推覆盖他人提交。成员各用独立工作区；本地有未提交修改先保留，不通过reset/clean解决。
 
-当前新仓库 `main`/`develop` 已配置 GitHub branch protection：必须 PR、1 个 approval、最后一次 push 后审批、全部 CI 检查通过、解决 review conversation；管理员亦受保护，禁止 force push 和删除。添加其余成员后须验证协作者权限。
+## Review 与合并
 
-## 提交信息
+- main/develop保留PR、至少1位审批、最后push后审批、对话解决、线性历史、管理员受约束和禁止强推/删分支。
+- 原8项检查是当前GitHub必需contexts，工作流另有真实服务/浏览器第9项，发布核对全部9项。
+- 组长PR由另一成员Review，其他成员PR由适当负责人Review；AI验收与CI不能替代人工审批。
+- 先前合并的单次Review例外已使用并恢复，不可自动用于后续PR。
+- 合并采用Squash，按依赖顺序；同步基础分支冲突时核对完整文件树与测试，不盲选ours/theirs、不强推。
+- 最终Tag要求三人业务、迁移、严格内部模式和评审通过，不把当前组长阶段发布成最终版。
 
-格式为 `<type>(<scope>): <简述>`：
+## 修改范围
 
-- `type`：`feat`、`fix`、`docs`、`refactor`、`test` 或 `chore`。
-- `scope`：`user`、`capability`、`billing`、`chat`、`gateway`、`web` 等模块名。
-- 一次提交只完成一件事，不混入其他服务的无关改动。
+黄岑果：Gateway、ai-chat、Chat/features/chat、公共工具/CI/文档。
+黄禹菲：user/billing、Settings、相关API/契约/迁移。
+夏思凯：capability、市场/运营能力UI、目录契约/SQL。
 
-示例：
+公共类型和跨成员依赖先按[共享契约](docs/api-contract/pro-shared.md)对齐。不要重做已实现模块或以静态Mock替代待交接端点。新增授权不足用1007，现有1006仍表示Key不存在。
 
-```text
-feat(billing): 增加按次扣分与幂等校验
-fix(chat): 修复模型超时未降级问题
-```
+## 代码与数据
 
-## 目录边界
+API→Service→Repository→Model/Schema单向职责；单文件优先≤300行，>500行先拆分或说明限制，入口只装配。数据库各服务独立，跨服务call_internal，不跨库。
 
-- 成员只修改自己负责的服务目录。
-- `gateway/`、`platform-py/`、`docs/api-contract/` 属于公共区域，修改前先同步组长。
-- 服务只连接自己的数据库；跨服务数据必须调用 `/internal/**` 契约，禁止跨库查询。
-- 地址、端口、密钥和开关必须来自环境变量或 Nacos；真实 `.env` 与密钥不得提交。
+配置来自环境/Nacos，现有.env保留，不提交真实Token/Key/口令。日志带requestId，但不打印凭证、摘要或原始用户输入。
 
-## Pull Request 要求
+结构升级提交可重复的增量迁移、旧数据核验和恢复说明；seed会改写演示数据，不能当迁移。数据库pytest使用专用实例，不清开发库。远端扣分/账单与消息本地事务不是分布式原子提交，失败按requestId对账。
 
-- 一个任务对应一个 Pull Request，标题沿用提交信息格式。
-- 至少一人完成 Code Review；成员 PR 由组长批准，组长 PR 由其他成员批准。
-- Review 必查统一响应、错误码、命名、数据库边界、硬编码配置和接口契约。
-- 接口行为或字段变化时，同步更新 `docs/api-contract/`。
+## PR 交付
 
-提交前至少完成以下检查：
+标题采用type(scope):具体行为，说明问题、实现、兼容/迁移、验证证据及剩余依赖。契约逐项区分已实现/待交接；只有实际依赖联调成功才勾为完成。
 
-- Python 服务能导入 `app.main`，并通过 `/docs` 与网关路径自测。
-- 网关执行 `mvn -q test` 成功。
-- 前端执行 `pnpm lint` 与 `pnpm build` 成功。
-- 日志包含 `requestId`，且未输出密码、JWT 或 API Key。
+相关单测、Web lint/build、契约检查和真实链按改动执行；JUnit必须有实际执行、DB零跳过。禁止删测试、xfail/skip或降低类型/安全校验来让检查通过。
+
+文档更新需检查链接、命令、代码块、原版误导语句与功能状态；历史记录移到[归档](docs/archive/README.md)，不伪造新测试。文件修改前扫描/备份，删除清理遵守AGENTS回收站规则。
 

@@ -20,3 +20,6 @@
 ## 截图 / 接口返回（可选）
 
 
+<!-- Pro规范：AICapabilityHubPro-开发指南.md；共享契约：docs/api-contract/pro-shared.md。
+明确当前实现/待交接、角色/Key与Schema/价格兼容、数据迁移、真实验收及Review；旧归档不作为现行开发要求。 -->
+
