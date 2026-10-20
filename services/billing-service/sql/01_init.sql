@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS t_call_record (
   user_id BIGINT NOT NULL COMMENT '调用用户 ID',
   capability_id BIGINT NOT NULL DEFAULT 0 COMMENT '能力 ID，0 表示未关联具体能力',
   service_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '承载调用的服务名',
+  unit_price BIGINT NULL COMMENT '登记单价，历史未知为 NULL',
   cost BIGINT NOT NULL DEFAULT 0 COMMENT '本次消耗积分（整数）',
   call_status VARCHAR(16) NOT NULL DEFAULT 'success' COMMENT '调用状态 success成功 degraded降级 failed失败',
   duration_ms INT NOT NULL DEFAULT 0 COMMENT '调用耗时（毫秒）',

@@ -9,6 +9,12 @@
 
 import hashlib
 import secrets
+from datetime import datetime, timedelta, timezone
+import math
+
+from app.core.config import settings
+from app.core.jwt_util import create_token
+from app.schemas.apikey import ApiKeyExchangeRequest
 
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
@@ -84,6 +90,30 @@ class ApiKeyService:
         db.refresh(api_key)
         logger.info("API Key 已创建 key_id={} user_id={}", api_key.id, user_id)
         return api_key, secret_key
+
+    def exchange(self, db: Session, payload: ApiKeyExchangeRequest) -> dict:
+        key = self.api_keys.find_by_access_key(db, payload.access_key)
+        digest = _hash_secret(payload.secret_key.get_secret_value())
+        stored_hash = key.secret_hash if key and isinstance(key.secret_hash, str) else "0" * 64
+        matches = len(stored_hash) == 64 and secrets.compare_digest(digest, stored_hash)
+        now = datetime.now(timezone.utc)
+        local_zone = timezone(timedelta(hours=8))
+        expiry = key.expire_time.replace(tzinfo=local_zone).astimezone(timezone.utc) if key and key.expire_time else None
+        owner = self.users.find_by_id(db, key.user_id) if key else None
+        if (not matches or key is None or key.status != "enabled" or
+                (expiry is not None and expiry <= now) or owner is None or
+                owner.status != "normal" or owner.role not in {"user", "admin"}):
+            raise BizException(1003, "API Key 凭证无效")
+        ttl = min(settings.api_key_jwt_ttl_seconds, 3600)
+        if expiry is not None:
+            ttl = min(ttl, math.floor((expiry - now).total_seconds()))
+        if ttl < 1:
+            raise BizException(1003, "API Key 凭证无效")
+        token, expire_at = create_token(
+            owner.id, owner.username, role=owner.role, ttl_seconds=ttl, expires_at=expiry
+        )
+        return {"token": token, "token_type": "Bearer", "expire_at": expire_at,
+                "expires_in": ttl, "user_id": owner.id, "username": owner.username, "role": owner.role}
 
     def list_keys(self, db: Session, user_id: int) -> list[ApiKey]:
         self._require_available_user(db, user_id)

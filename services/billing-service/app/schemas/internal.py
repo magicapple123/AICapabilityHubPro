@@ -20,7 +20,7 @@
 
 from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core.constants import DEFAULT_CAPABILITY_ID, CallStatus
 
@@ -32,11 +32,21 @@ class BillingRecordRequest(BaseModel):
     user_id: int = Field(ge=1)
     service_name: str = Field(default="", max_length=64)
     model: str = Field(default="", max_length=128)
+    unit_price: int | None = Field(default=None, strict=True, ge=0, le=1_000_000)
     points: int = Field(default=0, ge=0, le=1_000_000, description="本次消耗积分")
     status: CallStatus = CallStatus.SUCCESS
     capability_id: int = Field(default=DEFAULT_CAPABILITY_ID, ge=0)
     duration_ms: int = Field(default=0, ge=0)
     remark: str = Field(default="", max_length=255)
+
+    @model_validator(mode="after")
+    def validate_price(self):
+        # Legacy reports without unit_price retain their historical semantics.
+        if self.unit_price is not None:
+            expected = self.unit_price if self.status == CallStatus.SUCCESS else 0
+            if self.points != expected:
+                raise ValueError("实际费用与登记单价/状态不一致")
+        return self
 
 
 class BillingRecordOut(BaseModel):
@@ -52,6 +62,7 @@ class BillingRecordOut(BaseModel):
     user_id: int
     capability_id: int
     service_name: str
+    unit_price: int | None = None
     cost: int
     call_status: str
     duplicated: bool = False

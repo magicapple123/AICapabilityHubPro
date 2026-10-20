@@ -24,6 +24,7 @@ class CallRecordOut(BaseOut):
     user_id: int
     capability_id: int
     service_name: str
+    unit_price: int | None = None
     cost: int
     call_status: str
     duration_ms: int

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     # 登录签发的 JWT 必须与网关同密钥、同 issuer，否则经网关访问会返回 1001。
     jwt_secret: str = ""
     jwt_issuer: str = "ai-capability-hub"
+    api_key_jwt_ttl_seconds: int = Field(default=900, ge=1, le=3600)
     jwt_ttl_hours: int = Field(default=24, ge=1)
 
     # 注册赠送的初始积分；整型存储，不使用浮点（指南 5.5）。

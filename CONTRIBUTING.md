@@ -31,7 +31,7 @@ git push -u origin feature/pro-自己的任务
 黄禹菲：user/billing、Settings、相关API/契约/迁移。
 夏思凯：capability、市场/运营能力UI、目录契约/SQL。
 
-公共类型和跨成员依赖先按[共享契约](docs/api-contract/pro-shared.md)对齐。不要重做已实现模块或以静态Mock替代待交接端点。新增授权不足用1007，现有1006仍表示Key不存在。
+公共类型和跨成员依赖先按[共享契约](docs/api-contract/pro-shared.md)对齐。不要重做已实现模块或以静态Mock替代待交接端点。用户于2026-10-20确认权限不足使用1006，Key不存在保留同码，按端点和消息区分；共享契约为准。
 
 ## 代码与数据
 

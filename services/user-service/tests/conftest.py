@@ -14,6 +14,8 @@
 from collections.abc import Generator
 from uuid import uuid4
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -38,6 +40,8 @@ settings.jwt_issuer = "ai-capability-hub"
 def _check_database() -> tuple[bool, str]:
     """探测数据库与业务表是否就绪；返回 (是否可用, 不可用原因)。"""
 
+    if not (os.environ.get("TEST_DB_ISOLATED") == "1" or os.environ.get("GITHUB_ACTIONS") == "true") or not os.environ.get("DB_URL"):
+        return False, "Explicit independent DB_URL and TEST_DB_ISOLATED=1 required"
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1 FROM t_user LIMIT 1"))
@@ -200,7 +204,7 @@ def qa(api: TestClient) -> Generator[QaUser, None, None]:
     """提供测试用户工厂，并在用例前后清理 `qa` 前缀数据。"""
 
     if not DB_READY:
-        pytest.skip(f"需要可用的 user_db：{DB_REASON}")
+        pytest.fail(f"需要可用的 user_db：{DB_REASON}")
     _purge_test_rows()  # 清理上次异常退出可能残留的数据
     try:
         yield QaUser(api)

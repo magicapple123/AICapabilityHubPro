@@ -5,7 +5,8 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing import Literal
 
 from app.core.constants import (
     PASSWORD_MAX_LENGTH,
@@ -19,6 +20,7 @@ NICKNAME_MAX_LENGTH = 32
 
 
 class RegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     """注册请求。`nickname` 缺省时使用 `username`。"""
 
     username: str = Field(min_length=3, max_length=32, pattern=USERNAME_PATTERN)
@@ -27,6 +29,7 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     """登录请求。"""
 
     username: str = Field(min_length=1, max_length=32)
@@ -34,6 +37,7 @@ class LoginRequest(BaseModel):
 
 
 class ProfileUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     """更新当前用户资料；只允许改昵称，用户名与状态不可由用户自行修改。"""
 
     nickname: str = Field(min_length=1, max_length=NICKNAME_MAX_LENGTH)
@@ -45,6 +49,7 @@ class ProfileUpdateRequest(BaseModel):
 
 
 class RegisterOut(BaseOut):
+    role: Literal["user", "admin"] = "user"
     """注册结果：注册即创建积分账户并赠送初始积分。"""
 
     user_id: int
@@ -55,6 +60,7 @@ class RegisterOut(BaseOut):
 
 
 class LoginOut(BaseOut):
+    role: Literal["user", "admin"] = "user"
     """登录结果。`token` 为与网关同密钥签发的 JWT。"""
 
     token: str
@@ -65,6 +71,7 @@ class LoginOut(BaseOut):
 
 
 class ProfileOut(BaseOut):
+    role: Literal["user", "admin"] = "user"
     """当前用户资料；不包含密码哈希等敏感字段。"""
 
     user_id: int
@@ -83,6 +90,7 @@ class ProfileOut(BaseOut):
             username=user.username,
             nickname=user.nickname,
             status=user.status,
+            role=user.role,
             create_time=user.create_time,
             update_time=user.update_time,
         )

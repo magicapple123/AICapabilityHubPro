@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS t_user (
   id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
   username VARCHAR(32) NOT NULL COMMENT '登录名，3~32 位字母/数字/下划线/连字符',
   password_hash VARCHAR(255) NOT NULL COMMENT 'PBKDF2-HMAC-SHA256 自描述哈希串，禁止存明文',
+  role VARCHAR(16) NOT NULL DEFAULT 'user' COMMENT 'user/admin',
   nickname VARCHAR(32) NOT NULL DEFAULT '' COMMENT '昵称',
   status VARCHAR(16) NOT NULL DEFAULT 'normal' COMMENT '用户状态 normal正常 disabled禁用',
   create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',

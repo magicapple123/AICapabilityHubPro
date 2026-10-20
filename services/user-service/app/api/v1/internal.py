@@ -9,6 +9,11 @@
 `X-User-Id`（身份）与 `X-Request-Id`（幂等键），见 `app/api/v1/deps.py`。
 """
 
+from typing import Literal
+
+from app.core.exceptions import BizException
+from app.service.user_service import require_available_user
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -35,6 +40,8 @@ async def check_user(
     错误码：`1005` 用户不存在或已被禁用；`3001` 积分不足（执行前拦截）。
     """
 
+    if caller.user_id != str(user_id):
+        raise BizException(1001, "缺少或伪造的链路身份")
     data = points_service.check(db, user_id, points_cost)
     return Result.ok(data, request_id=caller.request_id or get_request_id())
 
@@ -53,3 +60,19 @@ async def deduct_points(
 
     data = points_service.deduct(db, payload, caller.user_id)
     return Result.ok(data.model_dump(), request_id=caller.request_id or get_request_id())
+
+
+@router.get("/authorization", response_model=Result)
+async def authorization(
+    user_id: int = Query(ge=1),
+    required_role: Literal["admin"] = Query(...),
+    caller: UserContext = Depends(internal_caller),
+    db: Session = Depends(get_db),
+) -> Result:
+    if caller.user_id != str(user_id):
+        raise BizException(1001, "缺少或伪造的链路身份")
+    user = require_available_user(db, user_id)
+    if user.role != required_role:
+        raise BizException(1006, "权限不足")
+    return Result.ok({"user_id": user.id, "status": user.status, "role": user.role,
+                      "authorized": True}, request_id=caller.request_id)

@@ -33,6 +33,7 @@ async def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> R
         RegisterOut(
             user_id=user.id,
             username=user.username,
+            role=user.role,
             nickname=user.nickname,
             balance=account.balance,
             initial_points=account.balance,
@@ -52,6 +53,7 @@ async def login(payload: LoginRequest, db: Session = Depends(get_db)) -> Result:
             expire_at=expire_at,
             user_id=user.id,
             username=user.username,
+            role=user.role,
         ).model_dump(),
         request_id=get_request_id(),
     )

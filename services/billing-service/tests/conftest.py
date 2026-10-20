@@ -19,6 +19,8 @@ from datetime import date
 from typing import Any
 from uuid import uuid4
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -40,6 +42,8 @@ FAKE_DEFAULT_BALANCE = 1_000_000
 def _check_database() -> tuple[bool, str]:
     """探测数据库与业务表是否就绪；返回 (是否可用, 不可用原因)。"""
 
+    if not (os.environ.get("TEST_DB_ISOLATED") == "1" or os.environ.get("GITHUB_ACTIONS") == "true") or not os.environ.get("DB_URL"):
+        return False, "Explicit independent DB_URL and TEST_DB_ISOLATED=1 required"
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1 FROM t_call_record LIMIT 1"))
@@ -77,12 +81,19 @@ class FakeUserService:
         self.error: BizException | None = None
         # 被禁用的用户：状态校验返回 1005。
         self.disabled_users: set[int] = set()
+        self.roles = {TEST_USER_ID_BASE: "admin"}
 
     def handle(self, service_name: str, method: str, path: str, kwargs: dict) -> dict:
         self.calls.append((service_name, method, path, kwargs))
         if self.error is not None:
             raise self.error
 
+        if path == "/internal/user/authorization":
+            user_id = kwargs["params"]["user_id"]
+            self._check(kwargs)
+            if self.roles.get(user_id, "user") != "admin":
+                raise BizException(1006, "权限不足")
+            return {"user_id": user_id, "status": "normal", "role": "admin", "authorized": True}
         if path == "/internal/user/check":
             return self._check(kwargs)
         if path == "/internal/user/points/deduct":
@@ -240,7 +251,7 @@ def qa(api: TestClient) -> Generator[QaBilling, None, None]:
     """提供测试数据工厂，并在用例前后清理测试用户的数据。"""
 
     if not DB_READY:
-        pytest.skip(f"需要可用的 billing_db：{DB_REASON}")
+        pytest.fail(f"需要可用的 billing_db：{DB_REASON}")
     _purge_test_rows()  # 清理上次异常退出可能残留的数据
     try:
         yield QaBilling(api)

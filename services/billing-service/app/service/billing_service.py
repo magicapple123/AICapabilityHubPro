@@ -81,6 +81,7 @@ class BillingService:
             capability_id=payload.capability_id,
             service_name=payload.service_name,
             cost=payload.points,
+            unit_price=payload.unit_price,
             call_status=payload.status.value,
             duration_ms=payload.duration_ms,
             model_name=payload.model,
@@ -280,6 +281,9 @@ class BillingService:
             and existing.service_name == payload.service_name
             and existing.capability_id == payload.capability_id
             and existing.cost == payload.points
+            and existing.unit_price == payload.unit_price
+            and existing.model_name == payload.model
+            and existing.duration_ms == payload.duration_ms
             and existing.call_status == payload.status.value
         )
 
@@ -305,6 +309,7 @@ class BillingService:
             capability_id=record.capability_id,
             service_name=record.service_name,
             cost=record.cost,
+            unit_price=record.unit_price,
             call_status=record.call_status,
             duplicated=duplicated,
             balance_after=balance_after,

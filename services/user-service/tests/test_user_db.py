@@ -22,7 +22,6 @@ from tests.conftest import (
     set_user_status,
 )
 
-pytestmark = pytest.mark.skipif(not DB_READY, reason=f"需要可用的 user_db：{DB_REASON}")
 
 
 # ---------------------------------------------------------------- 注册 / 登录
@@ -72,6 +71,8 @@ def test_login_returns_gateway_compatible_jwt(qa: QaUser) -> None:
 
     assert claims["sub"] == str(qa.user_id)
     assert claims["username"] == qa.username
+    assert claims["role"] == "user"
+    assert body["data"]["role"] == "user"
     assert body["data"]["expire_at"]
 
 
@@ -216,7 +217,15 @@ def test_internal_check_rejects_disabled_user(qa: QaUser) -> None:
 def test_internal_check_rejects_unknown_user(qa: QaUser) -> None:
     qa.register()
 
-    assert qa.check(user_id=99_999_999)["code"] == 1005
+    unknown_id = 99_999_999
+    # Unknown accounts and identity mismatches are separate rejection paths.
+    # Keep the caller and query consistent so this still tests unknown-user 1005.
+    body = qa.client.get(
+        "/internal/user/check",
+        headers={**qa.headers, "X-User-Id": str(unknown_id)},
+        params={"user_id": unknown_id, "points_cost": 0},
+    ).json()
+    assert body["code"] == 1005
 
 
 # ---------------------------------------------------------------- 扣分

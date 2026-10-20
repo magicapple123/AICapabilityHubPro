@@ -21,7 +21,6 @@ from tests.conftest import (
     count_usage,
 )
 
-pytestmark = pytest.mark.skipif(not DB_READY, reason=f"需要可用的 billing_db：{DB_REASON}")
 
 TODAY = date.today()
 
