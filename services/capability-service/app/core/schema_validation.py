@@ -1,13 +1,15 @@
 """能力参数 Schema 的内联结构约束。
 
 AI 执行器使用 Draft 2020-12 校验输入，并拒绝远程/内部引用。目录侧在登记与
-内部详情出参处做同一组结构约束（对象根类型、大小、深度、节点数与引用关键字），
-避免把不兼容的 Schema 包装成可执行能力；完整的 Draft 2020-12 合法性仍由
-执行器在调用前校验。
+内部详情出参处做结构约束（对象根类型、大小、深度、节点数与引用关键字），
+并调用 Draft 2020-12 元 Schema 校验，避免把不兼容的 Schema 包装成可执行能力；
+执行器仍会按自身强类型规则复核输入边界。
 """
 
 import json
 from typing import Any
+
+from jsonschema import Draft202012Validator, SchemaError
 
 SCHEMA_MAX_BYTES = 32_768
 SCHEMA_MAX_DEPTH = 20
@@ -49,4 +51,8 @@ def validate_param_schema(schema: dict[str, Any] | None) -> dict[str, Any] | Non
     _measure(schema)
     if schema.get("type") != "object":
         raise ValueError("param_schema 根类型必须是 object")
+    try:
+        Draft202012Validator.check_schema(schema)
+    except (SchemaError, RecursionError) as exc:
+        raise ValueError("param_schema 不是合法的 Draft 2020-12 对象 Schema") from exc
     return schema

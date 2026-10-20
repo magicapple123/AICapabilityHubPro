@@ -175,6 +175,15 @@ def test_schema_with_reference_fails_closed(qa: QaCatalog) -> None:
     assert qa.internal_detail(capability["id"])["code"] == 4002
 
 
+def test_invalid_draft_schema_fails_closed(qa: QaCatalog) -> None:
+    """目录中残留非法 Draft 2020-12 Schema 时，内部详情不得放行给执行器。"""
+
+    capability = _create_online(qa)
+    _update_row(capability["id"], "param_schema", '{"type":"object","properties":[]}')
+
+    assert qa.internal_detail(capability["id"])["code"] == 4002
+
+
 def test_negative_price_fails_closed(qa: QaCatalog) -> None:
     capability = _create_online(qa)
     _update_row(capability["id"], "price_per_call", -1)
@@ -225,12 +234,15 @@ def test_registration_accepts_inline_object_schema(qa: QaCatalog) -> None:
         {"type": "array", "items": {"type": "string"}},
         {"type": "object", "properties": {"x": {"$ref": "#/definitions/x"}}},
         {"type": "object", "properties": {"x": {"$id": "remote"}}},
+        {"type": "object", "properties": []},
+        {"type": "object", "properties": {"x": {"type": "not-a-real-type"}}},
+        {"type": "object", "required": "messages"},
         "not-an-object",
         {"properties": {}},
     ],
 )
 def test_registration_rejects_incompatible_schema(qa: QaCatalog, schema) -> None:
-    """只接受对象根类型的内联 Schema，引用关键字与远程 ID 一律拒绝。"""
+    """只接受合法的对象根类型内联 Schema，引用与非法 Draft 关键字一律拒绝。"""
 
     category = qa.category()
 

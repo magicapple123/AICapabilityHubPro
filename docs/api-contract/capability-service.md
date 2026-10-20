@@ -221,7 +221,7 @@
 ```
 
 - 错误码：`1001` 链路身份缺失；`2002` 能力不存在或已软删除；`4002` 数据库中 Schema/状态/价格配置不合法
-- 备注：每次调用实时读取，不缓存；状态改变在下一次读取立即生效。`draft` / `offline` 保留真实状态，由执行器拒绝。不返回 `service_name` / `path`，避免被当作任意代理目标。`price_per_call` 为 0–1000000 整数，`param_schema` 为对象根类型的内联 Schema。
+- 备注：每次调用实时读取，不缓存；状态改变在下一次读取立即生效。`draft` / `offline` 保留真实状态，由执行器拒绝。不返回 `service_name` / `path`，避免被当作任意代理目标。`price_per_call` 为 0–1000000 整数，`param_schema` 为对象根类型、通过 Draft 2020-12 元 Schema 校验的内联 Schema。
 
 ### `GET /api/capability/ping`、`GET /health`
 
@@ -247,7 +247,7 @@
 2. 授权码以[共享契约](pro-shared.md)为准：user 新增权限不足 `1007`，`1006` 仍表示 API Key 不存在。capability 把 `1007` 映射为对外 `2007`；仅在该授权端点额外接受旧 user 构建可能返回的 `1006` 作为拒绝码，任何情况下都不会据此放行。
 3. 已提供 GET `/internal/capability/{capability_id}`，成功 data 为匹配正整数 id、name、code、真实 status、内联 param_schema、0–1000000 整数 price_per_call。不返回可供任意代理的 URL；未知/软删除 `2002`，draft/offline 如实标识，AI 会拒绝。
 4. AI 客户端、allowlist 和目录价计量已实现，默认 internal 缺失端点失败关闭。内部端点已就绪，但 `member_internal_contract_verified=true` 仍需在真实四服务环境运行 `--catalog-mode internal --browser` 取得；market 兼容链通过不能替代。
-5. code 固定 chat-completions / long-summary，对应 input.messages / input.text 与可选 max_length。Schema 按现有执行器内联结构（对象根类型、无 `$ref/$dynamicRef/$recursiveRef/$id`、大小≤32768、深度≤20、节点≤2000），登记与内部详情都会校验；状态/单价一改在下一次调用生效，不缓存旧状态。
+5. code 固定 chat-completions / long-summary，对应 input.messages / input.text 与可选 max_length。Schema 按现有执行器内联结构（对象根类型、无 `$ref/$dynamicRef/$recursiveRef/$id`、大小≤32768、深度≤20、节点≤2000），登记与内部详情都通过 Draft 2020-12 元 Schema 校验；非法关键字在登记时返回 2001、在内部详情返回 4002，不会留到执行期。状态/单价一改在下一次调用生效，不缓存旧状态。
 6. 市场使用真实目录接口。按钮传 `/chat?capability_id=<id>`，Chat 已接受；未实现执行器的视觉等能力明确不可体验，不补虚构延迟或耗时。
 7. 分类 enabled/disabled、能力 draft/online/offline、价格整数积分已定稿。注册记录的 service/path 不决定执行目标，新增 code 需真正 adapter 与安全验收。
 

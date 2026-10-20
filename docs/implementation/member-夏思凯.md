@@ -15,7 +15,7 @@
 - [x] 分类/能力写操作与运营列表实时调用 `GET /internal/user/authorization?user_id=<当前ID>&required_role=admin`；校验 ID、normal、admin、authorized=true；普通用户 2007，超时/缺失/格式异常 4002。
 - [x] 不信任客户端 role/X-User-Role 头，无本地管理员白名单；分类列表保持“登录即可读”，供筛选栏使用。
 - [x] chat-completions / long-summary 的登记 Schema 对齐执行器：messages 1–40、role 三选一、content 1–12000、可选 temperature 0–2；text 1–12000、max_length 30–1000 默认 200；无 `$ref/$dynamicRef/$recursiveRef/$id`。
-- [x] 登记/编辑与内部详情共用 Schema 结构校验（对象根类型、≤32768 字节、深度≤20、节点≤2000）。
+- [x] 登记/编辑与内部详情共用 Schema 校验（对象根类型、≤32768 字节、深度≤20、节点≤2000、Draft 2020-12 元 Schema）；非法关键字在登记或内部详情处即失败，不留给执行期。
 - [x] 新增独立增量迁移 `sql/03_align_executor_schema.sql`：只补齐旧版简化 Schema，不改价格与上下架状态，可重复执行；seed 已同步并明确不可当迁移。
 - [x] 市场字段最小化与 `price_per_call` 展示保持；市场按钮传 `/chat?capability_id=<id>`，浏览器验收新增“从市场卡片进入对应能力”。
 - [x] 运营 UI 直接展示服务端 2007/4002 文案（无运营权限 / 授权服务不可用已拒绝），最终权限不由前端决定。
@@ -27,10 +27,10 @@ cd services/capability-service
 .\.venv\Scripts\python.exe -m pytest -q -rs
 ```
 
-- 2026-10-20，隔离 MySQL 8.0（端口 3308，独立数据目录，非开发库）上 `118 passed`，零跳过。
+- 2026-10-20，隔离 MySQL 8.0（端口 3308，独立数据目录，非开发库）上 `125 passed`，零跳过。
 - seed 与 `03_align_executor_schema.sql` 在同一隔离实例实际执行成功；`chat-completions` 返回 maxItems=40、`additionalProperties=false`，内部详情读取 seed 记录 code=0。
 - Web：`pnpm --dir web lint`、`pnpm --dir web build`、`node --experimental-strip-types --test tests/chat-schema.test.ts`（6/6）通过。
-- 新增用例覆盖：内部详情字段与 requestId、draft/offline、未知/软删除、身份缺失、Schema 缺失/引用/深度/体积、价格 0 与 1000000 及越界、重复编码、普通用户写/读、伪造 role 头、撤权后再请求、授权超时/异常/不可信响应、市场字段最小化。
+- 新增用例覆盖：内部详情字段与 requestId、draft/offline、未知/软删除、身份缺失、Schema 缺失/引用/非法 Draft 关键字/深度/体积、价格 0 与 1000000 及越界、重复编码、普通用户写/读、伪造 role 头、撤权后再请求、授权超时/异常/不可信响应、市场字段最小化。
 
 ## 未完成 / 阻塞
 

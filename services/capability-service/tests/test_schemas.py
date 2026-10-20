@@ -156,6 +156,30 @@ def test_capability_create_accepts_inline_object_schema() -> None:
     ],
 )
 def test_capability_create_rejects_incompatible_schema(schema: dict) -> None:
+    """只接受对象根类型且不含引用关键字的内联 Schema。"""
+
+    with pytest.raises(ValidationError):
+        CapabilityCreateRequest(
+            category_id=1,
+            name="多轮对话",
+            code="chat-completions",
+            service_name="ai-chat-service",
+            path="/api/chat/completions",
+            param_schema=schema,
+        )
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "object", "properties": []},
+        {"type": "object", "properties": {"x": {"type": "not-a-real-type"}}},
+        {"type": "object", "required": "messages"},
+    ],
+)
+def test_capability_create_rejects_invalid_draft_schema(schema: dict) -> None:
+    """非法 Draft 2020-12 关键字必须在登记时拒绝，而不是留到执行期。"""
+
     with pytest.raises(ValidationError):
         CapabilityCreateRequest(
             category_id=1,
