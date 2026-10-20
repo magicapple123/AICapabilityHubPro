@@ -78,7 +78,7 @@ export async function runSettingsScenarios(page: Page, base: string, directory: 
     'The one-time modal must show the just-created Secret')
   checks.push('Settings creates an expiring real Key with no-store and one-time Secret disclosure')
   await disclosure.locator('.ant-modal-close').click()
-  await page.getByText('已经保存好密钥了吗？', { exact: true }).waitFor()
+  await page.locator('.ant-modal-confirm-title').filter({ hasText: '已经保存好密钥了吗？' }).waitFor()
   await page.getByRole('button', { name: '继续查看', exact: true }).click()
   await disclosure.getByRole('button', { name: '我已安全保存', exact: true }).click()
   await disclosure.waitFor({ state: 'hidden' })
