@@ -76,7 +76,7 @@ async def get_overview(
 ) -> Result:
     """运营全局统计：汇总（含去重用户数）+ 按天 + 按服务 + 用户排行。"""
 
-    await user_status_service.ensure_active(user_id)
+    await user_status_service.ensure_admin(user_id)
     start_date, end_date = range_
     data = billing_service.overview(db, start_date=start_date, end_date=end_date)
     return Result.ok(data.model_dump(), request_id=get_request_id())

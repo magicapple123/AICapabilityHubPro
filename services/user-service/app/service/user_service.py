@@ -76,6 +76,7 @@ class UserService:
             user = self.users.add(
                 db,
                 User(
+                    role="user",
                     username=payload.username,
                     password_hash=hash_password(payload.password),
                     nickname=payload.nickname or payload.username,
@@ -125,7 +126,7 @@ class UserService:
         if not is_normal_status(user.status):
             raise BizException(1005, "用户不存在或已被禁用")
 
-        token, expire_at = create_token(user.id, user.username)
+        token, expire_at = create_token(user.id, user.username, role=user.role)
         logger.info("用户已登录 user_id={}", user.id)
         return user, token, expire_at
 

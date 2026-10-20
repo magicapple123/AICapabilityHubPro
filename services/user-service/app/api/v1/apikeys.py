@@ -3,13 +3,14 @@
 完整 `secret_key` 只在 `POST` 的响应中出现一次；列表与禁用接口只返回展示掩码。
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import current_user_id
 from app.core.logging import get_request_id
 from app.core.result import Result
 from app.db.session import get_db
+from app.schemas.apikey import ApiKeyExchangeRequest
 from app.schemas import (
     ApiKeyCreateRequest,
     ApiKeyCreatedOut,
@@ -38,11 +39,13 @@ async def list_api_keys(
 @router.post("", response_model=Result)
 async def create_api_key(
     payload: ApiKeyCreateRequest,
+    response: Response,
     user_id: int = Depends(current_user_id),
     db: Session = Depends(get_db),
 ) -> Result:
     """创建 Key；`secret_key` 仅本次返回，请提示用户立即保存。"""
 
+    response.headers["Cache-Control"] = "no-store"
     api_key, secret_key = api_key_service.create(db, user_id, payload)
     return Result.ok(
         ApiKeyCreatedOut(
@@ -72,3 +75,12 @@ async def disable_api_key(
         ApiKeyStatusOut(id=api_key.id, update_time=api_key.update_time).model_dump(),
         request_id=get_request_id(),
     )
+
+
+@router.post("/exchange", response_model=Result)
+async def exchange_api_key(payload: ApiKeyExchangeRequest, response: Response,
+                           db: Session = Depends(get_db)) -> Result:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Pragma"] = "no-cache"
+    return Result.ok(api_key_service.exchange(db, payload), request_id=get_request_id())

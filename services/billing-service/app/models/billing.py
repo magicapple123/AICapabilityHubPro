@@ -31,6 +31,7 @@ class CallRecord(Base):
         BigInteger, nullable=False, default=DEFAULT_CAPABILITY_ID
     )
     service_name: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    unit_price: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     cost: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     call_status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=CallStatus.SUCCESS.value

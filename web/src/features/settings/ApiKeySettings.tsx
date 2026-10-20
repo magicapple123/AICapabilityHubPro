@@ -25,7 +25,7 @@ export function ApiKeySettings() {
     },
   })
   return <>
-    <div className="key-notice"><ShieldCheck size={19} /><div><strong>妥善保管访问凭证</strong><p>Secret Key 仅在创建时展示一次。请将其保存在安全的位置，避免写入前端代码或公开仓库。</p></div></div>
+    <div className="key-notice"><ShieldCheck size={19} /><div><strong>妥善保管访问凭证</strong><p>Secret Key 仅在创建时展示一次。请将其保存在安全的位置，避免写入前端代码或公开仓库。</p><p>使用 access_key 和 Secret Key，以 JSON POST 到 <code>/api/user/apikeys/exchange</code>，请求体为 <code>{'{"access_key":"…","secret_key":"…"}'}</code>。取响应 <code>data.token</code> 并以 <code>Authorization: Bearer &lt;token&gt;</code> 调用 API。Token 默认 15 分钟、最多 1 小时；以 <code>expires_in</code> / <code>expire_at</code>（UTC）为准，且不会晚于 Key 过期时间。Key 期限按北京时间设置。禁用 Key 后不能再兑换；已签发 Token 到期前仍可使用。不要将 Secret 写入 URL、日志、localStorage 或持久化配置。</p></div></div>
     <section className="panel"><div className="panel-head"><div><h2>API Key 管理</h2><p>为不同用途创建独立凭证，按需禁用</p></div><button className="button-primary" onClick={() => setCreating(true)}><Plus size={15} />新建 API Key</button></div>
       {keys.loading ? <Loading label="正在加载访问凭证…" /> : keys.error ? <div className="panel-body"><ErrorNote message={keys.error} onRetry={keys.reload} /></div> :
         !keys.data?.list.length ? <EmptyNote message="还没有访问凭证。创建一个 API Key，集中管理你的访问授权。"
