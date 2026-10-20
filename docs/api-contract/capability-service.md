@@ -1,6 +1,6 @@
 # AICapabilityHub Pro · capability-service 接口契约
 
-**实现状态（2026-10-20，`feature/pro-capability-market` 修复版 + user provider PR #4）：** 本分支交付内部目录与实时授权调用侧，PR #4 提供匹配的 user 授权端点。本地隔离联合工作树已通过完整 strict internal E2E（21项）、浏览器（9项）和真实管理授权（9项）；PR 的 CI/审批/合并仍以 GitHub 当前状态为准，不把本地验收等同人工审批。市场按钮传选中 ID 已随10/20前端调整完成，见[验收记录](../前端改版与验收-2026-10-20.md)。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)。
+**实现状态（2026-10-20，PR #4/#5已集成main `651275b`）：** 内部目录、实时授权双方实现与安全迁移已合入。主分支CI `39420321602` 为9/9，capability 131项零跳过，完整internal E2E21项与原浏览器9项通过；另有真实管理授权9项证据，不等同人工审批。新增管理员Console/市场联动浏览器验收见[收尾记录](../验收收尾记录-2026-10-20.md)。市场按钮传选中 ID 已随10/20前端调整完成，见[验收记录](../前端改版与验收-2026-10-20.md)。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)。
 
 > 负责人：夏思凯
 > 服务名：`capability-service`
@@ -263,4 +263,4 @@
 - 现有聊天价格 5、摘要 3；AI 验证目录状态/Schema/price，不按固定 POINTS_COST。演示数据不包含真实凭证。
 - `chat-completions` / `long-summary` 的 `param_schema` 已与执行器约束对齐：聊天 `messages` 1–40 条、role 三选一、content 1–12000、可选 temperature 0–2；摘要 `text` 1–12000、可选 `max_length` 30–1000（默认 200）；使用布尔 `additionalProperties=false`。
 - 已有业务库的结构升级使用独立增量脚本 `sql/03_align_executor_schema.sql`：只有 Schema 完整匹配历史 seed 默认值，或 online 能力的 Schema 为空时才应用适配器模板；不根据单个字段缺失推断“旧版”，以免覆盖自定义限制/元数据。draft/offline 的空 Schema 保持为空；单价与状态始终不改。执行前备份受影响行。`sql/02_seed.sql` 仅用于新环境或明确的隔离示例库。迁移可重复执行，迁移过滤规则另有真实 MySQL 回归测试。未知/自定义结构升级需由运营人员单独审阅，不做自动覆盖。
-- 已覆盖内部详情、公开字段最小化、状态变化、未知/软删除、Schema 引用/非法 Draft 关键字/上架必须有合法 Schema/价格边界、重复编码、非管理员直接写/管理读取、授权撤销/故障、迁移保留自定义 Schema/升级旧 Schema/幂等以及市场选中 ID 的浏览器入口。修复分支 capability-service 在隔离 MySQL 8.4.11 实际 `131 passed`、零跳过。真实管理员授权、严格 internal 目录链与完整浏览器运行须依据最终 CI artifact 和 `summary.json` 分开核对，替身测试不当作真实联调。
+- 已覆盖内部详情、公开字段最小化、状态变化、未知/软删除、Schema 引用/非法 Draft 关键字/上架必须有合法 Schema/价格边界、重复编码、非管理员直接写/管理读取、授权撤销/故障、迁移保留自定义 Schema/升级旧 Schema/幂等以及市场选中 ID 的浏览器入口。集成main `651275b` 的CI中capability-service实际 `131 passed`、零跳过；迁移也已覆盖自定义Schema保留和重复运行。真实管理员授权、严格 internal 目录链与完整浏览器运行须依据最终 CI artifact 和 `summary.json` 分开核对，替身测试不当作真实联调。

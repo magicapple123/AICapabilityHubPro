@@ -1,19 +1,19 @@
 # AICapabilityHub Pro 开发指南
 
-**定位：面向开发者的 AI 能力执行与计量平台。** 本指南适用于三人小组的 Pro 增量开发，更新日期为 **2026-10-19（Asia/Shanghai）**。它替代原版从零搭建指南，工作仓库为 `magicapple123/AICapabilityHubPro`，工作区示例为 `D:\AICapabilityHubPro`。
+**定位：面向开发者的 AI 能力执行与计量平台。** 本指南适用于三人小组的 Pro 增量开发，更新日期为 **2026-10-20（Asia/Shanghai）**。它替代原版从零搭建指南，工作仓库为 `magicapple123/AICapabilityHubPro`，工作区示例为 `D:\AICapabilityHubPro`。
 
 按能力执行，让参数、费用与调用结果可追踪。新增功能应围绕能力 ID、Schema、可信身份、目录价格、受控执行器、账单和 requestId 的一致性完成；不得退回“固定单价的通用聊天接口”或重新搭建现有工程。
 
 ## 1. 当前基线与文档使用
 
-公共基础 PR #1 和组长业务/品牌 PR #2 已合入 `main`，合并基线为 `1b89ce8`，该提交的 9 项 CI 全部通过。`develop` 未同步这批升级，成员应从最新 `origin/main` 开始，PR 当前以 `main` 为目标。
+PR #1–#5 已合入 `main`；三人业务集成基线 `651275b` 的 CI `39420321602` 为 9/9。user/billing、capability 与安全迁移修复均已交付。`develop` 未同步这批升级，成员应从最新 `origin/main` 开始，PR 当前以 `main` 为目标。
 
-| 现状 | 已实现 | 仍需成员交接 |
+| 模块 | 已实现 | 交接与验证边界 |
 |---|---|---|
-| Gateway | JWT/role 验证、伪造头清理、requestId、internal 隔离、兑换入口限流 | 新用户角色与 Key 兑换服务端由 user 提供 |
-| AI 执行 | 新鲜目录查询、Schema/allowlist、聊天与摘要、按目录价预检和计量 | capability 内部详情服务端 |
-| Web | 真实登录、能力调试、Schema 表单、费用/账单/追踪、历史会话 | 角色/Key/运营的服务端升级；市场传 ID 和界面整理见 10/20 前端记录 |
-| user/billing | 基础账号、Key 管理、积分、幂等账单及个人用量 | 实时 admin 授权、短期 Token、单价存储与迁移 |
+| Gateway | JWT/role 验证、伪造头清理、requestId、internal 隔离、兑换入口限流 | 已与 user 提供端真实联调 |
+| AI 执行 | 新鲜目录查询、Schema/allowlist、聊天与摘要、按目录价预检和计量 | 内部详情已交付，strict internal 真实链通过 |
+| Web | 真实登录、能力调试、Schema 表单、费用/账单/追踪、历史会话 | 市场/Settings/Console 已接真实后端；扩展验收见收尾记录 |
+| user/billing | role、实时授权、Key 短 JWT、积分、幂等账单、nullable unit_price 与迁移 | 旧数据保留已做隔离测试，现有环境未升级 |
 
 规则与事实分开维护：[共享契约](docs/api-contract/pro-shared.md)描述新增接口约定，[四服务契约](docs/README.md)逐项标明已实现/待交接，[实施看板](docs/升级实施看板.md)记录状态，[验收矩阵](docs/验收用例.md)记录证据。发现实现与契约不一致时列出缺口，不通过修改文档把缺失功能写成已实现。
 
@@ -52,7 +52,7 @@ ai-chat -> capability detail -> user points check -> controlled adapter
 
 新注册服务不等于新能力可执行。新增能力必须同时有受控 adapter、Schema、价格/状态约定、前端可用性和安全测试，不能仅靠登记一个 service/path 自动执行。
 
-前端全站整理已按用户授权完成：市场传入选中能力 ID，设置分拆页签，交互与手机布局统一。证据见[前端改版与验收](docs/前端改版与验收-2026-10-20.md)。此项不代替内部目录、管理员授权或 Key 兑换的服务端交付。
+前端全站整理已按用户授权完成：市场传入选中能力 ID，设置分拆页签，交互与手机布局统一。证据见[前端改版与验收](docs/前端改版与验收-2026-10-20.md)。内部目录、管理员授权和 Key 兑换已在 PR #4/#5 集成交付；模拟写响应的旧页面检查仍不能冒充真实业务验收，见[非部署收尾](docs/验收收尾记录-2026-10-20.md)。
 
 ## 4. 三人修改范围
 
@@ -90,14 +90,14 @@ python scripts/start_pro_local.py middleware
 python scripts/start_pro_local.py user-service
 python scripts/start_pro_local.py capability-service
 python scripts/start_pro_local.py billing-service
-python scripts/start_leader_dev.py ai-chat-service --catalog-mode market
+python scripts/start_leader_dev.py ai-chat-service --catalog-mode internal
 python scripts/start_leader_dev.py gateway
 python scripts/start_leader_dev.py web
 ```
 
 访问 `http://localhost:5173`；公开本地账号 `demo / demo123456`，低余额账号 `demopoor / demo123456`。模型 Mock 与占位登录互不相同：前端真实登录默认开启，AI 可模拟执行并标注 `mock=true`。
 
-默认 `CAPABILITY_CATALOG_MODE=internal` 要求内部详情端点已交接；当前显式 `market` 模式只查询已上架的公开详情，缺失内部接口不会自动回退。内部端点完成后改用 `--catalog-mode internal` 并重跑严格 E2E。端口占用时先核实来源，不结束未知进程；不要混用两种启动入口。
+默认 `CAPABILITY_CATALOG_MODE=internal` 的内部详情已交接并通过真实链。`market` 仅显式兼容已上架公开详情，不自动回退。已有环境须先备份核验 user/billing 增量迁移及 capability `03` SQL；本次收尾不操作现有数据库或服务。端口占用时先核实来源，不结束未知进程；不要混用两种启动入口。
 
 详见 [上手与联调](docs/上手与联调.md)、[并行资源](docs/双项目并行联调.md)、[Web/Nginx](web/README.md)。
 
@@ -111,13 +111,13 @@ python scripts/start_leader_dev.py web
 
 - `requestId` 为统一外层字段，业务字段用 snake_case；内部 `request_id` 和结果 `data.request_id` 必须与外层同值。
 - Gateway 生成外部 requestId，清理 `X-User-*`、role 别名及调用方 requestId 后注入签名身份和角色；调用方不能伪造管理员。
-- JWT role 仅为可信声明，不代替管理 API 查询当前用户状态/角色；该业务授权仍待成员实现。
+- JWT role 仅为可信声明，不代替管理 API 查询当前用户状态/角色；capability 与 billing 已调用 user 的实时授权并失败关闭。
 - 登录、注册、市场和 health 按已实现规则放行；Key exchange 只精确放行 `POST /api/user/apikeys/exchange`，每直接地址每分钟 10 次，响应 no-store。
 - 外部 `/internal/**` 及服务发现别名/编码路径保持 403。内部服务端口不作为公开认证入口，部署仍需限定内网可达范围。
 - 业务错误通常 HTTP 200；网关认证 401、内部隔离 403、限流 429。`1001/1005` 身份/账号，`2001/2002/2008` 参数/状态/不支持执行器，`3001/3002` 余额/幂等冲突，`4002/4003/4004` 依赖/系统/会话。
 - 模型 `5001/5002` 通过成功结果中的 `error_code` 表示降级，实际 cost=0；不能误写成模型成功收费。
 
-内部管理员授权的新增约定、失败关闭及权限码见 [共享契约](docs/api-contract/pro-shared.md)。未完成端点不能标为可用。
+已实现的内部管理员授权、失败关闭及权限码见 [共享契约](docs/api-contract/pro-shared.md)。未完成端点不能标为可用。
 
 ## 7. 能力输入、价格与执行顺序
 
@@ -146,9 +146,9 @@ python scripts/start_leader_dev.py web
 | GET /internal/user/check | user | 已有；校验当前账号和余额，返回 user_id/status/balance/points_cost/available |
 | POST /internal/user/points/deduct | user | 已有；金额为正整数，requestId 幂等，保护当前用户 |
 | POST /internal/billing/record | billing | 已有；接受 capability_id/points/status，核对收据 |
-| GET /internal/capability/{id} | capability | AI 客户端已具备，服务端待交接；返回 ID/code/status/Schema/目录价 |
-| GET /internal/user/authorization | user | 新增约定，待实现；当前状态/role/authorized 检查 |
-| POST /api/user/apikeys/exchange | user | Gateway 配套已有，Key 校验/TTL/签发待实现 |
+| GET /internal/capability/{id} | capability | 双方已实现；返回 ID/code/status/Schema/目录价，完整 internal E2E 通过 |
+| GET /internal/user/authorization | user | 已实现；当前状态/role/authorized 检查，普通用户 1006 |
+| POST /api/user/apikeys/exchange | user | user/Gateway 已真实联调；校验 Key、账号、期限及受限 TTL |
 
 共享字段与实现边界见 [pro-shared.md](docs/api-contract/pro-shared.md)，四份服务契约必须同步说明兼容输入、错误语义、状态与测试。内部状态异常失败关闭；不采用“权限未做好先让所有登录用户写入”的过渡策略。
 
@@ -158,9 +158,9 @@ python scripts/start_leader_dev.py web
 
 SQL 的实际表定义以各服务 `sql/01_init.sql` 为准；`deploy/mysql/init/` 用于新卷首次初始化。修改结构需提交增量迁移，先备份、说明重复运行/已有数据保留与核验方法；seed 会更新演示数据，不等同于迁移，也不能用清空数据卷升级。
 
-user负责注册赠送及扣分requestId重放，billing负责账单占位/结算/日聚合并已拒绝关键字段冲突。user当前仍需补齐扣分重放参数冲突与GET check目标ID比较；这是明确待办，不在文档中伪造完成。同一内部requestId相同业务不重复扣分，浏览器再次请求会取得新ID，不宣称网络重试自动全局幂等。
+user负责注册赠送及扣分requestId重放，billing负责账单占位/结算/日聚合并已拒绝关键字段冲突。user已校验扣分重放的关键字段冲突，并在GET check查库前拒绝query目标与当前身份不符（1001）；修复及回归已随PR #4合并。同一内部requestId相同业务不重复扣分，浏览器再次请求会取得新ID，不宣称网络重试自动全局幂等。
 
-AI 本地消息事务、billing 事务与 user 扣分不是分布式原子提交；远端成功而本地失败时按 requestId 对账，不能盲目重试模型。旧 capability_id=0 仅表示历史未关联能力；新 Pro 调用必须关联真实能力 ID。现有 billing 尚未独立存储 unit_price，新增列不得把历史未知单价伪造为真实数据。
+AI 本地消息事务、billing 事务与 user 扣分不是分布式原子提交；远端成功而本地失败时按 requestId 对账，不能盲目重试模型。旧 capability_id=0 仅表示历史未关联能力；新 Pro 调用必须关联真实能力 ID。billing 已独立存储 nullable unit_price；历史未知仍为NULL，不伪造真实单价。
 
 数据库日期、主机业务日期需相互一致。E2E 会对齐测试 MySQL 的时间偏移；Windows 北京时间和 Linux UTC 可以分别工作，但不能在同一测试链混用不同“当天”。
 
@@ -175,9 +175,9 @@ git push -u origin feature/pro-自己的任务
 
 团队成员从当前 main 开发，PR 目标 main；develop 仅在主动同步并确认后使用，不从旧集成分支丢失 Pro 功能。常规合并采用 Squash，先确认依赖；基础 PR 被 Squash 后，后续分支可产生历史冲突，须核对完整文件树并保留双方功能，不能直接 force push 或用 ours/theirs 盲目覆盖。
 
-main/develop 要求 PR、1 位审批者、最后 push 后审批、对话解决及原 8 项必需检查；管理员也受规则约束，禁止强推/删分支。新增真实服务 CI 为第 9 项，发布检查应全部核对。本次先前合并的单次 Review 例外已经使用并恢复，不构成后续自动取消保护的授权。
+常规协作建议PR、至少1位成员审批、最新提交CI与对话解决，禁止强推/删分支。实际状态：仓库所有者于2026-10-20暂时关闭main保护，并明确授权验证后合并PR #4/#5；随后单独确认本次收尾PR #6与候选Tag。代理未修改保护设置，不能将授权例外写成人工审批或后续通用豁免。工作流仍核对全部9项检查。
 
-完成代码不等于人工 Review 完成，授权例外合并也不写成组员已审批。最终 Tag 需三人业务、迁移、严格内部链和评审完成，不把当前组长阶段当作最终版。
+完成代码不等于人工 Review 完成，授权例外合并也不写成组员已审批。正式最终 Tag 仍需三人验收/评审；本次仅授权在最新 main 的全部CI通过后创建候选 `v0.1.0-pro-rc.1`，不表示部署、供应商验收或人工签字完成。
 
 ## 11. 测试与验收
 
@@ -193,11 +193,11 @@ pnpm --dir web exec playwright install chromium --no-remove
 python scripts/run_leader_e2e.py --catalog-mode market --browser
 ```
 
-内部目录与授权服务就绪后执行 `python scripts/run_leader_e2e.py --catalog-mode internal --browser`，检查 summary 的 `member_internal_contract_verified=true`，并补齐管理员/Key/迁移验收。兼容链和替身单测不能代替这一结果。
+同时执行 `python scripts/run_leader_e2e.py --catalog-mode internal --browser`，检查 summary 的 `member_internal_contract_verified=true`，以及非空 chat/settings/console 三个真实浏览器套件。兼容链和替身单测不能代替这一结果。
 
 数据库 pytest 含测试行清理，必须使用独立验收实例，不能连开发库。JUnit 需要实际执行、零 skipped/failure/error，使用 `scripts/check_test_report.py` 严格检查；离线门禁的跳过不能作为 DB 通过证据。真实服务 E2E 使用独立库、端口、进程和 Nacos group，模型端是本地 HTTP 替身，不冒称真实外部供应商已验收。
 
-在业务基线 `1b89ce8` 上，四服务 229、Gateway 35、公共工具 13、前端输入 6、E2E 22、浏览器 7 项已通过，主分支 CI 运行 `39155554390` 为 9/9。新提交以自己的 CI/报告为准。记录见 [验收汇总](docs/联调验收记录-2026-10-19.md)。
+三人业务基线 `651275b`：四服务369（95/87/131/56）、Gateway35、公共工具13、输入8；market E2E22/internal21、浏览器各9，CI `39420321602` 为9/9。本轮新增22项工具测试与真实Settings/管理员Console流程，实际提交及结果见[收尾记录](docs/验收收尾记录-2026-10-20.md)。历史[10/19汇总](docs/联调验收记录-2026-10-19.md)不作为最新证据。
 
 ## 12. 安全操作、配置与排障
 

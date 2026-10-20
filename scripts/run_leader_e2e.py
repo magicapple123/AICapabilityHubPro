@@ -37,7 +37,8 @@ def main() -> int:
         if args.catalog_mode == "market":
             summary["member_internal_contract_verified"] = checks.verify_strict_mode(runtime.start_strict_probe())
         if args.browser:
-            runtime.check_browser(checks.username, checks.password)
+            browser = runtime.check_browser(checks.username, checks.password)
+            summary["browser_suites"] = {name: len(items) for name, items in browser["suites"].items()}
             summary["browser_verified"] = True
         summary["passed"] = True
         if args.catalog_mode == "internal": summary["member_internal_contract_verified"] = True

@@ -1,6 +1,6 @@
 # Pro 共享接口与身份、Schema、计量约定
 
-负责人：三人共同维护；更新日期 2026-10-19。统一响应为 `code/message/data/requestId`。本文件区分 **已实现** 和 **新增约定、待实现**；后者来自团队任务交接，不因写入文档而自动成为可调用接口。
+负责人：三人共同维护；更新日期2026-10-20，三人业务已集成main `651275b`。统一响应为 `code/message/data/requestId`。以下授权、内部目录与Key兑换均有实现和真实联调证据；现有环境部署/迁移另行执行。
 
 ## 1. 通用规则
 
@@ -67,7 +67,7 @@ unit_price 为目录登记价，points 为实际收费；降级 points=0，单�
 
 AI 必须核对正 record_id、request_id/user_id/capability_id/cost/call_status，否则不返回成功。billing 幂等比较用户、服务、能力、实际费用、登记价、模型、耗时和状态；浏览器重发是新 requestId，不能等同于内部账单重放。
 
-## 6. API Key 兑换（user/Gateway 已实现，跨服务联验待完成）
+## 6. API Key 兑换（user/Gateway 已实现并通过真实兑换联调）
 
 精确 `POST /api/user/apikeys/exchange`。JSON 精确为 access_key/secret_key，额外字段拒绝；API_KEY_JWT_TTL_SECONDS 默认 900、硬上限 3600，Token 不晚于 Key 到期。成功字段及统一无效凭证错误见 [user 第7节](user-service.md#7-pro-实现与兼容要求2026-10-20)。
 
@@ -77,4 +77,4 @@ Gateway 已提供匿名 POST、10 次/直接地址/分钟和 no-store。user 已
 
 每服务本地事务不是分布式原子提交。远端扣分/账单成功但 AI 最终提交失败需按 requestId 对账，不盲目重试模型。增量迁移保留旧数据，历史未知单价不可伪造；SQL seed 仅供新环境/明确的隔离示例库。
 
-各接口分别留正常/拒绝/故障与字段一致性测试；严格 internal E2E 必须实际通过并标记 member_internal_contract_verified=true。双方代码与迁移已在隔离环境联合验证；最终 main 的 CI、market/internal 完整浏览器验收及真实管理员授权结果应按合并提交单独留档，不以历史分支通过替代最终主线验收。
+各接口分别留正常/拒绝/故障与字段一致性测试；严格 internal E2E 必须实际通过并标记 member_internal_contract_verified=true。main `651275b` 的CI `39420321602` 已通过9/9、四服务369项零跳过、market/internal完整真实链和浏览器。另有真实管理员撤权/禁用/故障及Key兑换/计量证据。本次新增Settings/管理员Console浏览器覆盖与限制见[非部署收尾记录](../验收收尾记录-2026-10-20.md)，后续以对应提交自己的CI为准。

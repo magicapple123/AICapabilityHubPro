@@ -8,7 +8,7 @@
 
 AICapabilityHub Pro 面向 AI 能力的接入、调试与调用核验。开发者选择能力后，平台读取该能力的最新状态、输入 Schema 和积分单价，通过受控的聊天或文本摘要执行器完成请求，并将能力 ID、实际费用、账单和积分流水串联到同一个 requestId。
 
-本项目由前三周的 AICapabilityHub 基础版本演进而来。Pro 的重点是**能力目录驱动的执行闭环**：把“选择什么能力、提交哪些参数、消耗多少积分、在哪里核对结果”放到同一条链路中。当前处于团队集成阶段，已实现范围和待交接内容见下表。
+本项目由前三周的 AICapabilityHub 基础版本演进而来。Pro 的重点是**能力目录驱动的执行闭环**：把“选择什么能力、提交哪些参数、消耗多少积分、在哪里核对结果”放到同一条链路中。三人业务代码已集成到 main；当前进行非部署验收收尾，正式发布与人工签字分别记录，不由代码合并代替。
 
 ## Pro 带来的变化
 
@@ -31,12 +31,12 @@ AICapabilityHub Pro 面向 AI 能力的接入、调试与调用核验。开发�
 | 能力执行链 | 最新目录查询、上架状态/allowlist/Schema 校验、目录价预检、计量收据核验 | 已实现 |
 | 计量与追踪 | capability_id、费用、账单、积分流水与 requestId 对齐；模型降级不收费 | 已实现并通过真实服务联调 |
 | Gateway 治理 | 签名身份与角色转发、伪造头清理、内部路径隔离、兑换入口限流 | 已实现 |
-| 目录内部接口 | 默认内部模式的调用客户端及失败关闭逻辑 | 调用侧已实现，目录服务端待成员交接 |
+| 目录内部接口 | 真实内部详情、最新状态/Schema/单价与失败关闭 | 已通过 strict internal 真实链 |
 | 市场体验入口 | 市场卡片携带所选能力 ID 进入调试台，提供参数详情与执行器状态 | 已实现，随本轮前端提交验收 |
-| 角色与权限 | JWT role 可信传递 | user/billing 已实现角色、迁移和实时授权；capability 接入待联验 |
-| API Key 兑换 | Gateway 精确 POST 白名单、限流、no-store | user 已实现校验与受限短期 JWT；Gateway 联验待完成 |
+| 角色与权限 | user 实时授权，capability 管理与 billing 全局统计保护 | 已实现并联调，旧 JWT 不绕过撤权 |
+| API Key 兑换 | 一次性 Secret、摘要校验、状态/期限与受限 JWT；Gateway 精确 POST/限流/no-store | 已实现并通过真实兑换链 |
 
-“已实现”描述本说明对应的 Pro 业务代码。PR #1/#2 已合入 main 的 1b89ce8，合并后 CI 9/9；本分支 user/billing 角色、Key 兑换及迁移见[交接记录](docs/implementation/member-黄禹菲.md)；内部目录与跨服务联验仍待完成。完整最终版尚未发布。
+2026-10-20，PR #4（黄禹菲：user/billing/Settings）与 PR #5（夏思凯：capability/市场/Console，含安全迁移修复）已合入 main `651275b`，主分支 CI `39420321602` 为 9/9。收尾新增的真实 Settings/管理员 Console 浏览器验收、演示与候选版本约定见[非部署收尾记录](docs/验收收尾记录-2026-10-20.md)。完整正式版尚未发布。
 
 视觉理解、语音转写、知识检索等不属于本期可执行能力。平台只调用代码中明确允许的执行器，不执行用户传入的目标 URL，也不把目录中的 service/path 当作任意代理地址。
 
@@ -115,14 +115,12 @@ Pro Compose project 为 `aicapabilityhubpro`，不挂载原项目的数据卷。
 python scripts/start_pro_local.py user-service
 python scripts/start_pro_local.py capability-service
 python scripts/start_pro_local.py billing-service
-python scripts/start_leader_dev.py ai-chat-service --catalog-mode market
+python scripts/start_leader_dev.py ai-chat-service --catalog-mode internal
 python scripts/start_leader_dev.py gateway
 python scripts/start_leader_dev.py web
 ```
 
-当前显式使用 `market` 兼容模式，读取旧目录的已上架详情，完成 Pro 的能力校验和计量闭环。默认 `internal` 模式要求 `GET /internal/capability/{id}` 已交接；接口缺失会失败关闭，不能把兼容模式通过写成内部接口已经验收。
-
-内部接口就绪后，将 AI 命令改为 `python scripts/start_leader_dev.py ai-chat-service --catalog-mode internal`，并重跑对应 E2E。
+推荐默认 `internal` 严格模式，`GET /internal/capability/{id}` 已交付并通过完整真实链。`market` 仅为显式兼容模式，不自动回退；接口缺失或异常仍失败关闭。已有数据库需先由负责人备份、核验增量迁移，不能直接重导 seed；本轮收尾未迁移或重启现有环境。
 
 ### 4. 登录与体验
 
@@ -153,24 +151,25 @@ pnpm --dir web exec node --experimental-strip-types --test tests/chat-schema.tes
 # 独立环境的真实服务和浏览器验收
 pnpm --dir web exec playwright install chromium --no-remove
 python scripts/run_leader_e2e.py --catalog-mode market --browser
+python scripts/run_leader_e2e.py --catalog-mode internal --browser
 ```
 
 数据库 pytest 含测试行清理逻辑，应连接专用验收实例，不能直接使用开发数据库。CI 为四个服务提供隔离 MySQL，并用 `scripts/check_test_report.py` 拒绝空报告、跳过、失败和错误。E2E 单独创建数据库/进程/端口，模型端使用本地 HTTP 测试替身，测试后保留日志和数据卷以供复核。
 
-2026-10-19 的已合并 main 基线 `1b89ce8`（业务来源 `3678cbb`，主分支 CI `39155554390`）已验证：
+2026-10-20 的三人集成 main 基线 `651275b`，主分支 CI `39420321602` 已验证（本次扩展浏览器结果另见收尾记录）：
 
 | 范围 | 结果 |
 |---|---|
-| 四个服务数据库测试 | 229 passed，零 skipped / failure / error |
+| 四个服务数据库测试 | user 95、billing 87、capability 131、AI 56；共 369，零 skipped / failure / error |
 | Gateway | 35 项通过 |
-| 公共工具 / 前端输入 | 13 / 6 项通过 |
-| 真实服务 E2E | 22 项通过 |
-| 桌面 / 手机浏览器 | 7 项通过 |
+| 公共工具 / 前端输入 | 该基线 13 / 8 项通过；本轮新增 22 项隔离账号测试 |
+| 真实服务 E2E | market 22 / internal 21 项通过，内部契约标记均为 true |
+| 桌面 / 手机浏览器 | 该基线每模式 9 项；Settings/管理员扩展见收尾记录 |
 | 该提交 GitHub Actions | 9 / 9 检查通过 |
 
-这是明确提交的验收记录；后续修改以对应提交最新 CI 为准。工作流、报告和限制详见 [质量门禁](docs/质量门禁说明.md)、[业务完成记录](docs/组长业务完成记录-2026-10-19.md)及 [验收矩阵](docs/验收用例.md)。
+本轮扩展源码882bb5b的CI39446101405为9/9：每种目录模式均完成32项真实浏览器检查（Chat9、Settings11、Console12），公共工具35项。它与上表历史业务基线分别留档；后续修改仍以自己的CI为准。工作流、报告和限制详见 [质量门禁](docs/质量门禁说明.md)、[业务完成记录](docs/组长业务完成记录-2026-10-19.md)及 [验收矩阵](docs/验收用例.md)。
 
-本轮全站布局、交互与最新本地验证见 [前端改版记录](docs/前端改版与验收-2026-10-20.md)。该记录对应当前 PR，主分支合并和 CI 状态分别核对。
+10/20全站改版见[历史前端记录](docs/前端改版与验收-2026-10-20.md)；其中模拟写响应的检查不代替真实管理员/Key流程，后续真实覆盖与提交证据见[收尾记录](docs/验收收尾记录-2026-10-20.md)。
 
 ## 项目目录
 
@@ -193,13 +192,13 @@ AICapabilityHubPro/
 
 黄岑果负责 Gateway、AI 执行链、调试台与集成；黄禹菲负责用户/计量、角色、Key 和设置；夏思凯负责目录、运营授权、Schema 与市场入口。当前边界和待办以 [实施看板](docs/升级实施看板.md) 为准。
 
-当前从最新 origin/main 开发并提交目标 main 的 PR；develop 尚未同步这批 Pro 升级，主动同步确认前不作为成员起点。PR #1/#2 已在用户授权的单次 Review 例外下合并，原保护已恢复；例外不等于组员人工 Review，也不授权后续取消审批。原仓库、旧分支与原始数据保留。
+当前从最新 origin/main 开发并提交目标 main 的 PR；develop 尚未同步这批 Pro 升级，主动同步确认前不作为成员起点。仓库所有者于2026-10-20暂时关闭 main 保护，并明确授权验证通过后合并；本次非部署收尾及候选 Tag 也已单独确认。未代替组员人工 Review，未擅改保护设置或强推。原仓库、旧分支与原始数据保留。
 
 项目统一名称、简介、About 和对外表达见 [项目定位与描述规范](docs/项目定位与描述规范.md)。详细协作流程见 [CONTRIBUTING](CONTRIBUTING.md)，接口以 [Pro 执行契约](docs/api-contract/ai-chat-service.md) 和各服务契约为准。
 
 ## 已知边界
 
-- 本分支已实现 user/billing 授权与 Key 兑换；capability 接入、Gateway 兑换全链和严格内部目录联合验收仍待完成。
+- 三人业务与严格内部目录已集成；现有环境部署/迁移、真实供应商验收和三人正式签字不以隔离自动化通过替代。
 - 会话本地事务与远端记账不构成分布式原子事务；远端成功、本地最终提交失败时按 requestId 对账，不能盲目重试模型。
 - Pro 目前支持受控聊天与文本摘要，不包含任意插件执行、视觉/语音执行、SSE、真实支付或外部供应商可用性保证。
 - 组长业务无需新增数据库列；其他成员的数据结构升级须提供保留旧数据的增量迁移。

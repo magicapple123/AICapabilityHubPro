@@ -4,7 +4,7 @@
 
 本模块提供 Pro 的开发者界面：能力市场、Schema 驱动调试、聊天与文本摘要、会话历史、积分与用量查询。浏览器只访问 Gateway 的 `/api/**`，不直连 Python 服务。
 
-PR #1/#2已合入main；当前开发入口为[Pro指南](../AICapabilityHubPro-开发指南.md)、[共享契约](../docs/api-contract/pro-shared.md)和[文档索引](../docs/README.md)，不再从旧develop或归档分工重建前端。
+PR #1–#5已集成main，业务基线651275b；当前开发入口为[Pro指南](../AICapabilityHubPro-开发指南.md)、[共享契约](../docs/api-contract/pro-shared.md)和[文档索引](../docs/README.md)，不再从旧develop或归档分工重建前端。
 
 ## 当前页面
 
@@ -15,10 +15,10 @@ PR #1/#2已合入main；当前开发入口为[Pro指南](../AICapabilityHubPro-�
 | 能力市场 | `/capabilities` | 分类/搜索、参数详情、执行器状态和选中 ID 直达调试 |
 | 能力调试 | `/chat?capability_id=<id>` | 选择聊天/摘要、Schema 表单、价格、账单和 requestId |
 | 调用记录 | `/usage` | 当前用户余额、用量和账单 |
-| 开发者设置 | `/settings` | 现有资料、Key 管理和积分；短期 Token 兑换待负责人实现 |
-| 运营控制台 | `/console` | 现有目录操作；实时管理员授权待业务服务升级 |
+| 开发者设置 | `/settings` | 资料/角色、积分、Key期限/禁用、一次性Secret及真实短JWT兑换说明 |
+| 运营控制台 | `/console` | 真实分类/能力管理、Schema/价格/上下架、实时管理员授权与全局统计 |
 
-`src/features/chat/` 已实现受控能力输入与结果核验。页面读取执行器列表，未知或不兼容能力禁用提交。角色实时授权与 Key 凭证兑换仍待对应成员交付。市场选中能力的跳转、资料/积分/凭证页签及全站布局已在本轮完成，见[改版与验收记录](../docs/前端改版与验收-2026-10-20.md)。
+`src/features/chat/` 已实现受控能力输入与结果核验。页面读取执行器列表，未知或不兼容能力禁用提交。角色实时授权与Key兑换已随成员PR交付。市场选中能力的跳转、资料/积分/凭证页签及全站布局已在本轮完成，见[改版与验收记录](../docs/前端改版与验收-2026-10-20.md)。
 
 ## 本地启动
 
@@ -33,7 +33,7 @@ python scripts/start_leader_dev.py web
 
 `VITE_USE_MOCK_LOGIN=false` 为默认值，使用真实演示账号 `demo / demo123456`。模型的 `USE_MOCK` 只控制执行方式，与占位登录无关。
 
-AI 服务暂用显式 `market` 目录兼容模式；内部接口就绪后切回 `internal`。前端价格只是预览，服务端每次执行前重新核对目录，不信任客户端单价。
+AI推荐默认严格 `internal` 模式，内部接口已交付并联调；`market`仅显式兼容，不自动回退。前端价格只是预览，服务端每次执行前重新核对目录，不信任客户端单价。
 
 ## 构建与验收
 
@@ -43,9 +43,10 @@ pnpm --dir web build
 pnpm --dir web exec node --experimental-strip-types --test tests/chat-schema.test.ts
 pnpm --dir web exec playwright install chromium --no-remove
 python scripts/run_leader_e2e.py --catalog-mode market --browser
+python scripts/run_leader_e2e.py --catalog-mode internal --browser
 ```
 
-最后一条从项目根目录执行，依赖已打包 Gateway、四服务环境、Docker 和 Nacos。它在独立测试资源上验证真实 Web/网关/业务链，模型端使用本地 HTTP 测试替身。报告及桌面/手机截图保存到唯一 `artifacts/leader-e2e/<编号>/`。
+两条E2E命令从项目根目录执行，依赖已打包Gateway、四服务环境、Docker和Nacos。它在独立测试资源上验证真实 Web/网关/业务链，模型端使用本地 HTTP 测试替身。必须通过chat/settings/console三个真实套件；报告及Secret关闭后的桌面/手机截图保存到唯一 `artifacts/leader-e2e/<编号>/`。源码882bb5b的CI39446101405全部9项通过，每模式32项浏览器检查（9/11/12）。新增覆盖与限制见[收尾记录](../docs/验收收尾记录-2026-10-20.md)。普通登录JWT的既有localStorage行为未改；Key Secret和兑换所得测试Token不写证据/持久化存储。
 
 ## Nginx 入口
 

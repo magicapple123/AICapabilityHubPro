@@ -1,6 +1,6 @@
 # AICapabilityHub Pro · 调用计量与账单服务
 
-billing-service拥有billing_db，按真实capability_id、实际points与requestId记账，并通过user服务结算积分。Pro AI已按目录单价上报，不再固定POINTS_COST；unit_price独立存储与实时管理员统计保护仍待黄禹菲实现。
+billing-service拥有billing_db，按真实capability_id、目录unit_price、实际points和requestId记账，通过user服务结算积分。PR #4已合入main，三人业务基线651275b；单价独立存储和实时管理员保护已实现。
 
 规范见[开发指南](../../AICapabilityHubPro-开发指南.md)、[计量契约](../../docs/api-contract/billing-service.md)与[共享约定](../../docs/api-contract/pro-shared.md)。
 
@@ -8,39 +8,31 @@ billing-service拥有billing_db，按真实capability_id、实际points与reques
 
 | 接口 | 当前行为 |
 |---|---|
-| POST /internal/billing/record | 校验链路身份与requestId，幂等写明细、调user扣分、日聚合 |
-| GET /api/billing/records | 当前用户分页明细/日期/服务/状态筛选 |
+| POST /internal/billing/record | 链路身份/requestId校验，幂等明细、user扣分及日聚合 |
+| GET /api/billing/records | 当前用户分页明细，返回nullable unit_price与实际cost |
 | GET /api/billing/usage | 当前用户汇总、日与服务维度 |
-| GET /api/billing/stat/overview | 全局统计；当前实时admin保护尚未实现，属于缺口 |
-| GET /health、/api/billing/ping | health公开；ping经Gateway需JWT |
+| GET /api/billing/stat/overview | 全局统计，每次向user实时授权admin |
+| GET /health、/api/billing/ping | health公开，ping需Gateway JWT |
 
-实际请求包含capability_id、unit_price、points、status、duration_ms。points→cost，正常目录价，degraded为0；Schema当前忽略额外unit_price，不能声称已独立保存登记单价。0能力ID只兼容历史未关联调用。
+unit_price是登记价，points映射实际cost；success有单价时费用须相等，degraded/failed为0。省略单价的旧调用兼容NULL，历史未知不回填猜测。capability_id=0只兼容历史未关联调用。
 
-免费/降级不发正额扣分，但仍检查账号；查询通过user check拦截禁用，不跨库。运营授权需进一步实时authorization，不能只信JWTrole或前端隐藏按钮。
+免费/降级不发正额扣分，但仍检查账号。普通用户读全局统计1006，账号禁用/不存在1005，授权依赖不明4002；不只信JWT role，不跨库。
 
-## 幂等和事务
+## 幂等、事务与恢复
 
-重复requestId的用户/服务/能力/实际费用/状态一致返回duplicated=true，不再扣分/累加，balance_after当前为null；冲突3002。日聚合按日期/用户/能力唯一键累加。
+同requestId比较用户/服务/能力/费用/单价/模型/耗时/状态等关键字段，相同返回duplicated=true，不再扣分/累加；冲突3002。内部重放与浏览器新请求不同，不宣称自动全局幂等。
 
-本地明细和日聚合的事务不包括远端user提交；扣分后本地提交失败须requestId对账，不能宣称全局原子回滚。summary/by_service来自明细、by_day来自日聚合，当前双源口径如实保留。
+本地明细/聚合事务不包括远端user提交，扣分后本地失败按requestId对账，不能宣称全局原子回滚。summary/by_service与by_day的既有统计来源不在本轮改变。
 
-## 启动与验收
-
-根目录初始化及中间件就绪后：
+## 启动、迁移与验收
 
 ```powershell
+# 根目录初始化并确认Pro中间件/目标数据库后
 python scripts/start_pro_local.py billing-service
 ```
 
-监听8083，Pro DB3307、Nacos8849。按[根README](../../README.md)启动其余服务再做真实链，不用生产/开发账号手工构造重复扣款作为自动化测试。
+监听8083，Pro DB3307/Nacos8849。已有库先备份核验，再于本服务目录由负责人运行`python -m app.migrate`增量添加nullable unit_price；重复执行无损，历史价格保留NULL，回退不DROP。seed不是迁移。本轮未升级现有环境。
 
-基线52项pytest，数据库夹具使用高位测试用户ID并清行，必须独立MySQL实例；生成JUnit并严格零跳过检查。依赖替身单测只证明本服务边界，真实user/billing联调由独立E2E验证。
+main651275b的CI39420321602：billing87项零跳过/错误/失败，含单价/角色/迁移/余额/幂等与故障负例。夹具会清测试行，只准显式连接独立QA实例并严格检查JUnit；不能用开发.env或真实用户试扣。
 
-## 待交接
-
-- 实时admin保护全局统计，个人查询继续隔离；授权异常失败关闭。
-- unit_price请求/存储/查询/幂等扩展及保留旧数据的增量迁移，不伪造历史价。
-- 角色撤销、免费禁用账号、同requestId冲突、余额不足和跨服务故障边界测试。
-- 新权限码1007，保留1006的Key不存在含义；公共接口以共享契约为准。
-
-任务和证据见[黄禹菲任务](../../docs/implementation/member-黄禹菲.md)。sql/02_seed.sql仅示例数据，不是升级迁移。
+真实内部摘要3分/单价持久化、实时管理员撤权与Key链已验证。新增管理员统计浏览器证据见[收尾记录](../../docs/验收收尾记录-2026-10-20.md)及[本人任务](../../docs/implementation/member-黄禹菲.md)。

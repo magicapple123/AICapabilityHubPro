@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from devtools.environment import SERVICES, service_python
+from leader_e2e.browser_accounts import prepare_browser_admin
 
 
 def free_port() -> int:
@@ -128,6 +129,8 @@ JSON_OBJECT('type','object'),8,'online','Test-only unsupported adapter');""")
         return f"http://127.0.0.1:{port}"
 
     def check_browser(self, username: str, password: str):
+        admin = prepare_browser_admin(self.gateway, self.sql,
+                                      container_name=self.name, owned=self.created)
         port = free_port()
         self.ports["web"] = port
         root = self.root / "web"
@@ -138,14 +141,28 @@ JSON_OBJECT('type','object'),8,'online','Test-only unsupported adapter');""")
                            "--host", "127.0.0.1", "--port", str(port)], root, env)
         base = f"http://127.0.0.1:{port}"
         wait_http(base, 30)
+        # The preceding Gateway test deliberately consumes its real 10/minute
+        # exchange budget. Wait a full window; never disable or bypass the limit.
+        print("Waiting for the real Gateway exchange rate-limit window", flush=True)
+        time.sleep(61)
         result = subprocess.run([node, "--experimental-strip-types", "tests/chat-browser.ts"], cwd=root,
             env={**env, "PRO_E2E_WEB_URL": base, "PRO_E2E_USERNAME": username,
-                 "PRO_E2E_PASSWORD": password, "PRO_E2E_EVIDENCE": str(self.directory / "browser")},
+                 "PRO_E2E_PASSWORD": password, "PRO_E2E_ADMIN_USERNAME": admin.username,
+                 "PRO_E2E_ADMIN_PASSWORD": admin.password, "PRO_E2E_OWNED_QA": self.name,
+                 "PRO_E2E_EVIDENCE": str(self.directory / "browser")},
             capture_output=True, text=True, encoding="utf-8")
         with (self.directory / "browser-driver.log").open("x", encoding="utf-8") as log:
             log.write(result.stdout + result.stderr)
         if result.returncode: raise RuntimeError("Browser verification failed; inspect browser-driver.log")
+        report = json.loads((self.directory / "browser/browser-summary.json").read_text(encoding="utf-8"))
+        suites = report.get("suites", {})
+        if (report.get("passed") is not True or report.get("browserErrors") != [] or
+                set(suites) != {"chat", "settings", "console"} or
+                any(not isinstance(items, list) or not items for items in suites.values()) or
+                report.get("checks") != [check for items in suites.values() for check in items]):
+            raise RuntimeError("All three real browser suites must produce successful evidence")
         print(result.stdout, flush=True)
+        return report
 
     def close(self):
         for name, process, log in reversed(self.processes):

@@ -1,6 +1,6 @@
 # AICapabilityHub Pro · user-service 接口契约
 
-**实现状态（2026-10-20，feature/pro-user-billing）：** 已实现角色、实时授权、Key 短期 JWT 兑换及保留旧数据的迁移，详见第 7 节。统一规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)及[共享契约](pro-shared.md)，不得再按原版“仅展示 Key”的目标删掉凭证校验基础。
+**实现状态（2026-10-20，PR #4已合入main `651275b`）：** 已实现角色、实时授权、Key 短期 JWT 兑换及保留旧数据的迁移，详见第 7 节。统一规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)及[共享契约](pro-shared.md)，不得再按原版“仅展示 Key”的目标删掉凭证校验基础。
 
 > 负责人：黄禹菲
 > 服务名：`user-service`
