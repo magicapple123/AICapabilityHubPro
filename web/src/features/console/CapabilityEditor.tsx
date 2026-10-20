@@ -3,6 +3,29 @@ import { useRef, useState } from 'react'
 import { createCapability, updateCapability, type CapabilityManageItem, type CategoryItem, type CapabilityCreatePayload } from '@/api/capability'
 import { ErrorNote, Modal } from '@/components/ui'
 
+const SCHEMA_MAX_BYTES = 32_768
+const FORBIDDEN_SCHEMA_KEYS = ['$ref', '$dynamicRef', '$recursiveRef', '$id']
+
+/** 与目录服务的结构约束保持一致；最终仍以服务端校验为准。 */
+function schemaProblem(schema: Record<string, unknown>): string {
+  if (schema.type !== 'object') return 'Schema 根类型必须为 object，暂不支持其他根类型。'
+  if (new TextEncoder().encode(JSON.stringify(schema)).length > SCHEMA_MAX_BYTES) return 'Schema 序列化后不能超过 32768 字节。'
+  const visit = (value: unknown, depth: number): string => {
+    if (depth > 20) return 'Schema 嵌套层级不能超过 20 层。'
+    if (Array.isArray(value)) {
+      for (const child of value) { const problem = visit(child, depth + 1); if (problem) return problem }
+      return ''
+    }
+    if (!value || typeof value !== 'object') return ''
+    for (const [key, child] of Object.entries(value)) {
+      if (FORBIDDEN_SCHEMA_KEYS.includes(key)) return 'Schema 不能使用 $ref、$dynamicRef、$recursiveRef 或 $id。'
+      const problem = visit(child, depth + 1); if (problem) return problem
+    }
+    return ''
+  }
+  return visit(schema, 0)
+}
+
 export function CapabilityEditor({ item, categories, onClose, onSaved }: {
   item: CapabilityManageItem | null; categories: CategoryItem[]; onClose: () => void; onSaved: () => void
 }) {
@@ -26,8 +49,11 @@ export function CapabilityEditor({ item, categories, onClose, onSaved }: {
         schema = parsed as Record<string, unknown>
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Schema 格式无效'); return }
+    if (schema) { const problem = schemaProblem(schema); if (problem) { setError(problem); return } }
     if (!form.name.trim() || !/^[a-z0-9][a-z0-9-]*$/.test(form.code) || !Number(form.category_id) || !form.service_name.trim() || !form.path.startsWith('/') ||
-      !Number.isInteger(Number(form.price)) || Number(form.price) < 0) { setError('请检查必填字段，价格需为非负整数，调用路径需以 / 开头。'); return }
+      !Number.isInteger(Number(form.price)) || Number(form.price) < 0 || Number(form.price) > 1_000_000) {
+      setError('请检查必填字段；价格需为 0–1000000 的整数，调用路径需以 / 开头。'); return
+    }
     locked.current = true; setSaving(true); setError('')
     try {
       const payload: CapabilityCreatePayload = {
@@ -50,7 +76,8 @@ export function CapabilityEditor({ item, categories, onClose, onSaved }: {
         <label className="field"><span className="field-label">每次调用积分 *</span><input className="form-control" type="number" step="1" min="0" required value={form.price} onChange={(e) => update('price', e.target.value)} /></label></div>
       <details className="editor-advanced" open><summary>服务登记信息</summary><div className="editor-row"><label className="field"><span className="field-label">服务名 *</span><input className="form-control" required value={form.service_name} onChange={(e) => update('service_name', e.target.value)} /></label><label className="field"><span className="field-label">调用路径 *</span><input className="form-control" required pattern="/.*" value={form.path} onChange={(e) => update('path', e.target.value)} /></label></div><p className="field-hint">登记信息不会开启任意转发，实际执行由已接入的受控执行器决定。</p></details>
       <label className="field"><span className="field-label">能力描述</span><textarea className="form-control" rows={3} value={form.description} onChange={(e) => update('description', e.target.value)} /></label>
-      <label className="field"><span className="field-label">输入 Schema（JSON 对象）</span><textarea className="form-control mono" rows={6} spellCheck={false} value={form.schema} onChange={(e) => update('schema', e.target.value)} placeholder={'{"type":"object","properties":{}}'} /></label>
+      <label className="field"><span className="field-label">输入 Schema（JSON 对象）</span><textarea className="form-control mono" rows={6} spellCheck={false} value={form.schema} onChange={(e) => update('schema', e.target.value)} placeholder={'{"type":"object","properties":{}}'} />
+        <p className="field-hint">仅支持对象根类型的内联 Schema，不支持 $ref、$dynamicRef、$recursiveRef 或 $id；实际执行仍会按所选能力的 Schema 校验参数。</p></label>
       {!item && <label className="field"><span className="field-label">初始状态</span><select className="form-control" value={form.status} onChange={(e) => update('status', e.target.value)}><option value="draft">草稿</option><option value="online">已上架</option><option value="offline">已下架</option></select></label>}
       {error && <ErrorNote message={error} />}<div className="form-actions"><button className="button-secondary" type="button" onClick={onClose} disabled={saving}>取消</button><button type="submit" className="button-primary" disabled={saving}>{saving ? '保存中…' : '保存能力'}</button></div>
     </fieldset></form>
