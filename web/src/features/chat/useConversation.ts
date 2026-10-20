@@ -16,6 +16,7 @@ export function useConversation(detail: MarketDetail, onBusy: (busy: boolean) =>
   const [bubbles, setBubbles] = useState<Bubble[]>([WELCOME])
   const [values, setValues] = useState(() => initialValues(detail.param_schema ?? {}))
   const [sending, setSending] = useState(false)
+  const [submittedValues, setSubmittedValues] = useState<Record<string, string> | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [sessionsLoading, setSessionsLoading] = useState(true)
   const [failure, setFailure] = useState<CallFailure | null>(null)
@@ -41,6 +42,7 @@ export function useConversation(detail: MarketDetail, onBusy: (busy: boolean) =>
     setHistoryLoading(false)
     setSessionId(null)
     setBubbles([WELCOME])
+    setSubmittedValues(null)
     setFailure(null)
     setReceipt(null)
   }
@@ -93,6 +95,7 @@ export function useConversation(detail: MarketDetail, onBusy: (busy: boolean) =>
       }])
       setSessionId(data.session_id)
       setReceipt(data)
+      setSubmittedValues({ ...values, messages: '' })
       setValues((previous) => ({ ...previous, messages: '' }))
       // A history refresh failure must never turn an already billed success into a retry.
       void fetchChatSessions({ page: 1, page_size: 30 }).then((history) => {
@@ -108,5 +111,5 @@ export function useConversation(detail: MarketDetail, onBusy: (busy: boolean) =>
   }
 
   return { sessions, sessionId, bubbles, values, setValues, sending, historyLoading,
-    sessionsLoading, failure, receipt, historyWarning, startNew, openSession, send }
+    sessionsLoading, failure, receipt, submittedValues, historyWarning, startNew, openSession, send }
 }

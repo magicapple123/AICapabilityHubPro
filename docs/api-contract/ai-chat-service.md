@@ -124,5 +124,5 @@ prompt_tokens 当前按传入有效消息字符数估算，completion_tokens 沿
 - billing POST /internal/billing/record 传 capability_id、unit_price、points、request_id、user_id、service_name、model、status、duration_ms。正常points=目录价，degraded=0；unit_price始终登记价，当前billing尚未独立存储。
 - billing收据正record_id、request_id/user_id/capability_id/cost/call_status必须一致；未上报时 billing_status=not_reported，不能计费验收。
 - capability与billing的管理实时授权、user角色/Key exchange仍待交接，见[共享契约](pro-shared.md)。权限码1007为新增约定，1006保留user的Key不存在。
-- 市场入口固定 /chat?capability_id=<id>；Chat 已接收，市场按钮待改造。视觉等未支持能力不应显示可体验。
+- 市场入口固定 /chat?capability_id=<id>；Chat 与市场按钮已在10/20前端调整中接通。视觉等未支持能力不应显示可体验。
 - 内部服务就绪后运行严格 --catalog-mode internal --browser，必须实际取得 member_internal_contract_verified=true；目前 market 模式与内部失败关闭的通过不能代替它。

@@ -31,7 +31,7 @@
 - 实现 GET /internal/capability/{id}，返回匹配 id、code、status、内联 param_schema、整数 price_per_call；未知/软删除 2002，状态如实返回。
 - 普通用户不得写分类/能力或读取运营列表；通过实时授权接口校验，服务异常失败关闭。不得采用“尚未做好就允许所有登录用户”的策略。
 - 分类 enabled/disabled、能力 draft/online/offline 依实际契约；聊天和摘要 code/Schema/价格与现有 AI adapter 对齐。
-- 市场按钮传 /chat?capability_id=<id>；调试台已支持。未实现执行器禁用体验，不新增虚构延迟。
+- 市场传 /chat?capability_id=<id>、参数预览和执行器状态已随 10/20 全站前端调整完成；目录负责人继续维护业务联调。内部详情与管理员授权仍待服务端交付。见[前端验收](前端改版与验收-2026-10-20.md)。
 - 市场字段最小化，不返回内部 service/path/secret；草稿/下架不泄露存在性。
 - internal 详情、参数边界、重复编码、授权撤销/故障、直接越权 API 和浏览器市场到 Chat 都需测试。
 

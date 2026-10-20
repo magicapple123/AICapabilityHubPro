@@ -1,0 +1,434 @@
+{
+  "date": "2026-10-20",
+  "scope": "applied frontend and existing service contracts",
+  "typescript": "passed",
+  "eslint": "passed; zero errors and warnings",
+  "build": "passed",
+  "build_warning": "entry JS 776.55 kB; gzip 255.05 kB; existing 500 kB warning retained",
+  "input_unit_tests": {
+    "passed": 6,
+    "skipped": 0
+  },
+  "display_encoding_cases": 10,
+  "viewport_widths": [
+    2560,
+    1920,
+    1440,
+    768,
+    390,
+    320
+  ],
+  "ui_review": {
+    "passed": true,
+    "checks": [
+      {
+        "name": "real login preserves destination and password toggle",
+        "passed": true
+      },
+      {
+        "name": "centered login 2560px",
+        "passed": true,
+        "center_error_px": 0.0
+      },
+      {
+        "name": "centered content 2560px",
+        "passed": true,
+        "center_error_px": 0.0
+      },
+      {
+        "name": "live page 2560px /",
+        "passed": true
+      },
+      {
+        "name": "live page 2560px /capabilities",
+        "passed": true
+      },
+      {
+        "name": "live page 2560px /chat",
+        "passed": true
+      },
+      {
+        "name": "live page 2560px /usage",
+        "passed": true
+      },
+      {
+        "name": "live page 2560px /settings",
+        "passed": true
+      },
+      {
+        "name": "live page 2560px /settings?tab=keys",
+        "passed": true
+      },
+      {
+        "name": "live page 2560px /settings?tab=points",
+        "passed": true
+      },
+      {
+        "name": "live page 2560px /console",
+        "passed": true
+      },
+      {
+        "name": "live page 2560px /console?tab=categories",
+        "passed": true
+      },
+      {
+        "name": "live page 2560px /console?tab=statistics",
+        "passed": true
+      },
+      {
+        "name": "collapsed sidebar restored on mobile at 2560",
+        "passed": true
+      },
+      {
+        "name": "centered login 1920px",
+        "passed": true,
+        "center_error_px": 0.0
+      },
+      {
+        "name": "centered content 1920px",
+        "passed": true,
+        "center_error_px": 0.0
+      },
+      {
+        "name": "live page 1920px /",
+        "passed": true
+      },
+      {
+        "name": "live page 1920px /capabilities",
+        "passed": true
+      },
+      {
+        "name": "live page 1920px /chat",
+        "passed": true
+      },
+      {
+        "name": "live page 1920px /usage",
+        "passed": true
+      },
+      {
+        "name": "live page 1920px /settings",
+        "passed": true
+      },
+      {
+        "name": "live page 1920px /settings?tab=keys",
+        "passed": true
+      },
+      {
+        "name": "live page 1920px /settings?tab=points",
+        "passed": true
+      },
+      {
+        "name": "live page 1920px /console",
+        "passed": true
+      },
+      {
+        "name": "live page 1920px /console?tab=categories",
+        "passed": true
+      },
+      {
+        "name": "live page 1920px /console?tab=statistics",
+        "passed": true
+      },
+      {
+        "name": "collapsed sidebar restored on mobile at 1920",
+        "passed": true
+      },
+      {
+        "name": "centered login 1440px",
+        "passed": true,
+        "center_error_px": 0.0
+      },
+      {
+        "name": "centered content 1440px",
+        "passed": true,
+        "center_error_px": 0.0
+      },
+      {
+        "name": "live page 1440px /",
+        "passed": true
+      },
+      {
+        "name": "live page 1440px /capabilities",
+        "passed": true
+      },
+      {
+        "name": "live page 1440px /chat",
+        "passed": true
+      },
+      {
+        "name": "live page 1440px /usage",
+        "passed": true
+      },
+      {
+        "name": "live page 1440px /settings",
+        "passed": true
+      },
+      {
+        "name": "live page 1440px /settings?tab=keys",
+        "passed": true
+      },
+      {
+        "name": "live page 1440px /settings?tab=points",
+        "passed": true
+      },
+      {
+        "name": "live page 1440px /console",
+        "passed": true
+      },
+      {
+        "name": "live page 1440px /console?tab=categories",
+        "passed": true
+      },
+      {
+        "name": "live page 1440px /console?tab=statistics",
+        "passed": true
+      },
+      {
+        "name": "collapsed sidebar restored on mobile at 1440",
+        "passed": true
+      },
+      {
+        "name": "centered login 768px",
+        "passed": true,
+        "center_error_px": 0.0
+      },
+      {
+        "name": "live page 768px /",
+        "passed": true
+      },
+      {
+        "name": "live page 768px /capabilities",
+        "passed": true
+      },
+      {
+        "name": "live page 768px /chat",
+        "passed": true
+      },
+      {
+        "name": "live page 768px /usage",
+        "passed": true
+      },
+      {
+        "name": "live page 768px /settings",
+        "passed": true
+      },
+      {
+        "name": "live page 768px /settings?tab=keys",
+        "passed": true
+      },
+      {
+        "name": "live page 768px /settings?tab=points",
+        "passed": true
+      },
+      {
+        "name": "live page 768px /console",
+        "passed": true
+      },
+      {
+        "name": "live page 768px /console?tab=categories",
+        "passed": true
+      },
+      {
+        "name": "live page 768px /console?tab=statistics",
+        "passed": true
+      },
+      {
+        "name": "mobile drawer 768px",
+        "passed": true
+      },
+      {
+        "name": "centered login 390px",
+        "passed": true,
+        "center_error_px": 0.0
+      },
+      {
+        "name": "live page 390px /",
+        "passed": true
+      },
+      {
+        "name": "live page 390px /capabilities",
+        "passed": true
+      },
+      {
+        "name": "live page 390px /chat",
+        "passed": true
+      },
+      {
+        "name": "live page 390px /usage",
+        "passed": true
+      },
+      {
+        "name": "live page 390px /settings",
+        "passed": true
+      },
+      {
+        "name": "live page 390px /settings?tab=keys",
+        "passed": true
+      },
+      {
+        "name": "live page 390px /settings?tab=points",
+        "passed": true
+      },
+      {
+        "name": "live page 390px /console",
+        "passed": true
+      },
+      {
+        "name": "live page 390px /console?tab=categories",
+        "passed": true
+      },
+      {
+        "name": "live page 390px /console?tab=statistics",
+        "passed": true
+      },
+      {
+        "name": "mobile drawer 390px",
+        "passed": true
+      },
+      {
+        "name": "centered login 320px",
+        "passed": true,
+        "center_error_px": 0.0
+      },
+      {
+        "name": "live page 320px /",
+        "passed": true
+      },
+      {
+        "name": "live page 320px /capabilities",
+        "passed": true
+      },
+      {
+        "name": "live page 320px /chat",
+        "passed": true
+      },
+      {
+        "name": "live page 320px /usage",
+        "passed": true
+      },
+      {
+        "name": "live page 320px /settings",
+        "passed": true
+      },
+      {
+        "name": "live page 320px /settings?tab=keys",
+        "passed": true
+      },
+      {
+        "name": "live page 320px /settings?tab=points",
+        "passed": true
+      },
+      {
+        "name": "live page 320px /console",
+        "passed": true
+      },
+      {
+        "name": "live page 320px /console?tab=categories",
+        "passed": true
+      },
+      {
+        "name": "live page 320px /console?tab=statistics",
+        "passed": true
+      },
+      {
+        "name": "mobile drawer 320px",
+        "passed": true
+      },
+      {
+        "name": "capability parameter preview and Escape",
+        "passed": true
+      },
+      {
+        "name": "market grid/list toggle",
+        "passed": true
+      },
+      {
+        "name": "Chinese market search with legacy demo encoding",
+        "passed": true
+      },
+      {
+        "name": "search empty state and reset",
+        "passed": true
+      },
+      {
+        "name": "selected capability and prompt example",
+        "passed": true
+      },
+      {
+        "name": "unsent input navigation confirmation",
+        "passed": true
+      },
+      {
+        "name": "keyboard command menu",
+        "passed": true
+      },
+      {
+        "name": "404 page recovery",
+        "passed": true
+      },
+      {
+        "name": "service failure and retry preserves recovery",
+        "passed": true
+      },
+      {
+        "name": "record pagination and atomic filter reset",
+        "passed": true
+      },
+      {
+        "name": "record detail and clipboard feedback",
+        "passed": true
+      },
+      {
+        "name": "current page CSV export protects formula cells",
+        "passed": true
+      },
+      {
+        "name": "summary payload and duplicate submission guard (mocked response)",
+        "passed": true
+      },
+      {
+        "name": "submitted summary does not trigger unsent-input warning",
+        "passed": true
+      },
+      {
+        "name": "key creation, duplicate guard and secret remains in memory (mocked)",
+        "passed": true
+      },
+      {
+        "name": "one-time secret dismissal confirmation",
+        "passed": true
+      },
+      {
+        "name": "key disable requires confirmation (mocked)",
+        "passed": true
+      },
+      {
+        "name": "profile edit dirty state and undo (no save)",
+        "passed": true
+      },
+      {
+        "name": "no uncaught browser errors or real business writes",
+        "passed": true
+      }
+    ],
+    "real_business_writes": 0,
+    "write_responses_mocked": true
+  },
+  "gateway_smoke": {
+    "passed": 8,
+    "total": 8
+  },
+  "isolated_e2e": {
+    "passed": true,
+    "checks": 22,
+    "browser_checks": 7,
+    "catalog_mode": "market",
+    "developer_databases_used": false,
+    "external_model": "local HTTP test double; four services, Gateway and MySQL are real",
+    "member_internal_contract_verified": false
+  },
+  "source_size": {
+    "scanned": 70,
+    "above_300_lines": 0
+  }
+}

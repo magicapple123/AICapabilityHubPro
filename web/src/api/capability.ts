@@ -1,4 +1,5 @@
 import { request } from './client'
+import { displayText, legacySearchText } from '@/lib/displayText'
 
 /** 与 docs/api-contract/capability-service.md 第 4 节的市场出参一一对应。 */
 export interface MarketCapability {
@@ -43,12 +44,20 @@ export interface MarketQuery {
  * 路径只写网关路由之后的剩余部分：apiClient 的 baseURL 已经是 /api，
  * 写成 '/api/capability/market' 会被拼成 /api/api/capability/market 而 404。
  */
-export const fetchMarketCapabilities = (params: MarketQuery = {}) =>
-  request<PageData<MarketCapability>>({ method: 'GET', url: '/capability/market', params })
+export const fetchMarketCapabilities = async (params: MarketQuery = {}) => {
+  const fetch = (query: MarketQuery) => request<PageData<MarketCapability>>({ method: 'GET', url: '/capability/market', params: query })
+  let page = await fetch(params)
+  // A fallback search accommodates existing demo rows with the legacy encoding.
+  const fallback = params.keyword ? legacySearchText(params.keyword) : ''
+  if (params.keyword && !page.total && fallback !== params.keyword) page = await fetch({ ...params, keyword: fallback })
+  return { ...page, list: page.list.map((item) => ({
+    ...item, name: displayText(item.name), category_name: displayText(item.category_name), description: displayText(item.description),
+  })) }
+}
 
 /** 市场筛选栏分类，只返回存在已上架能力的分类。 */
 export const fetchMarketCategories = () =>
-  request<ListData<MarketCategory>>({ method: 'GET', url: '/capability/market/categories' })
+  request<ListData<MarketCategory>>({ method: 'GET', url: '/capability/market/categories' }).then((data) => ({ ...data, list: data.list.map((item) => ({ ...item, name: displayText(item.name) })) }))
 
 /* ------------------------------------------------------------------ */
 /* 运营侧接口（均需要登录，契约第 2、3、4 节）                          */
@@ -137,7 +146,7 @@ export interface ManageCapabilityQuery {
 }
 
 export const fetchCategories = (params: CategoryQuery = {}) =>
-  request<ListData<CategoryItem>>({ method: 'GET', url: '/capability/categories', params })
+  request<ListData<CategoryItem>>({ method: 'GET', url: '/capability/categories', params }).then((data) => ({ ...data, list: data.list.map((item) => ({ ...item, name: displayText(item.name) })) }))
 
 export const createCategory = (data: CategoryCreatePayload) =>
   request<CategoryItem>({ method: 'POST', url: '/capability/categories', data })
@@ -152,7 +161,7 @@ export const deleteCategory = (categoryId: number) =>
   })
 
 export const fetchManageCapabilities = (params: ManageCapabilityQuery = {}) =>
-  request<PageData<CapabilityManageItem>>({ method: 'GET', url: '/capability/manage', params })
+  request<PageData<CapabilityManageItem>>({ method: 'GET', url: '/capability/manage', params }).then((data) => ({ ...data, list: data.list.map((item) => ({ ...item, name: displayText(item.name), category_name: displayText(item.category_name), description: displayText(item.description) })) }))
 
 export const createCapability = (data: CapabilityCreatePayload) =>
   request<CapabilityManageItem>({ method: 'POST', url: '/capability', data })

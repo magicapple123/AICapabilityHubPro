@@ -1,33 +1,31 @@
+import { lazy } from 'react'
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '@/components/AppShell'
 import { AuthGuard } from './AuthGuard'
 import { LoginPage } from '@/pages/LoginPage'
-import { OverviewPage } from '@/pages/OverviewPage'
-import { CapabilitiesPage } from '@/pages/CapabilitiesPage'
-import { ChatPage } from '@/pages/ChatPage'
-import { UsagePage } from '@/pages/UsagePage'
-import { SettingsPage } from '@/pages/SettingsPage'
-import { ConsolePage } from '@/pages/ConsolePage'
+import { NotFoundPage, RouteFailure } from '@/pages/NotFoundPage'
+
+const Overview = lazy(() => import('@/pages/OverviewPage').then((m) => ({ default: m.OverviewPage })))
+const Market = lazy(() => import('@/pages/CapabilitiesPage').then((m) => ({ default: m.CapabilitiesPage })))
+const Chat = lazy(() => import('@/pages/ChatPage').then((m) => ({ default: m.ChatPage })))
+const Usage = lazy(() => import('@/pages/UsagePage').then((m) => ({ default: m.UsagePage })))
+const Settings = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
+const Console = lazy(() => import('@/pages/ConsolePage').then((m) => ({ default: m.ConsolePage })))
 
 export const router = createBrowserRouter([
-  // 登录与注册共用同一组件，由路径决定模式。
-  { path: '/login', element: <LoginPage /> },
+  { path: '/login', element: <LoginPage />, errorElement: <RouteFailure /> },
   { path: '/register', element: <LoginPage /> },
   {
-    element: <AuthGuard />,
-    children: [
-      {
-        element: <AppShell />,
-        children: [
-          { index: true, element: <OverviewPage /> },
-          { path: 'capabilities', element: <CapabilitiesPage /> },
-          { path: 'chat', element: <ChatPage /> },
-          { path: 'usage', element: <UsagePage /> },
-          { path: 'settings', element: <SettingsPage /> },
-          { path: 'console', element: <ConsolePage /> },
-        ],
-      },
-    ],
+    element: <AuthGuard />, errorElement: <RouteFailure />, children: [{
+      element: <AppShell />, children: [
+        { index: true, element: <Overview /> },
+        { path: 'capabilities', element: <Market /> },
+        { path: 'chat', element: <Chat /> },
+        { path: 'usage', element: <Usage /> },
+        { path: 'settings', element: <Settings /> },
+        { path: 'console', element: <Console /> },
+        { path: '*', element: <NotFoundPage /> },
+      ],
+    }],
   },
-  { path: '*', element: <LoginPage /> },
 ])

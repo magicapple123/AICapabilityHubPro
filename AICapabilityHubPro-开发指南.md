@@ -12,7 +12,7 @@
 |---|---|---|
 | Gateway | JWT/role 验证、伪造头清理、requestId、internal 隔离、兑换入口限流 | 新用户角色与 Key 兑换服务端由 user 提供 |
 | AI 执行 | 新鲜目录查询、Schema/allowlist、聊天与摘要、按目录价预检和计量 | capability 内部详情服务端 |
-| Web | 真实登录、能力调试、Schema 表单、费用/账单/追踪、历史会话 | 市场按钮传 ID、角色/Key/运营页面升级 |
+| Web | 真实登录、能力调试、Schema 表单、费用/账单/追踪、历史会话 | 角色/Key/运营的服务端升级；市场传 ID 和界面整理见 10/20 前端记录 |
 | user/billing | 基础账号、Key 管理、积分、幂等账单及个人用量 | 实时 admin 授权、短期 Token、单价存储与迁移 |
 
 规则与事实分开维护：[共享契约](docs/api-contract/pro-shared.md)描述新增接口约定，[四服务契约](docs/README.md)逐项标明已实现/待交接，[实施看板](docs/升级实施看板.md)记录状态，[验收矩阵](docs/验收用例.md)记录证据。发现实现与契约不一致时列出缺口，不通过修改文档把缺失功能写成已实现。
@@ -51,6 +51,8 @@ ai-chat -> capability detail -> user points check -> controlled adapter
 浏览器只请求 Gateway 的 `/api/**`。常规服务调用使用 `call_internal` 与 `/internal/**`，保留链路身份；不得跨库 join。唯一明确的过渡读取是 AI 显式 `market` 模式经服务发现访问目录的固定公开详情路径，不是任意 URL 代理。
 
 新注册服务不等于新能力可执行。新增能力必须同时有受控 adapter、Schema、价格/状态约定、前端可用性和安全测试，不能仅靠登记一个 service/path 自动执行。
+
+前端全站整理已按用户授权完成：市场传入选中能力 ID，设置分拆页签，交互与手机布局统一。证据见[前端改版与验收](docs/前端改版与验收-2026-10-20.md)。此项不代替内部目录、管理员授权或 Key 兑换的服务端交付。
 
 ## 4. 三人修改范围
 
