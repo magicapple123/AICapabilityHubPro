@@ -263,4 +263,4 @@
 - 现有聊天价格 5、摘要 3；AI 验证目录状态/Schema/price，不按固定 POINTS_COST。演示数据不包含真实凭证。
 - `chat-completions` / `long-summary` 的 `param_schema` 已与执行器约束对齐：聊天 `messages` 1–40 条、role 三选一、content 1–12000、可选 temperature 0–2；摘要 `text` 1–12000、可选 `max_length` 30–1000（默认 200）；使用布尔 `additionalProperties=false`。
 - 已有业务库的结构升级使用独立增量脚本 `sql/03_align_executor_schema.sql`：只更新仍是旧版简化 Schema 的记录，不改写价格与上下架状态，重复执行安全；执行前按脚本注释备份受影响列。`sql/02_seed.sql` 仅用于新环境或明确的隔离示例库。
-- 已覆盖内部详情、公开字段最小化、状态变化、未知/软删除、Schema/价格边界、重复编码、非管理员直接写/管理读取、授权撤销/故障以及市场选中 ID 的浏览器入口。数据库测试使用独立实例；`feature/pro-capability-market` 上 118 项服务测试在隔离 MySQL 8.0 全绿。
+- 已覆盖内部详情、公开字段最小化、状态变化、未知/软删除、Schema 引用/非法 Draft 关键字/价格边界、重复编码、非管理员直接写/管理读取、授权撤销/故障以及市场选中 ID 的浏览器入口。数据库测试使用独立实例；`feature/pro-capability-market` 上 125 项服务测试在隔离 MySQL 8.0 全绿。
