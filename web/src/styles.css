@@ -1,13 +1,10 @@
-@import "tailwindcss";
-
-:root { color: #f4f4ef; background: #11130f; font-family: Outfit, "PingFang SC", "Microsoft YaHei", sans-serif; font-synthesis: none; text-rendering: optimizeLegibility; }
-* { box-sizing: border-box; }
-html { background: #11130f; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: #11130f; }
-button, input { font: inherit; }
-button { cursor: pointer; }
-::selection { background: #c9f05b; color: #11130f; }
-@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-}
+@import "tailwindcss" source(none);
+@import "./styles/tokens.css";
+@import "./styles/shell.css";
+@import "./styles/dashboard.css";
+@import "./styles/market.css";
+@import "./styles/chat.css";
+@import "./styles/account.css";
+@import "./styles/auth.css";
+@import "./styles/responsive.css";
+@source "./";

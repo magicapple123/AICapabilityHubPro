@@ -1,58 +1,25 @@
-# AICapabilityHub Pro · Python 微服务模板
+# AICapabilityHub Pro · Python微服务模板
 
-本模板统一 Pro 服务的配置、响应、日志、服务发现和内部调用边界，为能力执行与计量链提供基础设施。它本身不是新增的可执行 AI 能力，复制后仍须实现并验收业务。
+本模板提供配置、Result/异常、日志、服务发现、内部调用和独立数据库会话。它不是新的AI能力，也不会因注册服务就自动获得adapter、计量或前端入口。
 
-复制整个目录后，配置独立服务名、端口和数据库地址，再按 `models -> schemas -> repository -> service -> api` 分层填入业务。服务名和接口属于兼容标识，产品文案遵循[项目定位与描述规范](../../docs/项目定位与描述规范.md)。
+扩展遵循[Pro开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](../../docs/api-contract/pro-shared.md)。现有四服务已经有业务，不要用模板覆盖重建。
 
-## 本地启动
+## 新模块接入
 
-```powershell
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8099
-```
+1. 在独立分支明确职责/负责人/服务名/数据库及接口契约。
+2. 新服务使用独立venv和库，配置来自环境，不复制他人.env或真实密钥。
+3. API→Service→Repository→Model/Schema单向职责，入口只装配，repository不控制跨服务事务。
+4. Nacos注册实际可达host而非0.0.0.0；服务发现基于固定服务名，常规调用经call_internal /internal/**，不跨库。
+5. 统一code/message/data/requestId，记录追踪但不打印凭据/输入；当前用户、状态和管理员授权均有明确检查。
+6. 如需新增可执行code，交付受控adapter、内联Schema、目录价和拒绝模型前的负例；不执行任意URL。
+7. 通过独立DB、网关、真实链和Review后交付，不能仅以import/health当业务完成。
 
-启动后访问 `http://localhost:8099/health`。Nacos 可用时，服务会注册为 `demo-service` 并每 5 秒发送一次心跳；Nacos 暂不可用不会阻止本地服务启动，后台线程会继续重试。
+## 运行与配置
 
-## Nacos 模型配置热更新
+已有服务使用根init_dev.py及start_pro_local.py，推荐Pro端口3307/8849/9849/8859。新模板自行配置服务名/端口/DB_URL并按其requirements安装；不要用示例root:root覆盖现有配置。
 
-按 `.env.example` 启动时，模板默认每 5 秒通过 Nacos 配置接口检查 dataId `demo-service-model.json`、group `DEFAULT_GROUP`。配置读取不启用 SDK 磁盘快照，不把模型 Key 写入工作区缓存。配置内容是 JSON，且仅支持三个字段：
+模型地址/Key/Mock和配置热更新只以本模板实际提供的字段为准，不表示所有未来执行器或配置都已实现。JWT签发、目录、计费应通过明确的领域接口接入，不复制其他服务数据库连接。
 
-```json
-{
-  "use_mock": true,
-  "model_base_url": "https://api.example.com/v1",
-  "model_api_key": "replace-me"
-}
-```
+## 验证和交接
 
-应用启动后会先拉取该配置，再监听后续变更；发布有效配置后运行时快照自动更新，无需重启。复制 `.env.example` 得到的本地 `.env` 是安全回退，Nacos 暂不可用、内容为空或 JSON 无效时会继续使用本地值或最近一次有效配置。
-
-Windows PowerShell 发布示例：
-
-```powershell
-$modelConfig = @{
-    use_mock = $true
-    model_base_url = 'https://api.example.com/v1'
-    model_api_key = 'replace-me'
-} | ConvertTo-Json -Compress
-Invoke-RestMethod `
-    -Method Post `
-    -Uri 'http://localhost:8848/nacos/v1/cs/configs' `
-    -ContentType 'application/x-www-form-urlencoded' `
-    -Body @{ dataId = 'demo-service-model.json'; group = 'DEFAULT_GROUP'; type = 'json'; content = $modelConfig } |
-    Out-Null
-Write-Host 'Nacos 模型配置发布请求已提交，未输出配置内容。'
-```
-
-示例只使用 `replace-me`。不要在命令输出、日志或仓库文件中展示真实模型 Key；真实 `.env` 也不得提交。
-
-## 分层约束
-
-- `api` 只负责参数接收、依赖注入与 `Result` 封装。
-- `service` 承载业务流程，`repository` 只负责数据访问。
-- 服务间调用只能通过 `call_internal` 访问 `/internal/**`，不得写死其它服务地址。
-- 所有接口返回 `Result{code,message,data,requestId}`；业务错误使用 HTTP 200 和业务错误码区分。
-- 配置仅从 `.env` 或 Nacos 获取，真实 `.env`、密码、JWT 和模型密钥不得提交或写入日志。
+使用[契约模板](../../docs/api-contract/_template.md)，写已实现/待交接、权限、幂等、错误、兼容/迁移和测试。不删除旧数据或靠seed迁移。文案使用AICapabilityHub Pro，不更改既有兼容标识；历史搭建流程在归档中，不作为当前指令。

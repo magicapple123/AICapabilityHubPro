@@ -1,10 +1,12 @@
-# capability-service 接口契约
+# AICapabilityHub Pro · capability-service 接口契约
+
+**实现状态（2026-10-19，main 1b89ce8）：** 分类、登记/上下架、公开市场与运营列表为现有基础实现；内部详情、实时管理员保护为本轮待交接任务；市场按钮传选中 ID 已随10/20前端调整完成，见[验收记录](../前端改版与验收-2026-10-20.md)。AI 调用端和 Chat 已具备，不能重新决定“不做内部详情”。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)。
 
 > 负责人：夏思凯
 > 服务名：`capability-service`
 > 数据库：`capability_db`
 > 端口：8082
-> 上游依赖：无（capability-service 不调用任何其他服务）
+> 当前基础实现无跨服务依赖；Pro 管理保护需调用 user-service 的实时 authorization，禁止跨库读取角色。
 
 所有响应均为统一 `Result`：`{code, message, data, requestId}`；`requestId` 为唯一驼峰字段，其余业务字段使用 `snake_case`。业务错误 HTTP 200，由 `code` 区分；网关认证失败 HTTP 401。
 
@@ -27,8 +29,8 @@
 | `name` | VARCHAR(64) | NOT NULL | 分类名称，未删除范围内唯一 |
 | `code` | VARCHAR(64) | NOT NULL | 分类编码，未删除范围内唯一 |
 | `sort` | INT | NOT NULL DEFAULT 0 | 越小越靠前 |
-| `status` | VARCHAR(16) | NOT NULL DEFAULT 'enabled' | `enabled` / `disabled`（待确认，见第 5 节） |
-| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见指南 5.5 |
+| `status` | VARCHAR(16) | NOT NULL DEFAULT 'enabled' | 分类固定 enabled / disabled；与能力状态区分 |
+| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见Pro开发指南第9节及当前sql/01_init.sql |
 
 ### `t_capability`
 
@@ -44,7 +46,7 @@
 | `price_per_call` | INT | NOT NULL DEFAULT 0 | 每次调用积分单价 |
 | `status` | VARCHAR(16) | NOT NULL DEFAULT 'draft' | `draft` / `online` / `offline` |
 | `description` | VARCHAR(512) | NOT NULL DEFAULT '' | 能力描述 |
-| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见指南 5.5 |
+| `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见Pro开发指南第9节及当前sql/01_init.sql |
 
 **索引**：`t_capability` 需建 `UNIQUE(code, is_deleted)` 等价唯一保护，以及 `INDEX(category_id, status)` 供市场筛选。
 
@@ -172,7 +174,7 @@
 ```
 
 - 错误码：`2001` 参数不符合 Schema
-- 备注：**只返回 `status='online'` 且 `is_deleted=0` 的能力**；严禁输出 `service_name`、`path`、`param_schema` 之外的内部配置或任何密钥；`category_name` 由本服务的分类表关联得出，不跨库。
+- 备注：只返回 online 且未删除能力。列表不含 service_name/path/param_schema；详情另含 param_schema，仍不暴露 service/path/密钥。category_name 来自本库分类，不跨库。公开可见不等于有可执行 adapter。
 
 ### `GET /api/capability/market/categories`
 
@@ -196,12 +198,12 @@
 - 是否需要登录：是
 - 查询参数：`status`（可选，`draft`/`online`/`offline`）、`category_id`（可选）、`keyword`（可选）、`page`、`page_size`
 - 成功 data：分页结构，列表项为完整能力对象（含 `service_name`、`path`、`param_schema`、`status`、`category_name`）
-- 错误码：`2001` 参数不符合 Schema；`2007` 无运营权限（待确认，见第 5 节）
+- 错误码：2001 参数错误；2007 为 Pro 待实现的运营权限拒绝，当前权限缺口见第 6 节，不能标为已完成授权。
 - 备注：运营列表，返回全部状态；更新时间倒序。
 
 ### `GET /api/capability/ping`、`GET /health`
 
-- 已由骨架实现，保持不变。`ping` 用于验证 `X-User-Id` / `X-User-Name` / `X-Request-Id` 透传；`/health` 返回 `{"status": "UP"}`。
+- 现有健康接口保持。health 公开；ping 经 Gateway 需要 JWT，用于验证可信身份/requestId。health 为 UP 不代表内部详情或管理员授权已实现。
 
 ## 5. 错误码（仅使用 2xxx 号段）
 
@@ -213,25 +215,28 @@
 | 2004 | 分类名称或编码已存在 | 分类 `name` / `code` 冲突 |
 | 2005 | 分类下仍有能力，不可删除 | 删除前引用检查未通过 |
 | 2006 | 能力编码已存在 | 能力 `code` 冲突 |
-| 2007 | 无运营权限 | 非运营身份访问 `/manage` 或写接口（**待确认**） |
+| 2007 | 无运营权限 | Pro 待实现：非管理员访问 manage/写接口，由实时授权结果决定 |
 
-> `2007` 依赖第 6 节的权限方案，未确认前实现先按"已登录即可访问"处理，并保留该分支位置。
+> 当前基础实现缺少第 6 节要求的管理授权，这是待修复缺口，不是“先允许所有登录用户”的开发指令。目标行为必须由服务端实时授权和失败关闭保证。
 
-## 6. 待确认事项（需在契约 Review 时与组长确认）
+## 6. Pro 待交接接口、授权与市场
 
-1. **运营权限方案**：`JwtIdentity` 当前只有 `userId` / `userName`，平台尚无角色体系。`/api/capability/manage` 与分类/能力的写接口如何区分普通开发者与运营？候选方案：① 网关新增角色 Claim；② 本服务用 `.env` 配置运营用户白名单；③ 本期全部登录用户均可写。**未确认前不实现 2007 判定。**
-2. **分类 `status` 枚举取值**：本契约暂定 `enabled` / `disabled`。指南只统一了能力状态 `draft`/`online`/`offline`，未定义分类状态，请确认是否复用 `online`/`offline`。
-3. **`price_per_call` 精度与单位**：暂定为整数积分数（与指南 5.5 "积分用整型存储"一致）。需与黄禹菲确认 billing 计费流水中的 `cost` 是否同口径。
-4. **是否需要 `/internal/**` 接口**：本期 ai-chat 使用配置化的固定单价上报计费，未按 `capability_id` 查单价。若后续要求"计费以 capability 登记单价为准"，需新增 `GET /internal/capability/{capability_id}` 供 ai-chat 调用。**本期不实现，作为演进项登记。**
-5. **前端市场页字段对齐**：`web/src/pages/CapabilitiesPage.tsx` 当前为硬编码假数据，使用了 `latency`（延迟）字段，而数据字典中无此字段。需与组长确认：① 前端改为使用本契约字段；② 或新增 `t_capability.latency_ms` 字段。**建议方案 ①，本期不新增字段。**
+1. 管理列表与分类/能力全部写操作需实时调用 GET `/internal/user/authorization?user_id=<当前用户ID>&required_role=admin`。成功必须匹配 ID、normal/admin/authorized=true；普通用户拒绝、依赖异常失败关闭。Gateway role 已可信传递，但不替代此检查。
+2. user 原码 1006 继续表示 Key 不存在，新增授权不足为 1007；capability 可映射对外 2007。规范以[共享契约](pro-shared.md)为准，不使用旧提示词里冲突的 1006，也不本地硬编码管理员白名单。
+3. 必须提供 GET `/internal/capability/{capability_id}`，成功 data 为匹配正整数 id、name、code、真实 status、内联 param_schema、0–1000000 整数 price_per_call。不返回可供任意代理的 URL；未知/软删除 2002，内部如返回 draft/offline 须如实标识，AI 会拒绝。
+4. AI 客户端、allowlist 和目录价计量已实现，默认 internal 缺失端点失败关闭；当前显式 market 联调不等同于内部端点完成。交接后必须通过 `--catalog-mode internal --browser` 的真实 E2E。
+5. code 固定 chat-completions / long-summary，对应 input.messages / input.text 与可选 max_length。Schema 按现有执行器内联结构，不含远程引用；状态/单价一改必须在下一次调用生效，不能缓存旧上架状态执行。
+6. 市场已使用真实目录接口，不能再按“硬编码假数据页面”重做。按钮传 `/chat?capability_id=<id>`，Chat 已接受；未实现的视觉等能力不可体验，不补虚构延迟列或静态耗时。
+7. 分类 enabled/disabled、能力 draft/online/offline、价格整数积分已定稿。注册记录的 service/path 不决定执行目标，新增 code 需真正 adapter 与安全验收。
 
-## 7. 测试数据计划
+## 7. 示例数据与验收
 
-按指南 13.2，提供可重复导入的初始化数据（放在本服务 `sql/`）：
+首次或明确的隔离示例库使用本服务 sql；seed 会更新同名演示记录，不是已有业务库的增量迁移：
 
 - 2 个分类：`nlp`（语言处理）、`multimodal`（多模态）
 - 3 个能力：
   - `chat-completions`（多轮对话，`ai-chat-service`，`/api/chat/completions`，`online`）— 支撑主闭环演示
   - `long-summary`（长文本摘要，`online`）
   - `vision-parse`（视觉理解，`draft`，用于验证市场不可见）
-- 脚本需可重复执行（`INSERT` 前先判断或使用固定 `code` + 唯一约束），不得包含真实密钥。
+- 现有聊天价格 5、摘要 3；AI 验证目录状态/Schema/price，不按固定 POINTS_COST。演示数据不包含真实凭证。
+- 需验证内部详情、公开字段最小化、状态变化、未知/软删除、参数/价格边界、重复编码、非管理员直接写/管理读取、授权撤销/故障以及市场到 Chat 的选中 ID。测试使用独立数据库，不清开发库。

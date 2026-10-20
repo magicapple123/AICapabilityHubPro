@@ -1,44 +1,94 @@
-import { Button } from 'antd'
-import { ArrowUpRight, LogOut, Menu, X } from 'lucide-react'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { App, Drawer, Dropdown } from 'antd'
+import { ArrowUpRight, BookOpen, ChevronDown, ChevronRight, CircleHelp, LogOut, Menu, PanelLeftClose, Search, Settings2 } from 'lucide-react'
+import { Suspense, useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { fetchPoints } from '@/api/user'
+import { useAsyncResource } from '@/hooks/useAsyncResource'
 import { useAuthStore } from '@/stores/auth'
-import { MockNotice } from '@/components/ui'
+import { formatNumber } from '@/lib/dateRange'
 import { BrandMark } from './BrandMark'
+import { CommandMenu } from './CommandMenu'
+import { accountLinks, navigationLinks, workspaceLinks } from './navigation'
+import { Loading, MockNotice, Modal } from './ui'
 
 export function AppShell() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { modal } = App.useApp()
   const { userName, clearAuth } = useAuthStore()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const links = [
-    { href: '/', label: '工作台' },
-    { href: '/capabilities', label: '能力市场' },
-    { href: '/chat', label: '在线调试' },
-    { href: '/usage', label: '调用记录' },
-    { href: '/console', label: '运营后台' },
-  ]
-
-  // 根路径精确匹配，其余按前缀匹配，避免 /settings 等页面无法高亮。
-  const isActive = (href: string) =>
-    href === '/' ? location.pathname === '/' : location.pathname.startsWith(href)
-
-  return (
-    <div className="min-h-screen bg-[#11130f] text-[#f4f4ef]">
-      <MockNotice />
-      <header className="sticky top-0 z-50 mx-auto flex w-full max-w-[1500px] items-center justify-between px-5 py-5 md:px-10">
-        <button className="group flex items-center" onClick={() => navigate('/')} aria-label="返回工作台"><BrandMark /></button>
-        <nav className="hidden items-center gap-1 rounded-full border border-white/10 bg-white/[0.06] p-1 backdrop-blur-xl md:flex">
-          {links.map((link) => <button key={link.href} onClick={() => navigate(link.href)} className={`rounded-full px-4 py-2 text-xs transition ${isActive(link.href) ? 'bg-[#c9f05b] font-semibold text-[#11130f]' : 'text-white/55 hover:bg-white/10 hover:text-white'}`}>{link.label}</button>)}
-        </nav>
-        <div className="flex items-center gap-3">
-          <button className="hidden items-center gap-2 text-xs text-white/60 transition hover:text-[#c9f05b] sm:flex" onClick={() => navigate('/settings')}><span className="h-2 w-2 rounded-full bg-[#c9f05b]" />{userName || '开发者'}<ArrowUpRight size={14} /></button>
-          <button className="rounded-full border border-white/10 p-2 text-white md:hidden" onClick={() => setMenuOpen((open) => !open)} aria-label="打开菜单">{menuOpen ? <X size={18} /> : <Menu size={18} />}</button>
-          <Button type="text" className="!text-white/60 hover:!text-[#c9f05b]" icon={<LogOut size={16} />} aria-label="退出登录" onClick={() => { clearAuth(); navigate('/login') }} />
-        </div>
-      </header>
-      {menuOpen && <div className="mx-5 mb-3 grid gap-1 rounded-2xl border border-white/10 bg-[#181c17] p-2 md:hidden">{links.map((link) => <button key={link.href} onClick={() => { navigate(link.href); setMenuOpen(false) }} className="rounded-xl px-4 py-3 text-left text-sm text-white/70 hover:bg-white/10">{link.label}</button>)}</div>}
-      <main className="w-full max-w-full overflow-x-hidden"><Outlet /></main>
+  const points = useAsyncResource(fetchPoints)
+  const refreshPoints = points.reload
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [commandOpen, setCommandOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const active = navigationLinks.find((link) => link.href === location.pathname)
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommandOpen((v) => !v) }
+    }
+    const balance = () => refreshPoints()
+    window.addEventListener('keydown', handler)
+    window.addEventListener('hub:balance-changed', balance)
+    return () => { window.removeEventListener('keydown', handler); window.removeEventListener('hub:balance-changed', balance) }
+  }, [refreshPoints])
+  useEffect(() => {
+    window.scrollTo({ top: 0 })
+    document.title = (active?.label ?? '工作空间') + ' · AICapabilityHub Pro'
+  }, [location.pathname, active?.label])
+  const logout = () => modal.confirm({
+    title: '退出当前账号？', content: '退出后需要重新登录才能访问工作空间。', okText: '退出登录', cancelText: '继续使用',
+    onOk: () => { clearAuth(); navigate('/login', { replace: true }) },
+  })
+  const sidebar = <div className="sidebar-inner">
+    <NavLink to="/" className="sidebar-brand" onClick={() => setMobileOpen(false)}><BrandMark /></NavLink>
+    <div className="workspace-badge"><span>个人空间</span><small>{userName || '开发者'}</small></div>
+    <p className="nav-group-label">工作空间</p>
+    <nav aria-label="工作空间导航">{workspaceLinks.map((link) => <NavLink key={link.href} to={link.href} end={link.href === '/'}
+      onClick={() => setMobileOpen(false)} className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} title={collapsed ? link.label : undefined}>
+      <link.icon size={18} strokeWidth={1.6} /><span>{link.label}</span></NavLink>)}</nav>
+    <p className="nav-group-label nav-second">管理与设置</p>
+    <nav aria-label="管理与设置导航">{accountLinks.map((link) => <NavLink key={link.href} to={link.href}
+      onClick={() => setMobileOpen(false)} className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} title={collapsed ? link.label : undefined}>
+      <link.icon size={18} strokeWidth={1.6} /><span>{link.label}</span></NavLink>)}</nav>
+    <div className="sidebar-bottom">
+      <div className="sidebar-balance"><div><span>可用积分</span><strong>{points.error ? '暂不可用' : points.loading && !points.data ? '···' : formatNumber(points.data?.balance)}</strong></div>
+        <button onClick={() => { navigate('/settings?tab=points'); setMobileOpen(false) }}>积分明细<ChevronRight size={13} /></button>
+      </div>
+      <button className="sidebar-help" onClick={() => { setHelpOpen(true); setMobileOpen(false) }}><CircleHelp size={17} /><span>使用指南</span><ArrowUpRight size={13} /></button>
+      <div className="sidebar-footer"><span className="sidebar-version">AICapabilityHub Pro</span><button aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
+        className="collapse-button" onClick={() => setCollapsed((value) => !value)}><PanelLeftClose size={16} /></button></div>
     </div>
-  )
+  </div>
+  return <div className={'application' + (collapsed ? ' sidebar-collapsed' : '')}>
+    <a href="#main-content" className="skip-link">跳转到主要内容</a>
+    <aside className="desktop-sidebar">{sidebar}</aside>
+    <Drawer title={<BrandMark />} placement="left" width={280} open={mobileOpen} onClose={() => setMobileOpen(false)}
+      styles={{ body: { padding: 0, background: '#ffffff' } }}><div className="mobile-sidebar">{sidebar}</div></Drawer>
+    <div className="application-main">
+      <header className="topbar"><div className="topbar-inner">
+        <div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="打开导航菜单" onClick={() => setMobileOpen(true)}><Menu size={19} /></button>
+          <span className="breadcrumb-parent">工作空间</span><ChevronRight size={13} /><strong>{active?.label ?? '页面'}</strong></div>
+        <div className="topbar-actions"><button className="global-search" onClick={() => setCommandOpen(true)}><Search size={15} /><span>搜索页面或功能</span><kbd>Ctrl K</kbd></button>
+          <span className="topbar-divider" /><button className="icon-button help-button" aria-label="使用指南" onClick={() => setHelpOpen(true)}><BookOpen size={18} /></button>
+          <Dropdown menu={{ items: [
+            { key: 'settings', icon: <Settings2 size={15} />, label: '账号设置', onClick: () => navigate('/settings') },
+            { type: 'divider' }, { key: 'logout', icon: <LogOut size={15} />, label: '退出登录', danger: true, onClick: logout },
+          ] }} trigger={['click']}>
+            <button className="account-trigger" aria-label="账号菜单"><span className="avatar">{(userName || 'D').slice(0, 1).toUpperCase()}</span><span>{userName || '开发者'}</span><ChevronDown size={12} /></button>
+          </Dropdown>
+        </div>
+      </div></header>
+      <MockNotice />
+      <main id="main-content" tabIndex={-1}><Suspense fallback={<Loading label="正在打开页面…" />}><Outlet /></Suspense></main>
+      <footer className="app-footer"><span>© {new Date().getFullYear()} AICapabilityHub Pro</span><span>开发者控制台</span></footer>
+    </div>
+    <CommandMenu open={commandOpen} onClose={() => setCommandOpen(false)} />
+    <Modal title="从选择能力到核对结果" open={helpOpen} onClose={() => setHelpOpen(false)}>
+      <ol className="help-steps"><li><b>发现能力</b><p>在能力市场选择聊天或文本摘要，查看每次调用的积分价格。</p></li>
+        <li><b>在线调试</b><p>根据输入要求填写参数。聊天支持多轮上下文；摘要使用独立文本输入。</p></li>
+        <li><b>核对调用</b><p>查看结果收据中的实际费用和 requestId，在调用记录中核对明细。降级执行不收费。</p></li></ol>
+      <button className="button-primary" onClick={() => { setHelpOpen(false); navigate('/capabilities') }}>探索能力市场<ArrowUpRight size={14} /></button>
+    </Modal>
+  </div>
 }

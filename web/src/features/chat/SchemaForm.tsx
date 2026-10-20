@@ -1,60 +1,48 @@
-import { LoaderCircle, Send } from 'lucide-react'
+import { ChevronDown, LoaderCircle, Send, SlidersHorizontal } from 'lucide-react'
+import { useRef } from 'react'
 import { schemaFields } from './schemaInput'
 import type { FormValues } from './types'
-
-const CONTROL = 'w-full rounded-xl border border-white/15 bg-[#11130f] px-4 py-3 text-sm text-white outline-none focus:border-[#c9f05b] disabled:opacity-50'
 
 export function SchemaForm({ schema, values, onChange, onSend, disabled, sending, code }: {
   schema: Record<string, unknown>; values: FormValues; onChange: (values: FormValues) => void
   onSend: () => void; disabled: boolean; sending: boolean; code: string
 }) {
+  const form = useRef<HTMLFormElement>(null)
   const fields = schemaFields(schema)
+  const primary = fields.filter((field) => ['messages', 'text'].includes(field.name))
+  const advanced = fields.filter((field) => !['messages', 'text'].includes(field.name))
   const update = (name: string, value: string) => onChange({ ...values, [name]: value })
-  return (
-    <form onSubmit={(event) => { event.preventDefault(); onSend() }} className="space-y-5 border-t border-white/10 p-6">
-      <fieldset disabled={disabled} className="min-w-0 space-y-4 disabled:opacity-60">
-        {!fields.length && (
-          <label className="block text-sm text-white/70">输入 JSON
-            <textarea className={`${CONTROL} mt-2 font-mono`} rows={6} value={values.__json ?? ''}
-              onChange={(event) => update('__json', event.target.value)} placeholder={'{"text":"待处理的文本"}'} />
-          </label>
-        )}
-        {fields.map((field) => {
-          const options = Array.isArray(field.schema.enum) ? field.schema.enum : null
-          const multiline = field.name === 'messages' || field.type === 'string' || ['object', 'array', 'json'].includes(field.type)
-          return (
-            <label key={field.name} className="block text-sm text-white/70">
-              <span>{field.title}{field.required && <span className="ml-1 text-[#c9f05b]">*</span>}</span>
-              {options || field.type === 'boolean' ? (
-                <select className={`${CONTROL} mt-2`} value={values[field.name] ?? ''}
-                  onChange={(event) => update(field.name, event.target.value)} required={field.required}>
-                  <option value="">请选择</option>
-                  {(options ?? [true, false]).map((option) => <option key={String(option)} value={String(option)}>{String(option)}</option>)}
-                </select>
-              ) : multiline ? (
-                <textarea className={`${CONTROL} mt-2 resize-y`} rows={field.name === 'text' ? 6 : 3}
-                  value={values[field.name] ?? ''} required={field.required}
-                  maxLength={typeof field.schema.maxLength === 'number' ? field.schema.maxLength : 12000}
-                  placeholder={field.name === 'messages' ? '输入本轮消息，已有对话会自动作为上下文。' : undefined}
-                  onChange={(event) => update(field.name, event.target.value)} />
-              ) : (
-                <input className={`${CONTROL} mt-2`} type={['integer', 'number'].includes(field.type) ? 'number' : 'text'}
-                  value={values[field.name] ?? ''} required={field.required}
-                  min={typeof field.schema.minimum === 'number' ? field.schema.minimum : undefined}
-                  max={typeof field.schema.maximum === 'number' ? field.schema.maximum : undefined}
-                  step={field.type === 'integer' ? 1 : 'any'}
-                  onChange={(event) => update(field.name, event.target.value)} />
-              )}
-              {typeof field.schema.description === 'string' && <span className="mt-1 block text-xs text-white/40">{field.schema.description}</span>}
-            </label>
-          )
-        })}
-        <button type="submit" disabled={disabled} className="flex items-center gap-2 rounded-xl bg-[#c9f05b] px-5 py-3 text-sm font-medium text-[#11130f] disabled:cursor-not-allowed disabled:opacity-40">
-          {sending ? <LoaderCircle size={16} className="animate-spin" /> : <Send size={16} />}
-          {sending ? '执行中…' : code === 'long-summary' ? '生成摘要' : '发送消息'}
-        </button>
-      </fieldset>
-      <p className="text-xs leading-5 text-white/35">服务端会重新读取最新状态、Schema 和价格。真实模型故障会降级，本次不计费。</p>
-    </form>
-  )
+  const renderField = (field: typeof fields[number]) => {
+    const options = Array.isArray(field.schema.enum) ? field.schema.enum : null
+    const multiline = ['messages', 'text'].includes(field.name) || ['array', 'object', 'json'].includes(field.type)
+    return <label key={field.name} className="field schema-field"><span className="field-label">{field.title}{field.required && <span className="schema-required"> *</span>}</span>
+      {options || field.type === 'boolean' ? <select className="form-control" value={values[field.name] ?? ''} required={field.required}
+        onChange={(e) => update(field.name, e.target.value)}><option value="">请选择</option>{(options ?? [true, false]).map((option) =>
+          <option key={String(option)} value={String(option)}>{String(option)}</option>)}</select> : multiline ?
+        <textarea className="form-control schema-textarea" rows={field.name === 'text' ? 5 : 3}
+          value={values[field.name] ?? ''} required={field.required}
+          minLength={field.type === 'string' && typeof field.schema.minLength === 'number' ? field.schema.minLength : undefined}
+          maxLength={typeof field.schema.maxLength === 'number' ? field.schema.maxLength : 12000}
+          placeholder={field.name === 'messages' ? '输入你的消息，Ctrl + Enter 发送…' : field.name === 'text' ? '将需要提炼摘要的文本粘贴到这里…' : '按输入要求填写 JSON'}
+          onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); form.current?.requestSubmit() } }}
+          onChange={(e) => update(field.name, e.target.value)} /> :
+        <input className="form-control" type={['integer', 'number'].includes(field.type) ? 'number' : 'text'}
+          value={values[field.name] ?? ''} required={field.required}
+          min={typeof field.schema.minimum === 'number' ? field.schema.minimum : undefined}
+          max={typeof field.schema.maximum === 'number' ? field.schema.maximum : undefined}
+          step={field.type === 'integer' ? 1 : field.type === 'number' ? 'any' : undefined}
+          onChange={(e) => update(field.name, e.target.value)} />}
+      {field.name === 'text' ? <span className="schema-text-count">{(values[field.name] ?? '').length.toLocaleString()} 字符</span> :
+        typeof field.schema.description === 'string' && <span className="field-hint">{field.schema.description}</span>}
+    </label>
+  }
+  return <form ref={form} className="schema-form" onSubmit={(e) => { e.preventDefault(); if (!disabled) onSend() }}>
+    <fieldset disabled={disabled} className="schema-fieldset">
+      {!fields.length && <label className="field"><span className="field-label">输入 JSON</span><textarea className="form-control mono" rows={4} required value={values.__json ?? ''} onChange={(e) => update('__json', e.target.value)} placeholder={'{"text":"待处理的文本"}'} /></label>}
+      {primary.map(renderField)}
+      {!!advanced.length && <details className="schema-advanced" open={primary.length === 0 || advanced.some((field) => field.required && !(values[field.name] ?? '').trim())}><summary><SlidersHorizontal size={13} />参数设置<span>{advanced.length} 项</span><ChevronDown size={12} /></summary><div className="schema-advanced-fields">{advanced.map(renderField)}</div></details>}
+      <div className="schema-form-bottom"><span>Ctrl / ⌘ + Enter 发送 · 降级不计费</span>
+        <button type="submit" className="button-primary" disabled={disabled}>{sending ? <LoaderCircle size={14} className="spinner" /> : <Send size={14} />}{sending ? '执行中…' : code === 'long-summary' ? '生成摘要' : '发送消息'}</button></div>
+    </fieldset>
+  </form>
 }
