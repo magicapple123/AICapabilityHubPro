@@ -121,8 +121,8 @@ prompt_tokens 当前按传入有效消息字符数估算，completion_tokens 沿
 - 默认内部客户端 GET /internal/capability/{id}，要求 id/code/status/param_schema/price_per_call；目录服务端待成员实现，缺失/格式异常失败关闭，不自动回退。
 - 显式 market 使用服务发现后的固定 /api/capability/market/{id}，只允许已上架详情；API 2002不可执行。通过此路径不代表内部详情端点已验收。
 - user预检 GET /internal/user/check 传 user_id/points_cost；必须返回匹配ID、normal、整数余额与价格、available=true。
-- billing POST /internal/billing/record 传 capability_id、unit_price、points、request_id、user_id、service_name、model、status、duration_ms。正常points=目录价，degraded=0；unit_price始终登记价，当前billing尚未独立存储。
+- billing POST /internal/billing/record 传 capability_id、unit_price、points、request_id、user_id、service_name、model、status、duration_ms。正常points=目录价，degraded=0；unit_price始终登记价，billing本分支已独立存储并兼容旧调用NULL。
 - billing收据正record_id、request_id/user_id/capability_id/cost/call_status必须一致；未上报时 billing_status=not_reported，不能计费验收。
-- capability与billing的管理实时授权、user角色/Key exchange仍待交接，见[共享契约](pro-shared.md)。权限码1007为新增约定，1006保留user的Key不存在。
+- user角色/Key exchange与billing实时授权已在本分支实现，capability接入及完整联验待交接，见[共享契约](pro-shared.md)。用户确认授权不足使用1006，Key不存在保留同码，按端点及消息区分。
 - 市场入口固定 /chat?capability_id=<id>；Chat 与市场按钮已在10/20前端调整中接通。视觉等未支持能力不应显示可体验。
 - 内部服务就绪后运行严格 --catalog-mode internal --browser，必须实际取得 member_internal_contract_verified=true；目前 market 模式与内部失败关闭的通过不能代替它。

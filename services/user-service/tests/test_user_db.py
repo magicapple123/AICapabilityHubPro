@@ -22,7 +22,6 @@ from tests.conftest import (
     set_user_status,
 )
 
-pytestmark = pytest.mark.skipif(not DB_READY, reason=f"需要可用的 user_db：{DB_REASON}")
 
 
 # ---------------------------------------------------------------- 注册 / 登录
@@ -72,6 +71,8 @@ def test_login_returns_gateway_compatible_jwt(qa: QaUser) -> None:
 
     assert claims["sub"] == str(qa.user_id)
     assert claims["username"] == qa.username
+    assert claims["role"] == "user"
+    assert body["data"]["role"] == "user"
     assert body["data"]["expire_at"]
 
 

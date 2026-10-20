@@ -7,7 +7,8 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from datetime import timedelta, timezone
 
 from app.core.constants import ApiKeyStatus
 from app.schemas.common import BaseOut
@@ -16,10 +17,18 @@ API_KEY_NAME_MAX_LENGTH = 32
 
 
 class ApiKeyCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     """创建 API Key；`expire_time` 为空表示永不过期。"""
 
     name: str = Field(default="", max_length=API_KEY_NAME_MAX_LENGTH)
     expire_time: datetime | None = None
+
+    @field_validator("expire_time")
+    @classmethod
+    def local_expiry(cls, value):
+        if value is not None and value.tzinfo is not None:
+            return value.astimezone(timezone(timedelta(hours=8))).replace(tzinfo=None)
+        return value
 
 
 class ApiKeyOut(BaseOut):
@@ -58,3 +67,9 @@ class ApiKeyStatusOut(BaseOut):
     id: int
     status: str = ApiKeyStatus.DISABLED.value
     update_time: datetime
+
+
+class ApiKeyExchangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    access_key: str = Field(min_length=1, max_length=64, repr=False)
+    secret_key: SecretStr = Field(min_length=1, max_length=128)

@@ -31,6 +31,9 @@ class ApiKeyRepository:
         )
         return db.scalar(statement)
 
+    def find_by_access_key(self, db: Session, access_key: str) -> ApiKey | None:
+        return db.scalar(select(ApiKey).where(ApiKey.access_key == access_key, ApiKey.is_deleted == 0))
+
     def exists_access_key(self, db: Session, access_key: str) -> bool:
         statement = select(func.count(ApiKey.id)).where(
             ApiKey.access_key == access_key, ApiKey.is_deleted == 0

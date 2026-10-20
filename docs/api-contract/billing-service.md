@@ -1,12 +1,12 @@
 # AICapabilityHub Pro · billing-service 接口契约
 
-**实现状态（2026-10-19，main 1b89ce8）：** 基础记账/个人统计已实现，AI 已按目录价格上报真实 capability_id、points 和 duration_ms。独立 unit_price 存储及实时管理员统计保护为第 6 节的待实现升级。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)。
+**实现状态（2026-10-20，feature/pro-user-billing）：** 已实现 nullable unit_price 存储、查询、迁移和实时管理员统计授权；兼容既有 AI 上报字段。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)。
 
 > 负责人：黄禹菲
 > 服务名：`billing-service`
 > 数据库：`billing_db`
 > 端口：8083
-> 上游依赖：user-service 的 `/internal/user/check` 与 `/internal/user/points/deduct`；实时 authorization 待接入，禁止读取 user_db。
+> 上游依赖：user-service 的 `/internal/user/check` 与 `/internal/user/points/deduct`；实时 `/internal/user/authorization`，禁止读取 user_db。
 
 所有响应均为统一 `Result`：`{code, message, data, requestId}`；`requestId` 为唯一驼峰字段，其余业务字段使用 `snake_case`。业务错误 HTTP 200，由 `code` 区分；网关认证失败 HTTP 401。
 
@@ -15,7 +15,7 @@
 - **登录要求**：`/api/billing/records`、`/api/billing/usage`、`/api/billing/stat/overview` 均需要网关 JWT；`/health` 不需要。本服务无白名单业务接口。
 - **内部接口**：`/internal/billing/record` 只允许其它后端服务经基座 `call_internal` 调用。网关对外部访问 `/internal/**` 一律 403；本服务另校验 `X-User-Id`（身份，必须等于 body 的 `user_id`）与 `X-Request-Id`（幂等键，必须等于 body 的 `request_id`）。
 - **身份来源**：从网关注入的 `X-User-Id` / `X-User-Name` / `X-Request-Id` 读取，服务内不重复解析 JWT。
-- **账号状态校验**：网关只校验 JWT 签名与有效期，**不知道账号是否已被禁用**，因此被禁用账号在 Token 过期前仍能通过网关。billing-service 没有 `user_db` 的访问权（禁止跨库），三个查询接口都会先通过 `/internal/user/check`（`points_cost=0`）确认账号仍可用：被禁用返回 `1005`，user-service 不可用返回 `4002`。校验放在参数校验之后，确保 `2001` / `1001` 的错误优先级稳定。
+- **账号状态校验**：网关只校验 JWT 签名与有效期，**不知道账号是否已被禁用**，因此被禁用账号在 Token 过期前仍能通过网关。billing-service 没有 `user_db` 的访问权（禁止跨库），个人查询通过 `/internal/user/check`（`points_cost=0`）确认账号仍可用，全局统计通过实时 authorization 校验当前管理员身份：被禁用返回 `1005`，user-service 不可用返回 `4002`。校验放在参数校验之后，确保 `2001` / `1001` 的错误优先级稳定。
 - **数据隔离**：`records` / `usage` 只返回当前用户自己的数据；`stat/overview` 为运营全局统计。
 - **分页格式**：`data = {"list": [...], "total": 100, "page": 1, "page_size": 10}`；`page_size` 默认 10、最大 100。
 - **统计时间范围**：`start_date` / `end_date` 为 `YYYY-MM-DD`，**含当天**。缺省回看最近 30 天（含今天）；跨度上限 366 天；`start_date > end_date` 或超跨度按参数错误处理。`today` 取服务器本地日期（容器 TZ = Asia/Shanghai），与 `t_usage_daily.stat_date` 口径一致。
@@ -35,6 +35,7 @@
 | `user_id` | BIGINT | NOT NULL, INDEX | 调用用户 |
 | `capability_id` | BIGINT | NOT NULL DEFAULT 0 | Pro 新调用传真实能力 ID；0 仅保留历史未关联/旧调用方兼容含义 |
 | `service_name` | VARCHAR(64) | NOT NULL DEFAULT '' | 承载调用的服务名，如 `ai-chat-service` |
+| `unit_price` | BIGINT | NULL | 登记单价；历史未知为 NULL，不从 cost 推断 |
 | `cost` | BIGINT | NOT NULL DEFAULT 0 | 本次消耗积分（整数） |
 | `call_status` | VARCHAR(16) | NOT NULL DEFAULT 'success' | `success` / `degraded` / `failed`（Pro统一调用状态） |
 | `duration_ms` | INT | NOT NULL DEFAULT 0 | 调用耗时，缺省 0 |
@@ -94,6 +95,7 @@
   "capability_id": 1,
   "service_name": "ai-chat-service",
   "cost": 5,
+  "unit_price": 5,
   "call_status": "success",
   "duplicated": false,
   "balance_after": 95,
@@ -105,8 +107,8 @@
 
 - 错误码：`1001` 链路身份与目标用户不一致 / 缺少链路头；`1005` 用户不存在或已被禁用；`2001` 参数不符合 Schema；`3001` 积分不足；`3002` 同一 `requestId` 被不同调用占用；`4002` user-service 不可用；`4003` 系统内部错误
 - 备注：
-  - **处理顺序固定**为“幂等写调用记录 → 调 user 扣分 → 累计日用量”，三步在**同一事务**内：明细先 `flush` 抢占 `request_id` 唯一键但不提交；扣分失败（含 `3001` / `1005` / `4002`）立即 `rollback`，明细与日用量都不会落库，**不留半成功状态**。
-  - **幂等**：`request_id` 已存在且关键字段（`user_id`、`service_name`、`capability_id`、`cost`、`call_status`）一致时，返回 `code=0` + `duplicated=true`，`balance_after` 为 `null`（本次未扣分），不会重复扣费、不会重复累计用量；关键字段不一致时返回 `3002`。
+  - **处理顺序固定**为“幂等写调用记录 → 调 user 扣分 → 累计日用量”，账单与聚合在**同一本地事务**内（远端扣分独立提交）：明细先 `flush` 抢占 `request_id` 唯一键但不提交；扣分失败（含 `3001` / `1005` / `4002`）立即 `rollback`，明细与日用量都不会落库，**不留半成功状态**。
+  - **幂等**：`request_id` 已存在且关键字段（`user_id`、`service_name`、`capability_id`、`cost`、`unit_price`、`model_name`、`duration_ms`、`call_status`）一致时，返回 `code=0` + `duplicated=true`，`balance_after` 为 `null`（本次未扣分），不会重复扣费、不会重复累计用量；关键字段不一致时返回 `3002`。
   - **扣分**：只调用 `user-service` 的 `/internal/user/points/deduct`，自动服务发现，不写死地址、不读 `user_db`；`request_id` 原样透传，用户侧幂等键与计费侧一致。
   - **账号状态**：`points > 0` 时由扣分调用顺带完成状态校验（用户侧 `1005` 直接透传）；`points = 0` 的免费能力**不发起**扣分请求（用户侧要求 `amount ≥ 1`），因此单独调 `/internal/user/check` 校验状态，避免禁用账号经免费能力绕过校验。两种情况都不留半成功状态。
   - **日用量累加**：使用 `INSERT ... ON DUPLICATE KEY UPDATE call_count = call_count + 1, total_cost = total_cost + cost`，由数据库原子完成，避免并发丢失更新。
@@ -119,7 +121,7 @@
 - 负责人：黄禹菲
 - 是否需要登录：是
 - 查询参数：`start_date`、`end_date`（可选，缺省最近 30 天）、`service_name`（可选，精确匹配）、`call_status`（可选，`success` / `degraded` / `failed`）、`page`、`page_size`
-- 成功 data：分页结构，列表项 `{"id": 1, "request_id": "...", "user_id": 1, "capability_id": 0, "service_name": "ai-chat-service", "cost": 1, "call_status": "success", "duration_ms": 0, "model_name": "mock-model", "create_time": "2026-09-16 10:00:00"}`
+- 成功 data：分页结构，列表项 `{"id": 1, "request_id": "...", "user_id": 1, "capability_id": 0, "service_name": "ai-chat-service", "cost": 1, "unit_price": null, "call_status": "success", "duration_ms": 0, "model_name": "mock-model", "create_time": "2026-09-16 10:00:00"}`
 - 错误码：`1001` 未认证；`1005` 用户不存在或已被禁用；`2001` 参数不符合 Schema（分页越界、状态枚举非法、日期范围非法）；`4002` user-service 不可用
 - 备注：只返回当前用户的数据，按 `id` 倒序；日期过滤使用 `create_time >= start 00:00:00 AND create_time < end+1 天` 的索引友好写法。
 
@@ -164,7 +166,7 @@
 ```
 
 - 错误码：`1001` 未认证；`1005` 用户不存在或已被禁用；`2001` 参数不符合 Schema；`4002` user-service 不可用
-- 备注：全局口径，top_users 按费用取前 10。**当前实现缺少实时管理员授权，这是待修复的 Pro 缺口，不是允许所有登录用户访问的目标规范。** 第 6 节要求接入实时授权，不能仅依 JWT role 或前端控制。
+- 备注：全局口径，top_users 按费用取前 10。每次通过 user 实时授权当前 admin；普通用户 1006、禁用/不存在 1005，异常或不明确的授权 4002，失败关闭。
 
 ## 5. 错误码
 
@@ -175,17 +177,17 @@
 | 1005 | 用户不存在或已被禁用 | 查询接口的前置账号状态校验未通过（由 user-service 透传） | 1xxx |
 | 2001 | 参数不符合 Schema | 必填缺失、类型错误、枚举非法、日期范围非法（基座与范围校验统一处理） | 2xxx |
 | 3001 | 积分不足 | 由 user-service 扣分失败透传，此时明细与用量已回滚 | 3xxx |
-| 3002 | 重复计费：同一 requestId 已被其它调用占用 | 幂等键被不同调用复用（用户/服务/能力/实际费用/状态任一不同；当前未独立比较 unit_price） | 3xxx |
+| 3002 | 重复计费：同一 requestId 已被其它调用占用 | 幂等键被不同调用复用（用户/服务/能力/实际费用/登记价/模型/耗时/状态任一不同） | 3xxx |
 | 4002 | 下游服务暂不可用 | 服务发现失败、扣分调用异常，或账号状态校验时 user-service 不可用 | 4xxx |
 | 4003 | 系统内部错误 | 未预期异常、幂等冲突但查不到明细 | 4xxx |
 
 > **号段说明**：计费业务错误只用 `30xx`；参数类错误沿用平台统一的 `2001`（基座对 Schema 错误即返回该码），下游与系统错误由基座返回 `4002` / `4003`，不属于本服务业务号段。
 
-## 6. Pro 升级缺口与兼容要求
+## 6. Pro 实现与兼容要求
 
-1. 查询前当前账号检查继续通过 user 的内部契约，依赖不可用为 4002，不跨库读状态。全局 overview 必须进一步调用共享实时 authorization，普通用户/角色撤销拒绝，异常失败关闭。
-2. 当前 Gateway 已支持签名 role，但本服务尚未完成 admin 授权；1006 是 user 既有 Key 不存在码，新增授权不足为 1007，按[共享契约](pro-shared.md)接入，不复用冲突码。
-3. Pro AI 已查新鲜目录并上报 capability_id、unit_price、points、status、duration_ms。当前 Schema 忽略额外 unit_price，只保存 points→cost；负责人新增存储/查询/迁移时要兼容旧调用，不伪造历史单价。
+1. 查询前当前账号检查继续通过 user 的内部契约，依赖不可用为 4002，不跨库读状态。全局 overview 已调用共享实时 authorization，普通用户/角色撤销拒绝，异常失败关闭。
+2. Gateway 签名 role 仅供展示；实时授权按[共享契约](pro-shared.md)。用户确认权限不足采用 1006，Key 不存在保留同码，按端点/消息区分。
+3. Pro AI 已查新鲜目录并上报 capability_id、unit_price、points、status、duration_ms。unit_price 独立存储/查询；旧调用省略时保存 NULL。提供单价时 success 的 points 必须等于 unit_price，degraded/failed 的 points 必须为 0。增量迁移保留历史未知单价 NULL。
 4. 正常收费 points=目录价，degraded points=0，登记单价与实际费用分开。AI 会核对收据 record_id/request_id/user_id/capability_id/cost/call_status；变更必须保持兼容。
 5. 当前 by_day 聚合所有能力，summary/by_service 查明细，日统计查聚合；这是实际双源口径，新增维度或修复历史差异需有迁移/对账证据，不用文案改成另一实现。
 6. 本地记账回滚不能撤销已提交的远端 user 扣分。跨服务最后提交/网络故障须 requestId 对账；不要宣称分布式原子性，不能盲目重试模型。
@@ -198,3 +200,7 @@
 - `t_usage_daily`：`2026-09-15` + `user_id=1` + `capability_id=1`，`call_count=2`、`total_cost=10`。
 
 脚本使用 `INSERT ... ON DUPLICATE KEY UPDATE`，可重复执行；日期固定便于稳定断言，不含任何真实密钥。联调时通过 `/internal/billing/record` 产生的数据会累加到当天，不会与演示数据冲突。
+
+## 8. 迁移与验收
+
+运行 `python -m app.migrate` 可重复增加 nullable unit_price；不删除账单或修改历史费用。参见[升级说明](../../services/user-service/UPGRADE.md)和[本人交接](../implementation/member-黄禹菲.md)。本地账单/聚合事务与远端 user 扣分不具备分布式原子性，最终提交失败须按 requestId 对账。

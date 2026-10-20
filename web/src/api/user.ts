@@ -6,6 +6,7 @@ export interface Profile {
   user_id: number
   username: string
   nickname: string
+  role: 'user' | 'admin'
   status: string
   create_time: string
   update_time: string
@@ -36,6 +37,25 @@ export interface ApiKeyCreatePayload {
   /** 为空表示永不过期，格式 YYYY-MM-DD HH:MM:SS。 */
   expire_time?: string
 }
+
+export interface ApiKeyExchangePayload {
+  access_key: string
+  secret_key: string
+}
+
+export interface ApiKeyExchangeResult {
+  token: string
+  token_type: 'Bearer'
+  expire_at: string
+  expires_in: number
+  user_id: number
+  username: string
+  role: 'user' | 'admin'
+}
+
+/** Exact anonymous POST. Keep the response token in memory, not persistent storage. */
+export const exchangeApiKey = (data: ApiKeyExchangePayload) =>
+  request<ApiKeyExchangeResult>({ method: 'POST', url: '/user/apikeys/exchange', data })
 
 export interface PointsAccount {
   user_id: number

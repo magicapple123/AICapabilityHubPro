@@ -112,7 +112,7 @@ class PointsService:
                 payload.request_id,
                 payload.user_id,
             )
-            return self._duplicated_result(existing)
+            return self._duplicated_result(existing, payload)
 
         try:
             # 先插入流水占位，用唯一索引抢占幂等键，再执行扣减。
@@ -135,7 +135,7 @@ class PointsService:
             if existing is None:
                 logger.error("扣分幂等冲突但未找到流水 request_id={}", payload.request_id)
                 raise BizException(4003, "系统内部错误") from None
-            return self._duplicated_result(existing)
+            return self._duplicated_result(existing, payload)
 
         affected = self.points.try_deduct(db, payload.user_id, payload.amount)
         if affected == 0:
@@ -163,7 +163,11 @@ class PointsService:
     # ------------------------------------------------------------ 内部工具
 
     @staticmethod
-    def _duplicated_result(log: PointsLog) -> PointsDeductOut:
+    def _duplicated_result(log: PointsLog, payload: PointsDeductRequest) -> PointsDeductOut:
+        if (log.user_id != payload.user_id or log.amount != payload.amount or
+                log.biz_type != payload.biz_type.value or log.direction != "out" or
+                log.request_id != payload.request_id):
+            raise BizException(3002, "重复计费：同一 requestId 已被其它调用占用")
         return PointsDeductOut(
             user_id=log.user_id,
             amount=log.amount,

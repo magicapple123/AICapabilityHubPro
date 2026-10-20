@@ -36,17 +36,40 @@ def _signing_key() -> str:
     return secret
 
 
-def create_token(user_id: int | str, username: str) -> tuple[str, datetime]:
+def create_token(
+    user_id: int | str,
+    username: str,
+    *,
+    role: str = "user",
+    ttl_seconds: int | None = None,
+    expires_at: datetime | None = None,
+) -> tuple[str, datetime]:
     """签发访问令牌；返回 (token, 过期时间 UTC)。"""
 
-    expire_at = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_ttl_hours)
+    if role not in {"user", "admin"}:
+        raise BizException(4003, "系统内部错误")
+    if ttl_seconds is not None and (type(ttl_seconds) is not int or not 1 <= ttl_seconds <= 3600):
+        raise BizException(4003, "系统内部错误")
+    issued_at = datetime.now(timezone.utc)
+    expire_at = issued_at + (
+        timedelta(seconds=ttl_seconds)
+        if ttl_seconds is not None
+        else timedelta(hours=settings.jwt_ttl_hours)
+    )
+    if expires_at is not None:
+        if expires_at.tzinfo is None:
+            raise BizException(4003, "系统内部错误")
+        expire_at = min(expire_at, expires_at.astimezone(timezone.utc))
+    if expire_at <= issued_at:
+        raise BizException(4003, "系统内部错误")
     token = jwt.encode(
         {
             "iss": settings.jwt_issuer,
             "sub": str(user_id),
             "username": username,
+            "role": role,
             "jti": uuid4().hex,
-            "iat": datetime.now(timezone.utc),
+            "iat": issued_at,
             "exp": expire_at,
         },
         _signing_key(),

@@ -26,6 +26,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(32), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="user", server_default="user")
     nickname: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=UserStatus.NORMAL.value

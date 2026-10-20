@@ -1,6 +1,6 @@
 # AICapabilityHub Pro · user-service 接口契约
 
-**实现状态（2026-10-19，main 1b89ce8）：** 下文现有账号、Key 管理、积分和内部扣分已实现；第 7 节的 role、实时授权及 Key exchange 为已明确的 Pro 待实现任务。统一规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)及[共享契约](pro-shared.md)，不得再按原版“仅展示 Key”的目标删掉凭证校验基础。
+**实现状态（2026-10-20，feature/pro-user-billing）：** 已实现角色、实时授权、Key 短期 JWT 兑换及保留旧数据的迁移，详见第 7 节。统一规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)及[共享契约](pro-shared.md)，不得再按原版“仅展示 Key”的目标删掉凭证校验基础。
 
 > 负责人：黄禹菲
 > 服务名：`user-service`
@@ -13,8 +13,8 @@
 
 ## 0. 通用约定
 
-- **登录要求**：register/login 为公开入口，其余已实现用户接口需 JWT；精确 POST `/api/user/apikeys/exchange` 已有 Gateway 白名单，但 user 服务端尚未实现，不将 Key 列表/管理接口变成匿名。health 公开，ping 经网关需认证。
-- **内部接口**：`/internal/user/**` 只允许可信后端经call_internal调用，Gateway对外403。现有内部依赖检查X-User-Id/Request-Id存在与ID格式；扣分另外比较body.user_id与调用者，不符1001。GET check当前未单独比较query.user_id与调用者，这是Pro待补强项，不能写成已完成该校验。
+- **登录要求**：register/login 为公开入口，其余已实现用户接口需 JWT；精确 POST `/api/user/apikeys/exchange` 已有 Gateway 白名单，user 服务端已实现，不将 Key 列表/管理接口变成匿名。health 公开，ping 经网关需认证。
+- **内部接口**：`/internal/user/**` 只允许可信后端经call_internal调用，Gateway对外403。现有内部依赖检查X-User-Id/Request-Id存在与ID格式；扣分另外比较body.user_id与调用者，不符1001。GET check 同样比较 query.user_id 与调用者，不符 1001。
 - **身份来源**：从网关注入的 `X-User-Id` / `X-User-Name` / `X-Request-Id` 读取，服务内不重复解析 JWT。`X-User-Id` 必须是正整数，否则按未认证处理。
 - **账号状态校验**：网关只校验 JWT 签名与有效期，**不知道账号是否已被禁用**，因此被禁用账号在 Token 过期前仍能通过网关。除 `register` / `login` / `/health` 外，所有接口都会自行校验账号状态（user-service 拥有 `t_user`，一次主键查询即完成）；账号不存在或 `status=disabled` 一律返回 `1005`。`register` / `login` 不做该校验，以便被禁用用户仍能收到明确的 `1005` 提示。
 - **分页格式**：`data = {"list": [...], "total": 100, "page": 1, "page_size": 10}`；`page_size` 默认 10、最大 100。API Key 列表不分页（单个用户 Key 数量少，前端一次取全）。
@@ -34,6 +34,7 @@
 | `username` | VARCHAR(32) | NOT NULL | 登录名，3~32 位字母/数字/下划线/连字符，未删除范围内唯一 |
 | `password_hash` | VARCHAR(255) | NOT NULL | PBKDF2 自描述哈希串，禁止明文 |
 | `nickname` | VARCHAR(32) | NOT NULL DEFAULT '' | 昵称，缺省等于 `username` |
+| `role` | VARCHAR(16) | NOT NULL DEFAULT user | user/admin，普通接口不可修改 |
 | `status` | VARCHAR(16) | NOT NULL DEFAULT 'normal' | `normal` 正常 / `disabled` 禁用 |
 | `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见Pro开发指南第9节及当前sql/01_init.sql |
 
@@ -47,6 +48,7 @@
 | `access_key` | VARCHAR(64) | NOT NULL | 对外标识，`ak_` + 24 位十六进制，未删除范围内唯一 |
 | `secret_hash` | VARCHAR(128) | NOT NULL | `secret_key` 的 SHA-256 十六进制摘要，用于校验，不可逆 |
 | `secret_mask` | VARCHAR(32) | NOT NULL DEFAULT '' | 展示掩码，如 `sk_****a1b2` |
+| `role` | VARCHAR(16) | NOT NULL DEFAULT user | user/admin，普通接口不可修改 |
 | `status` | VARCHAR(16) | NOT NULL DEFAULT 'enabled' | `enabled` / `disabled` |
 | `expire_time` | DATETIME | NULL | 过期时间，NULL 表示永不过期 |
 | `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见Pro开发指南第9节及当前sql/01_init.sql |
@@ -87,7 +89,7 @@
 - 负责人：黄禹菲
 - 是否需要登录：**否（网关白名单，精确路径）**
 - 请求体：`{"username": "demo", "password": "demo123456", "nickname": "可选，默认等于 username"}`
-- 成功 data：`{"user_id": 1, "username": "demo", "nickname": "demo", "balance": 100, "initial_points": 100}`
+- 成功 data：`{"user_id": 1, "username": "demo", "nickname": "demo", "balance": 100, "initial_points": 100, "role": "user"}`
 - 错误码：`2001` 参数不符合 Schema（用户名不满足 `^[a-zA-Z0-9_-]{3,32}$`、口令长度 8~128）；`1004` 用户名已存在
 - 备注：**同一事务内**创建 `t_user`、`t_points_account` 与一条 `direction=in` 的赠送流水，任何一步失败整体回滚，不产生“有用户没有账户”的半成功状态。初始积分取自 `INITIAL_POINTS`（默认 100）。并发重名由 `uk_user_username` 唯一索引兜底并映射为 `1004`。
 
@@ -96,7 +98,7 @@
 - 负责人：黄禹菲
 - 是否需要登录：**否（网关白名单，精确路径）**
 - 请求体：`{"username": "demo", "password": "demo123456"}`
-- 成功 data：`{"token": "<JWT>", "token_type": "Bearer", "expire_at": "2026-09-17 03:00:00", "user_id": 1, "username": "demo"}`
+- 成功 data：`{"token": "<JWT>", "token_type": "Bearer", "expire_at": "2026-09-17 03:00:00", "user_id": 1, "username": "demo", "role": "user"}`
 - 错误码：`2001` 参数不符合 Schema；`1003` 用户名或密码错误；`1005` 用户不存在或已被禁用
 - 备注：用户名不存在与口令错误返回**同一个** `1003`，避免账号枚举；凭据正确但用户被禁用时返回 `1005`。`expire_at` 为 UTC，有效期 `JWT_TTL_HOURS`（默认 24 小时）。
 
@@ -104,7 +106,7 @@
 
 - 负责人：黄禹菲
 - 是否需要登录：是
-- 成功 data：`{"user_id": 1, "username": "demo", "nickname": "demo", "status": "normal", "create_time": "...", "update_time": "..."}`
+- 成功 data：`{"user_id": 1, "username": "demo", "nickname": "demo", "status": "normal", "role": "user", "create_time": "...", "update_time": "..."}`
 - 错误码：`1001` 未认证；`1005` 用户不存在或已被禁用
 - 备注：出参字段显式列举，绝不包含 `password_hash`。
 
@@ -195,6 +197,14 @@
 }
 ```
 
+## 9. Pro 角色、授权与兑换现行契约（2026-10-20）
+
+- `t_user.role` 仅 `user/admin`；注册强制 `user`，注册、登录和资料更新均拒绝未声明字段。JWT、注册/登录和资料响应返回数据库 role。
+- 内部实时授权：`GET /internal/user/authorization?user_id=<当前用户ID>&required_role=admin`；调用者 X-User-Id 必须等于目标，且 X-Request-Id 非空。查询数据库当前账号角色/状态。成功 data 为 `{user_id,status,role,authorized:true}`；链路错误 1001，账号缺失/禁用 1005，权限不足按本任务确认 1006（消息“权限不足”），requestId 回传。
+- Key 兑换：精确匿名 `POST /api/user/apikeys/exchange`，body 仅 `access_key`、`secret_key`。错误/不存在/禁用/过期/无效 owner 统一 1003 “API Key 凭证无效”。成功 data 为 token、token_type、expire_at UTC、expires_in、user_id、username、role。配置 `API_KEY_JWT_TTL_SECONDS` 默认 900、允许 1–3600，且不超过 Key 剩余期限。客户端无权指定角色或 TTL。Key 创建和兑换响应 no-store；Key 日期无时区时按 Asia/Shanghai 处理。
+- Key 表仍只存原语义 SHA-256 secret_hash 与 secret_mask；secret 仅创建响应一次返回，兑换日志不记录凭证/Token。
+- 旧库升级、管理员离线初始化和测试方式见 [升级说明](../../services/user-service/UPGRADE.md)。旧账号迁移默认 user；管理员口令隐藏交互输入，不通过公开注册或源码硬编码。
+
 - 成功 data：`{"user_id": 1, "amount": 5, "balance_after": 95, "direction": "out", "duplicated": false}`
 - 错误码：`1001` 链路身份与目标用户不一致 / 缺少链路头；`1005` 用户不存在或已被禁用；`3001` 积分不足；`2001` 参数不符合 Schema（`amount` 必须 ≥ 1）
 - 备注：
@@ -219,13 +229,13 @@
 
 > 用户/认证使用10xx，积分不足3001与billing一致。扣分request_id重复且实际语义可重放时返回duplicated=true；不同字段冲突处理以实现/测试和共享契约记录，不应把所有冲突都概括为正常重放。
 
-## 7. Pro 待实现与兼容要求
+## 7. Pro 实现与兼容要求（2026-10-20）
 
-1. **角色与迁移**：当前 user 数据模型/登录响应尚未交付角色。新增 user/admin，注册默认 user，拒绝通过注册/资料指定 admin；数据库增量迁移保留旧用户，提供受控本地管理员初始化。Gateway 已验证签名 role，缺失 role 的旧 JWT 默认 user。
-2. **实时授权**：实现 GET `/internal/user/authorization?user_id=<当前用户ID>&required_role=admin`，校验身份一致及当前 DB 状态/角色。成功返回 user_id/status/role/authorized；1001 身份、1005 禁用、不满足 admin 为新增 **1007**。现有 **1006 继续表示 API Key 不存在**，不得复用。完整约定见 [pro-shared](pro-shared.md)。
-3. **Key exchange**：固定 POST `/api/user/apikeys/exchange`，凭证在 JSON body，沿用 access_key/secret_key 语义。核验摘要、所有者、当前账号、Key 状态/过期，TTL 可配且有硬上限，身份/角色不可由客户端指定。请求精确字段与 TTL 需随实现补齐契约和测试；当前不能宣称兑换可用。
+1. **角色与迁移**：角色为 user/admin，注册默认 user，注册和资料修改拒绝额外字段（含 role）。登录 JWT、注册/登录/资料响应携带服务端 role。增量迁移保留旧用户，默认 user；管理员由离线工具创建，见[升级说明](../../services/user-service/UPGRADE.md)。旧 JWT 缺失 role 时 Gateway 默认 user。
+2. **实时授权**：GET `/internal/user/authorization?user_id=<当前用户ID>&required_role=admin` 校验身份一致及当前 DB 状态/角色。成功 data 为 `{"user_id":1,"status":"normal","role":"admin","authorized":true}`；身份缺失/不匹配 1001，账号不存在/禁用 1005，普通用户 1006。统一 Result 保留 requestId。用户本次确认采用 1006；既有 Key 不存在码保留，按端点和消息区分。完整约定见[共享契约](pro-shared.md)。
+3. **Key exchange**：精确 POST `/api/user/apikeys/exchange`，JSON 仅 `{"access_key":"<创建返回值>","secret_key":"<仅创建时展示的值>"}`，额外 role/TTL 字段拒绝。核验 SHA-256 摘要、所有者、账号、Key 状态及期限；无效凭证统一 1003 “API Key 凭证无效”。成功返回 token、token_type=Bearer、expire_at（UTC）、expires_in（秒）、user_id、username、role。`API_KEY_JWT_TTL_SECONDS` 默认 900，范围 1–3600，且 Token 不晚于 Key 到期；配置超界拒绝启动。身份与角色来自数据库。创建/兑换响应 no-store，不记录凭证或 Token。
 4. **凭证与账号边界**：secret 只创建时展示，列表不返回 secret/hash，错误凭证不泄露 Key 是否存在；禁用账号不得因 Key 尚未禁用而继续兑换或管理。实时管理授权由业务调用方接入，不在 Gateway 伪造 DB 权限。
-5. **积分一致性**：AI已按capability_id关联目录价，billing points映射实际cost；保留余额条件更新。user现有扣分按requestId命中即返回旧流水，尚未像billing一样严格比较所有重放字段，需补齐冲突负例及兼容处理。GET check也需比较query.user_id与调用者。frozen当前恒0、version为更新计数，不误称读版本比较的乐观锁。
+5. **积分一致性**：AI 按 capability_id 关联目录价，billing points 映射实际 cost；保留余额条件更新。扣分重放比较用户、金额、业务类型，不同则 3002；相同返回原流水。GET check 比较 query.user_id 与调用者，不符 1001。frozen 恒 0、version 为更新计数。跨服务事务不承诺分布式原子性。
 6. **验收**：权限撤销/依赖故障、Key 失效/过期/摘要错误、TTL 上限、余额不足和迁移保留均需负例。单测替身与真实联调分别记录，禁止使用开发库跑会清理 qa 行的夹具。
 
 ## 8. 测试数据计划

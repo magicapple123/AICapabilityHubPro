@@ -29,6 +29,21 @@ USER_UNAVAILABLE_MESSAGE = "用户不存在或已被禁用"
 class UserStatusService:
     """通过 user-service 的内部契约校验账号是否可用。"""
 
+    async def ensure_admin(self, user_id: int) -> None:
+        try:
+            data = await call_internal(settings.user_service_name, "GET", "/internal/user/authorization",
+                                       params={"user_id": user_id, "required_role": "admin"})
+        except BizException as exc:
+            if exc.code in {1001, 1005, 1006, 4002}:
+                raise
+            raise BizException(4002, "授权服务暂不可用") from None
+        except Exception:
+            raise BizException(4002, "授权服务暂不可用") from None
+        if (not isinstance(data, dict) or type(data.get("user_id")) is not int or
+                data["user_id"] != user_id or data.get("status") != "normal" or
+                data.get("role") != "admin" or data.get("authorized") is not True):
+            raise BizException(4002, "授权服务响应格式错误")
+
     async def ensure_active(self, user_id: int) -> None:
         """账号可用则正常返回，否则抛业务异常。
 
