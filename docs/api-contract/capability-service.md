@@ -114,7 +114,7 @@
 
 - 成功 data：登记后的能力对象（含 `id`、`create_time`）
 - 错误码：`2001` 参数不符合 Schema；`2003` 分类不存在；`2006` 能力编码已存在；`2007` 非管理员；`4002` 授权依赖不可用
-- 备注：`status` 缺省为 `draft`；`price_per_call` 必须为 0–1000000 的整数；`code` 只允许小写字母、数字和连字符；`param_schema` 只接受对象根类型的内联 JSON Schema，禁止 `$ref/$dynamicRef/$recursiveRef/$id`。登记后默认不上架，需再由 `PUT /{id}/status` 上架。需实时管理员授权。
+- 备注：`status` 缺省为 `draft`；`price_per_call` 必须为 0–1000000 的整数；`code` 只允许小写字母、数字和连字符；`param_schema` 只接受对象根类型、合法 Draft 2020-12 的内联 JSON Schema，禁止 `$ref/$dynamicRef/$recursiveRef/$id`。`status=online` 时必须同时提供合法 Schema，否则 2001；draft/offline 可暂不提供。登记后默认不上架，需再由 `PUT /{id}/status` 上架。需实时管理员授权。
 
 ### `PUT /api/capability/{capability_id}`
 
@@ -124,7 +124,7 @@
 - 请求体：同 `POST /api/capability`，字段均可选（不含 `status`）
 - 成功 data：更新后的能力对象
 - 错误码：`2001` 参数不符合 Schema；`2002` 能力不存在；`2003` 分类不存在；`2006` 能力编码已存在；`2007` 非管理员；`4002` 授权依赖不可用
-- 备注：状态变更必须走 `PUT /{id}/status`，此接口忽略 `status` 字段；`param_schema` 边界同登记接口。需实时管理员授权。
+- 备注：状态变更必须走 `PUT /{id}/status`，此接口忽略 `status` 字段；`param_schema` 边界同登记接口。online 能力不能把 `param_schema` 清空，需先下架。需实时管理员授权。
 
 ### `DELETE /api/capability/{capability_id}`
 
@@ -143,7 +143,7 @@
 - 请求体：`{"status": "online"}`
 - 成功 data：`{"id": 1, "status": "online", "update_time": "..."}`
 - 错误码：`2001` 参数不符合 Schema（`status` 不在 `draft`/`online`/`offline` 内）；`2002` 能力不存在；`2007` 非管理员；`4002` 授权依赖不可用
-- 备注：上下架唯一入口；`online` 为市场可见状态，`offline` / `draft` 均不可见。需实时管理员授权；状态改变在下一次内部详情读取时立即生效。
+- 备注：上下架唯一入口；`online` 为市场可见状态，`offline` / `draft` 均不可见。切到 online 要求该能力已有合法 Schema，否则 2001。需实时管理员授权；状态改变在下一次内部详情读取时立即生效。
 
 ## 4. 市场与运营接口
 
@@ -231,7 +231,7 @@
 
 | code | message | 触发场景 |
 |---|---|---|
-| 2001 | 参数不符合 Schema | 必填缺失、类型错误、枚举非法、JSON 结构错误（基座统一处理） |
+| 2001 | 参数不符合 Schema | 必填缺失、类型错误、枚举非法、JSON 结构错误（基座统一处理）；上架缺少合法 Schema |
 | 2002 | 能力不存在或已下线 | 能力 ID 不存在、已软删除、`draft`/`offline` 被外部访问 |
 | 2003 | 分类不存在 | `category_id` 不存在或已软删除 |
 | 2004 | 分类名称或编码已存在 | 分类 `name` / `code` 冲突 |
@@ -247,7 +247,7 @@
 2. 授权码以[共享契约](pro-shared.md)为准：user 新增权限不足 `1007`，`1006` 仍表示 API Key 不存在。capability 把 `1007` 映射为对外 `2007`；仅在该授权端点额外接受旧 user 构建可能返回的 `1006` 作为拒绝码，任何情况下都不会据此放行。
 3. 已提供 GET `/internal/capability/{capability_id}`，成功 data 为匹配正整数 id、name、code、真实 status、内联 param_schema、0–1000000 整数 price_per_call。不返回可供任意代理的 URL；未知/软删除 `2002`，draft/offline 如实标识，AI 会拒绝。
 4. AI 客户端、allowlist 和目录价计量已实现，默认 internal 缺失端点失败关闭。内部端点已就绪，但 `member_internal_contract_verified=true` 仍需在真实四服务环境运行 `--catalog-mode internal --browser` 取得；market 兼容链通过不能替代。
-5. code 固定 chat-completions / long-summary，对应 input.messages / input.text 与可选 max_length。Schema 按现有执行器内联结构（对象根类型、无 `$ref/$dynamicRef/$recursiveRef/$id`、大小≤32768、深度≤20、节点≤2000），登记与内部详情都通过 Draft 2020-12 元 Schema 校验；非法关键字在登记时返回 2001、在内部详情返回 4002，不会留到执行期。状态/单价一改在下一次调用生效，不缓存旧状态。
+5. code 固定 chat-completions / long-summary，对应 input.messages / input.text 与可选 max_length。Schema 按现有执行器内联结构（对象根类型、无 `$ref/$dynamicRef/$recursiveRef/$id`、大小≤32768、深度≤20、节点≤2000），登记与内部详情都通过 Draft 2020-12 元 Schema 校验；非法关键字在登记时返回 2001、在内部详情返回 4002，不会留到执行期。上架要求已有合法 Schema，避免市场展示必然失败的配置。状态/单价一改在下一次调用生效，不缓存旧状态。
 6. 市场使用真实目录接口。按钮传 `/chat?capability_id=<id>`，Chat 已接受；未实现执行器的视觉等能力明确不可体验，不补虚构延迟或耗时。
 7. 分类 enabled/disabled、能力 draft/online/offline、价格整数积分已定稿。注册记录的 service/path 不决定执行目标，新增 code 需真正 adapter 与安全验收。
 
@@ -262,5 +262,5 @@
   - `vision-parse`（视觉理解，`draft`，用于验证市场不可见）
 - 现有聊天价格 5、摘要 3；AI 验证目录状态/Schema/price，不按固定 POINTS_COST。演示数据不包含真实凭证。
 - `chat-completions` / `long-summary` 的 `param_schema` 已与执行器约束对齐：聊天 `messages` 1–40 条、role 三选一、content 1–12000、可选 temperature 0–2；摘要 `text` 1–12000、可选 `max_length` 30–1000（默认 200）；使用布尔 `additionalProperties=false`。
-- 已有业务库的结构升级使用独立增量脚本 `sql/03_align_executor_schema.sql`：只更新仍是旧版简化 Schema 的记录，不改写价格与上下架状态，重复执行安全；执行前按脚本注释备份受影响列。`sql/02_seed.sql` 仅用于新环境或明确的隔离示例库。
-- 已覆盖内部详情、公开字段最小化、状态变化、未知/软删除、Schema 引用/非法 Draft 关键字/价格边界、重复编码、非管理员直接写/管理读取、授权撤销/故障以及市场选中 ID 的浏览器入口。数据库测试使用独立实例；`feature/pro-capability-market` 上 125 项服务测试在隔离 MySQL 8.0 全绿。
+- 已有业务库的结构升级使用独立增量脚本 `sql/03_align_executor_schema.sql`：只更新仍是旧版简化 Schema 的记录，不改写价格与上下架状态，重复执行安全；执行前按脚本注释备份受影响列。`sql/02_seed.sql` 仅用于新环境或明确的隔离示例库。升级后应检查历史 `online` 且 `param_schema IS NULL` 的记录，由管理员补齐 Schema 或下架；新写入已强制要求上架带合法 Schema，迁移不自动改写历史状态。
+- 已覆盖内部详情、公开字段最小化、状态变化、未知/软删除、Schema 引用/非法 Draft 关键字/上架必须有合法 Schema/价格边界、重复编码、非管理员直接写/管理读取、授权撤销/故障以及市场选中 ID 的浏览器入口。数据库测试使用独立实例；`feature/pro-capability-market` 上 129 项服务测试在隔离 MySQL 8.0 全绿。

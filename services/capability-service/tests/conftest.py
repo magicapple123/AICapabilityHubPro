@@ -26,6 +26,9 @@ from app.service import authorization_service
 # 测试数据统一前缀，用于创建与清理。
 TEST_PREFIX = "qa-"
 
+# 上架能力必须有合法 Schema；测试工厂默认提供一个空对象 Schema。
+DEFAULT_PARAM_SCHEMA = {"type": "object", "properties": {}}
+
 # 模拟网关注入的透传头；直连服务时需手动补上。
 USER_HEADERS = {
     "X-User-Id": "1",
@@ -111,6 +114,7 @@ class QaCatalog:
         status: str = "draft",
         price: int = 7,
         param_schema: dict | None = None,
+        omit_schema: bool = False,
     ) -> dict:
         payload: dict = {
             "category_id": category_id,
@@ -121,8 +125,10 @@ class QaCatalog:
             "price_per_call": price,
             "status": status,
         }
-        if param_schema is not None:
-            payload["param_schema"] = param_schema
+        if not omit_schema:
+            payload["param_schema"] = (
+                DEFAULT_PARAM_SCHEMA if param_schema is None else param_schema
+            )
         return self.client.post(
             "/api/capability", headers=USER_HEADERS, json=payload
         ).json()
@@ -147,6 +153,11 @@ class QaCatalog:
             f"/api/capability/{capability_id}/status",
             headers=USER_HEADERS,
             json={"status": status},
+        ).json()
+
+    def update_capability(self, capability_id: int, payload: dict) -> dict:
+        return self.client.put(
+            f"/api/capability/{capability_id}", headers=USER_HEADERS, json=payload
         ).json()
 
     def delete_capability(self, capability_id: int) -> dict:

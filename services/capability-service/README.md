@@ -26,6 +26,8 @@ capability-service拥有capability_db，维护能力ID、分类、Schema、单�
 
 管理操作/列表每次调用user authorization，匹配当前用户、normal/admin/authorized=true才放行；依赖异常失败关闭，普通用户拒绝2007。共享契约新增user权限不足1007，1006保留Key不存在；授权端点对旧user构建返回的1006也仅作拒绝兼容。
 
+上架（create时status=online或status接口切online）必须已有合法的对象Schema；草稿/下架可暂不填写，但线上能力不能把Schema清空，需先下架。这样市场不会展示必然在executor处失败的目录配置。
+
 ## 启动和数据
 
 ```powershell
@@ -42,6 +44,6 @@ cd services/capability-service
 .\.venv\Scripts\python.exe -m pytest -q -rs
 ```
 
-当前 `feature/pro-capability-market` 共125项用例：非DB用例80项，隔离MySQL 8.0上DB用例45项，全绿、零跳过。覆盖内部详情字段/状态/未知/软删除/身份、Schema引用/非法Draft关键字与边界、价格边界、管理员/普通用户/撤权/依赖故障、字段最小化与重复编码。数据库夹具会清理 `qa-` 前缀测试数据，必须使用独立实例，不能用开发库。
+当前 `feature/pro-capability-market` 共129项用例：非DB用例80项，隔离MySQL 8.0上DB用例49项，全绿、零跳过。覆盖内部详情字段/状态/未知/软删除/身份、Schema引用/非法Draft关键字与边界、上架必须有合法Schema、价格边界、管理员/普通用户/撤权/依赖故障、字段最小化与重复编码。数据库夹具会清理 `qa-` 前缀测试数据，必须使用独立实例，不能用开发库。
 
 内部端点完成后仍需运行组长严格模式 `python scripts/run_leader_e2e.py --catalog-mode internal --browser`，并以 `member_internal_contract_verified=true` 为真实链证据；user 授权接口交付后补真实管理员/撤权联调。服务端/admin/市场改造和增量迁移见[本人任务](../../docs/implementation/member-夏思凯.md)，不改组长已实现AI链或让前端直连服务绕开Gateway。

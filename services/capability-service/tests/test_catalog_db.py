@@ -257,3 +257,58 @@ def test_manage_lists_draft_with_internal_fields(qa: QaCatalog) -> None:
     assert matched[0]["service_name"] == "ai-chat-service"
     assert matched[0]["path"] == "/api/chat/completions"
     assert not qa.visible_in_market(draft["code"])
+
+
+# ---------------------------------------------------------------- 上架 Schema
+
+
+def test_online_creation_requires_schema(qa: QaCatalog) -> None:
+    """不能直接登记一个没有 Schema 的已上架能力。"""
+
+    category = qa.category()
+
+    body = qa.create_capability_raw(
+        category["id"], code=qa.code("noschema"), status="online", omit_schema=True
+    )
+
+    assert body["code"] == 2001
+    assert body["data"] is None
+
+
+def test_draft_without_schema_cannot_go_online(qa: QaCatalog) -> None:
+    """草稿可以暂不填写 Schema，但上架前必须补齐。"""
+
+    category = qa.category()
+    created = qa.create_capability_raw(
+        category["id"], code=qa.code("draftnoschema"), status="draft", omit_schema=True
+    )
+    assert created["code"] == 0
+    assert created["data"]["param_schema"] is None
+
+    assert qa.set_status(created["data"]["id"], "online")["code"] == 2001
+    assert not qa.visible_in_market(created["data"]["code"])
+
+
+def test_online_capability_cannot_clear_schema(qa: QaCatalog) -> None:
+    """线上能力不能通过编辑把 Schema 清空，必须先下架。"""
+
+    category = qa.category()
+    capability = qa.capability(category["id"], status="online")
+
+    body = qa.update_capability(capability["id"], {"param_schema": None})
+
+    assert body["code"] == 2001
+    assert qa.market_detail(capability["id"])["code"] == 0
+
+
+def test_online_capability_can_update_valid_schema(qa: QaCatalog) -> None:
+    """合法 Schema 的编辑仍然允许，并在内部详情中立即生效。"""
+
+    category = qa.category()
+    capability = qa.capability(category["id"], status="online")
+    schema = {"type": "object", "properties": {"text": {"type": "string"}}}
+
+    body = qa.update_capability(capability["id"], {"param_schema": schema})
+
+    assert body["code"] == 0
+    assert qa.internal_detail(capability["id"])["data"]["param_schema"] == schema
