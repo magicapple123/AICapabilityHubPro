@@ -8,15 +8,18 @@
 """
 
 from loguru import logger
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.constants import CapabilityStatus
 from app.core.exceptions import BizException
+from app.core.schema_validation import validate_param_schema
 from app.models import Capability, CapabilityCategory
 from app.repository import CapabilityRepository, CategoryRepository
 from app.repository import capability_repository, category_repository
 from app.schemas import (
     CapabilityCreateRequest,
+    CapabilityInternalOut,
     CapabilityStatusUpdateRequest,
     CapabilityUpdateRequest,
 )
@@ -54,6 +57,28 @@ class CapabilityService:
             raise BizException(2002, "能力不存在或已下线")
         return row
 
+    def get_internal_detail(
+        self, db: Session, capability_id: int
+    ) -> CapabilityInternalOut:
+        """服务间内部详情。
+
+        未知或已软删除返回 2002；草稿/下架如实返回状态，由执行器拒绝；
+        数据库中的 Schema、状态或价格不合法时返回 4002 失败关闭，不投放半可用配置。
+        """
+
+        capability = self.capabilities.find_by_id(db, capability_id)
+        if capability is None:
+            raise BizException(2002, "能力不存在或已下线")
+        try:
+            return CapabilityInternalOut.from_row(capability)
+        except ValidationError as exc:
+            logger.error(
+                "能力目录配置异常 capability_id={} error_count={}",
+                capability_id,
+                len(exc.errors()),
+            )
+            raise BizException(4002, "能力目录配置不完整或价格无效") from exc
+
     def list_market_categories(self, db: Session) -> list[CapabilityCategory]:
         """只返回确实存在已上架能力的分类，供市场筛选栏使用。"""
 
@@ -85,6 +110,8 @@ class CapabilityService:
         self._require_category(db, payload.category_id)
         if self.capabilities.exists_code(db, payload.code):
             raise BizException(2006, "能力编码已存在")
+        if payload.status is CapabilityStatus.ONLINE:
+            self._ensure_online_schema(payload.param_schema)
 
         created = self.capabilities.create(
             db,
@@ -115,6 +142,12 @@ class CapabilityService:
             db, values["code"], exclude_id=capability_id
         ):
             raise BizException(2006, "能力编码已存在")
+        if (
+            capability.status == CapabilityStatus.ONLINE.value
+            and "param_schema" in values
+            and values["param_schema"] is None
+        ):
+            raise BizException(2001, "线上能力不能清空参数 Schema，请先下架")
 
         return self.capabilities.update_fields(db, capability, values)
 
@@ -122,6 +155,8 @@ class CapabilityService:
         self, db: Session, capability_id: int, payload: CapabilityStatusUpdateRequest
     ) -> Capability:
         capability = self.require_capability(db, capability_id)
+        if payload.status is CapabilityStatus.ONLINE:
+            self._ensure_online_schema(capability.param_schema)
         updated = self.capabilities.update_fields(
             db, capability, {"status": payload.status.value}
         )
@@ -159,6 +194,17 @@ class CapabilityService:
         if category is None:
             raise BizException(2003, "分类不存在")
         return category
+
+    @staticmethod
+    def _ensure_online_schema(param_schema: dict | None) -> None:
+        """上线必须有合法 Schema，避免市场展示无法执行的目录配置。"""
+
+        if param_schema is None:
+            raise BizException(2001, "上架能力必须提供合法的参数 Schema")
+        try:
+            validate_param_schema(param_schema)
+        except ValueError as exc:
+            raise BizException(2001, "上架能力必须提供合法的参数 Schema") from exc
 
 
 capability_service = CapabilityService()

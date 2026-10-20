@@ -3,6 +3,7 @@
 from app.schemas.capability import (
     CapabilityCreateRequest,
     CapabilityDeleteOut,
+    CapabilityInternalOut,
     CapabilityManageOut,
     CapabilityMarketDetailOut,
     CapabilityMarketOut,
@@ -29,6 +30,7 @@ __all__ = [
     "PAGE_SIZE_MAX",
     "CapabilityCreateRequest",
     "CapabilityDeleteOut",
+    "CapabilityInternalOut",
     "CapabilityManageOut",
     "CapabilityMarketDetailOut",
     "CapabilityMarketOut",

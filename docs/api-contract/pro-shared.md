@@ -9,7 +9,7 @@
 - Gateway 的签名 role 不能替代当前数据库授权；管理操作需实时校验，依赖异常失败关闭。
 - 业务通常 HTTP 200 + code；网关 401/403/429 依现有语义。未知/格式不符的授权结果不能当作成功。
 
-## 2. 当前授权约定（user/billing 已实现，capability 待接入）
+## 2. 当前授权约定（user 提供端与 capability/billing 调用侧均已实现）
 
 `GET /internal/user/authorization?user_id=<当前用户ID>&required_role=admin`
 
@@ -30,7 +30,7 @@
 
 只有 code=0、匹配 user_id、normal、admin、authorized=true 同时成立才授权；不允许本地用户白名单或前端隐藏按钮替代。按黄禹菲本次任务确认，管理员权限不足使用 1006；Key 不存在也保留其既有端点上下文及错误消息，调用方结合具体端点/消息识别。统一以本条覆盖先前草案中的 1007。
 
-## 3. 能力内部详情（AI 调用侧已实现，capability 服务端待交接）
+## 3. 能力内部详情（capability 提供端与 AI 调用侧均已实现）
 
 `GET /internal/capability/{capability_id}` 返回 data：
 
@@ -77,4 +77,4 @@ Gateway 已提供匿名 POST、10 次/直接地址/分钟和 no-store。user 已
 
 每服务本地事务不是分布式原子提交。远端扣分/账单成功但 AI 最终提交失败需按 requestId 对账，不盲目重试模型。增量迁移保留旧数据，历史未知单价不可伪造；SQL seed 仅供新环境/明确的隔离示例库。
 
-各接口分别留正常/拒绝/故障与字段一致性测试；严格 internal E2E 必须实际通过并标记 member_internal_contract_verified=true。当前市场兼容链已经通过，角色/Key 的服务测试单独记录；内部详情及 Gateway 全链联合验收尚待成员交付。
+各接口分别留正常/拒绝/故障与字段一致性测试；严格 internal E2E 必须实际通过并标记 member_internal_contract_verified=true。双方代码与迁移已在隔离环境联合验证；最终 main 的 CI、market/internal 完整浏览器验收及真实管理员授权结果应按合并提交单独留档，不以历史分支通过替代最终主线验收。

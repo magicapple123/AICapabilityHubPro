@@ -8,8 +8,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.service import authorization_service
 
 client = TestClient(app)
+
+
+@pytest.fixture()
+def authorized(monkeypatch: pytest.MonkeyPatch) -> None:
+    """参数校验用例不启动 user-service，只替换跨服务授权边界。"""
+
+    async def allow_admin(user_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(authorization_service, "require_admin", allow_admin)
 
 USER_HEADERS = {"X-User-Id": "1", "X-User-Name": "tester", "X-Request-Id": "test-req"}
 
@@ -89,7 +100,17 @@ def test_manage_requires_identity() -> None:
     _assert_unauthorized(client.get("/api/capability/manage"))
 
 
-def test_invalid_category_code_returns_2001() -> None:
+def test_internal_detail_requires_identity() -> None:
+    """内部详情不因网关隔离而匿名开放，直连服务也必须带链路身份。"""
+
+    _assert_unauthorized(client.get("/internal/capability/1"))
+
+
+def test_internal_detail_endpoint_is_registered() -> None:
+    assert "/internal/capability/{capability_id}" in app.openapi()["paths"]
+
+
+def test_invalid_category_code_returns_2001(authorized: None) -> None:
     _assert_invalid(
         client.post(
             "/api/capability/categories",
@@ -99,11 +120,11 @@ def test_invalid_category_code_returns_2001() -> None:
     )
 
 
-def test_empty_capability_update_returns_2001() -> None:
+def test_empty_capability_update_returns_2001(authorized: None) -> None:
     _assert_invalid(client.put("/api/capability/1", headers=USER_HEADERS, json={}))
 
 
-def test_status_change_rejects_unknown_status() -> None:
+def test_status_change_rejects_unknown_status(authorized: None) -> None:
     _assert_invalid(
         client.put(
             "/api/capability/1/status",

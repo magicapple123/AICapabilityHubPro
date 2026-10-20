@@ -26,6 +26,20 @@ try {
   await page.getByRole('button', { name: '登录工作空间', exact: true }).click()
   await page.waitForURL((url) => url.pathname === '/')
   checks.push('real login through the Vite proxy')
+
+  await page.goto(base + '/capabilities')
+  const chatCard = page.locator('.capability-card').filter({ hasText: '多轮对话' }).first()
+  await chatCard.locator('.capability-launch').click()
+  await page.waitForURL((url) => url.pathname === '/chat' && url.searchParams.get('capability_id') === '1')
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor()
+  assert.equal(await page.getByRole('combobox', { name: '调用能力' }).inputValue(), '1')
+  checks.push('market launch link carries the selected capability id into chat')
+
+  await page.goto(base + '/console')
+  await page.locator('.error-note').first().waitFor()
+  assert.match(await page.locator('.error-note').first().innerText(), /无运营权限|已拒绝/)
+  checks.push('console shows the server-side permission or dependency denial for a normal user')
+
   await page.goto(base + '/chat?capability_id=1')
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor()
   assert.equal(await page.getByRole('combobox', { name: '调用能力' }).inputValue(), '1')

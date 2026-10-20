@@ -6,8 +6,10 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.constants import CapabilityStatus, CategoryStatus
+from app.models import Capability
 from app.schemas import (
     CapabilityCreateRequest,
+    CapabilityInternalOut,
     CapabilityMarketOut,
     CapabilityStatusUpdateRequest,
     CapabilityUpdateRequest,
@@ -105,3 +107,146 @@ def test_market_out_serializes_datetime_by_contract() -> None:
         update_time=datetime(2026, 9, 15, 10, 30, 0),
     )
     assert payload.model_dump()["update_time"] == "2026-09-15 10:30:00"
+
+
+def _valid_schema() -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "messages": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 40,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "role": {"type": "string", "enum": ["user", "assistant"]},
+                        "content": {"type": "string", "maxLength": 12000},
+                    },
+                    "required": ["role", "content"],
+                },
+            }
+        },
+        "required": ["messages"],
+        "additionalProperties": False,
+    }
+
+
+def test_capability_create_accepts_inline_object_schema() -> None:
+    payload = CapabilityCreateRequest(
+        category_id=1,
+        name="多轮对话",
+        code="chat-completions",
+        service_name="ai-chat-service",
+        path="/api/chat/completions",
+        param_schema=_valid_schema(),
+    )
+    assert payload.param_schema == _valid_schema()
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "array"},
+        {"type": "object", "properties": {"x": {"$ref": "#/x"}}},
+        {"type": "object", "properties": {"x": {"$dynamicRef": "#x"}}},
+        {"type": "object", "properties": {"x": {"$recursiveRef": "#"}}},
+        {"type": "object", "properties": {"x": {"$id": "https://example.test"}}},
+        {"properties": {}},
+    ],
+)
+def test_capability_create_rejects_incompatible_schema(schema: dict) -> None:
+    """只接受对象根类型且不含引用关键字的内联 Schema。"""
+
+    with pytest.raises(ValidationError):
+        CapabilityCreateRequest(
+            category_id=1,
+            name="多轮对话",
+            code="chat-completions",
+            service_name="ai-chat-service",
+            path="/api/chat/completions",
+            param_schema=schema,
+        )
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "object", "properties": []},
+        {"type": "object", "properties": {"x": {"type": "not-a-real-type"}}},
+        {"type": "object", "required": "messages"},
+    ],
+)
+def test_capability_create_rejects_invalid_draft_schema(schema: dict) -> None:
+    """非法 Draft 2020-12 关键字必须在登记时拒绝，而不是留到执行期。"""
+
+    with pytest.raises(ValidationError):
+        CapabilityCreateRequest(
+            category_id=1,
+            name="多轮对话",
+            code="chat-completions",
+            service_name="ai-chat-service",
+            path="/api/chat/completions",
+            param_schema=schema,
+        )
+
+
+def test_capability_create_rejects_price_over_limit() -> None:
+    with pytest.raises(ValidationError):
+        CapabilityCreateRequest(
+            category_id=1,
+            name="多轮对话",
+            code="chat-completions",
+            service_name="ai-chat-service",
+            path="/api/chat/completions",
+            price_per_call=1_000_001,
+        )
+
+
+def test_internal_out_requires_object_schema_and_known_status() -> None:
+    payload = {
+        "id": 1,
+        "name": "多轮对话",
+        "code": "chat-completions",
+        "status": "online",
+        "param_schema": _valid_schema(),
+        "price_per_call": 5,
+    }
+    assert CapabilityInternalOut.model_validate(payload).status == "online"
+
+    with pytest.raises(ValidationError):
+        CapabilityInternalOut.model_validate({**payload, "param_schema": None})
+    with pytest.raises(ValidationError):
+        CapabilityInternalOut.model_validate({**payload, "param_schema": {"type": "array"}})
+    with pytest.raises(ValidationError):
+        CapabilityInternalOut.model_validate({**payload, "status": "published"})
+    with pytest.raises(ValidationError):
+        CapabilityInternalOut.model_validate({**payload, "price_per_call": -1})
+
+
+def test_internal_out_from_row_excludes_target_configuration() -> None:
+    capability = Capability(
+        id=1,
+        category_id=1,
+        name="多轮对话",
+        code="chat-completions",
+        service_name="ai-chat-service",
+        path="/api/chat/completions",
+        param_schema=_valid_schema(),
+        price_per_call=5,
+        status="online",
+        description="",
+    )
+
+    data = CapabilityInternalOut.from_row(capability).model_dump()
+
+    assert set(data) == {
+        "id",
+        "name",
+        "code",
+        "status",
+        "param_schema",
+        "price_per_call",
+    }
+    assert "service_name" not in data
+    assert "path" not in data
