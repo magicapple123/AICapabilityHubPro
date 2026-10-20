@@ -43,7 +43,7 @@
 | `code` | VARCHAR(64) | NOT NULL | 能力编码，未删除范围内唯一 |
 | `service_name` | VARCHAR(64) | NOT NULL | 承载能力的服务名，如 `ai-chat-service` |
 | `path` | VARCHAR(255) | NOT NULL | 调用路径，如 `/api/chat/completions` |
-| `param_schema` | JSON | NULL | 参数 Schema（JSON 对象） |
+| `param_schema` | JSON | NULL | 参数 Schema（JSON 对象）；draft/offline 可为空，online 必须有合法 Schema |
 | `price_per_call` | INT | NOT NULL DEFAULT 0 | 每次调用积分单价 |
 | `status` | VARCHAR(16) | NOT NULL DEFAULT 'draft' | `draft` / `online` / `offline` |
 | `description` | VARCHAR(512) | NOT NULL DEFAULT '' | 能力描述 |
