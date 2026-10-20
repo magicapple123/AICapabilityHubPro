@@ -1,9 +1,12 @@
 -- capability-service 增量迁移：把已登记执行器的 param_schema 对齐到
 -- ai-chat-service 的受控输入约束（内联 Draft 2020-12，无任何 $ref/$id）。
 --
--- 仅更新仍为旧版简化 Schema 的记录，不覆盖已经具备完整边界或业务自定义的
--- Schema，也不改写价格与上下架状态（执行始终以目录当时登记价为准）。
--- 重复执行安全。
+-- 只更新可明确识别的旧版默认 Schema：
+-- 1. 完整 JSON 结构等于旧 seed 的 chat-completions / long-summary Schema；
+-- 2. online 执行器的 param_schema 为空。
+-- 不用“缺少某个字段”推断 Schema 是旧版本，避免覆盖业务自定义约束；
+-- draft/offline 的空 Schema 保持为空。价格、状态和其他字段均不改写。
+-- 重复执行安全；执行前仍建议备份下文筛选出的行。
 --
 -- 恢复方式：执行前先备份受影响列，例如
 --   CREATE TABLE t_capability_schema_backup_<日期> AS
@@ -42,8 +45,12 @@ SET param_schema = JSON_OBJECT(
 WHERE code = 'chat-completions'
   AND is_deleted = 0
   AND (
-    param_schema IS NULL
-    OR JSON_EXTRACT(param_schema, '$.properties.messages.maxItems') IS NULL
+    (param_schema IS NULL AND status = 'online')
+    OR param_schema = JSON_OBJECT(
+      'type', 'object',
+      'properties', JSON_OBJECT('messages', JSON_OBJECT('type', 'array')),
+      'required', JSON_ARRAY('messages')
+    )
   );
 
 -- long-summary：text 1–12000（非空白仍由执行器校验），
@@ -63,6 +70,10 @@ SET param_schema = JSON_OBJECT(
 WHERE code = 'long-summary'
   AND is_deleted = 0
   AND (
-    param_schema IS NULL
-    OR JSON_EXTRACT(param_schema, '$.properties.max_length') IS NULL
+    (param_schema IS NULL AND status = 'online')
+    OR param_schema = JSON_OBJECT(
+      'type', 'object',
+      'properties', JSON_OBJECT('text', JSON_OBJECT('type', 'string')),
+      'required', JSON_ARRAY('text')
+    )
   );
