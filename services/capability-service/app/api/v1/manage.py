@@ -1,9 +1,13 @@
-"""运营管理列表接口，挂载前缀 `/api/capability`。需要登录。"""
+"""运营管理列表接口，挂载前缀 `/api/capability`。
+
+需要登录且通过 user-service 实时管理员授权；普通用户 2007，授权依赖
+不可用 4002，不具备运营权限时不返回任何内部目录字段。
+"""
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.v1.deps import current_user_id
+from app.api.v1.deps import require_admin
 from app.core.constants import CapabilityStatus
 from app.core.logging import get_request_id
 from app.core.result import Result
@@ -30,13 +34,11 @@ async def list_manage(
     ),
     page: int = Query(default=1, ge=1, le=10000),
     page_size: int = Query(default=PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
-    _: str = Depends(current_user_id),
+    _: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Result:
-    """运营列表；返回全部状态，含 service_name / path / param_schema 等内部字段。"""
+    """运营列表；仅管理员可读，返回全部状态与内部配置字段。"""
 
-    # TODO(契约第 6 节待确认): 运营权限方案未定，当前按“已登录即可访问”处理，
-    # 2007 判定位置保留在此处。
     rows, total = capability_service.list_manage(
         db,
         status=status.value if status is not None else None,

@@ -1,12 +1,13 @@
 """分类接口，挂载前缀 `/api/capability/categories`。
 
-均需要登录：网关白名单只放行 `/api/capability/market/**`。
+读取分类只需登录（前端筛选栏需要）；新增、编辑、删除需实时管理员授权。
+网关白名单只放行 `/api/capability/market/**`。
 """
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.v1.deps import current_user_id
+from app.api.v1.deps import current_user_id, require_admin
 from app.core.constants import CategoryStatus
 from app.core.logging import get_request_id
 from app.core.result import Result
@@ -46,13 +47,11 @@ async def list_categories(
 @router.post("", response_model=Result)
 async def create_category(
     payload: CategoryCreateRequest,
-    _: str = Depends(current_user_id),
+    _: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Result:
-    """新增分类；名称与编码在未删除范围内唯一，重复返回 2004。"""
+    """新增分类；非管理员 2007，名称或编码重复 2004。"""
 
-    # TODO(契约第 6 节待确认): 运营权限方案未定，当前按“已登录即可访问”处理，
-    # 2007 判定位置保留在此处。
     created = category_service.create_category(db, payload)
     return Result.ok(
         CategoryOut.model_validate(created).model_dump(), request_id=get_request_id()
@@ -63,7 +62,7 @@ async def create_category(
 async def update_category(
     category_id: int,
     payload: CategoryUpdateRequest,
-    _: str = Depends(current_user_id),
+    _: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Result:
     """编辑分类，仅提交需要变更的字段；分类不存在返回 2003。"""
@@ -77,7 +76,7 @@ async def update_category(
 @router.delete("/{category_id}", response_model=Result)
 async def delete_category(
     category_id: int,
-    _: str = Depends(current_user_id),
+    _: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Result:
     """软删除分类；分类下仍有未删除能力时返回 2005，不做破坏性删除。"""

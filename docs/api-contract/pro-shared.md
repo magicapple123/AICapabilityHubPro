@@ -9,7 +9,7 @@
 - Gateway 的签名 role 不能替代当前数据库授权；管理操作需实时校验，依赖异常失败关闭。
 - 业务通常 HTTP 200 + code；网关 401/403/429 依现有语义。未知/格式不符的授权结果不能当作成功。
 
-## 2. 当前授权约定（新增，user 服务端与业务调用侧待实现）
+## 2. 当前授权约定（user 服务端待交付；capability 调用侧已实现）
 
 `GET /internal/user/authorization?user_id=<当前用户ID>&required_role=admin`
 
@@ -30,7 +30,7 @@
 
 只有 code=0、匹配 user_id、normal、admin、authorized=true 同时成立才授权；不允许本地用户白名单或前端隐藏按钮替代。**1006 已被当前 user 实现用于“API Key 不存在”，继续保留；此前 AI 提示词建议的权限码 1006 在本次代码核对后纠正为 1007。两位成员使用本文最新版，不照抄旧提示词。** 发现其他已确认契约冲突时先协商同步，不各自换路径。
 
-## 3. 能力内部详情（AI 调用侧已实现，capability 服务端待交接）
+## 3. 能力内部详情（capability 已实现于 feature/pro-capability-market，待合并与真实 E2E）
 
 `GET /internal/capability/{capability_id}` 返回 data：
 

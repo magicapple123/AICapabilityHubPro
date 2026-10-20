@@ -21,6 +21,7 @@ from sqlalchemy import text
 from app.db.session import engine
 from app.main import app
 from app.schemas.common import PAGE_SIZE_MAX
+from app.service import authorization_service
 
 # 测试数据统一前缀，用于创建与清理。
 TEST_PREFIX = "qa-"
@@ -109,19 +110,21 @@ class QaCatalog:
         name: str | None = None,
         status: str = "draft",
         price: int = 7,
+        param_schema: dict | None = None,
     ) -> dict:
+        payload: dict = {
+            "category_id": category_id,
+            "name": name or f"QACap-{self.token}",
+            "code": code,
+            "service_name": "ai-chat-service",
+            "path": "/api/chat/completions",
+            "price_per_call": price,
+            "status": status,
+        }
+        if param_schema is not None:
+            payload["param_schema"] = param_schema
         return self.client.post(
-            "/api/capability",
-            headers=USER_HEADERS,
-            json={
-                "category_id": category_id,
-                "name": name or f"QACap-{self.token}",
-                "code": code,
-                "service_name": "ai-chat-service",
-                "path": "/api/chat/completions",
-                "price_per_call": price,
-                "status": status,
-            },
+            "/api/capability", headers=USER_HEADERS, json=payload
         ).json()
 
     def capability(
@@ -187,6 +190,12 @@ class QaCatalog:
     def market_detail(self, capability_id: int) -> dict:
         return self.client.get(f"/api/capability/market/{capability_id}").json()
 
+    def internal_detail(self, capability_id: int, *, headers: dict | None = None) -> dict:
+        return self.client.get(
+            f"/internal/capability/{capability_id}",
+            headers=USER_HEADERS if headers is None else headers,
+        ).json()
+
     def visible_in_market(self, code: str) -> bool:
         """定向查询本实例创建的能力是否已上架可见。"""
 
@@ -208,11 +217,21 @@ def api() -> TestClient:
 
 
 @pytest.fixture()
-def qa(api: TestClient) -> Generator[QaCatalog, None, None]:
-    """提供测试数据工厂，并在用例前后清理 `qa-` 前缀数据。"""
+def qa(api: TestClient, monkeypatch: pytest.MonkeyPatch) -> Generator[QaCatalog, None, None]:
+    """提供测试数据工厂，并在用例前后清理 `qa-` 前缀数据。
+
+    目录读写用例关注能力/分类行为，不需要启动 user-service；这里把跨服务授权
+    边界替换为“当前用户是管理员”。授权本身的成功、拒绝、撤权与故障由
+    `tests/test_authorization.py` 用真实调用参数和 mock 响应覆盖。
+    """
 
     if not DB_READY:
         pytest.skip(f"需要可用的 capability_db：{DB_REASON}")
+
+    async def allow_admin(user_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(authorization_service, "require_admin", allow_admin)
     _purge_test_rows()  # 清理上次异常退出可能残留的数据
     try:
         yield QaCatalog(api)

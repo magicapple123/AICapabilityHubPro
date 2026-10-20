@@ -3,15 +3,17 @@
 出参按"最小暴露"原则拆分：
 - `CapabilityManageOut` 用于运营列表，含 service_name / path / param_schema 等内部配置；
 - `CapabilityMarketOut` / `CapabilityMarketDetailOut` 用于公开市场，
-  不包含任何内部配置字段，避免白名单接口泄露未上架能力与内部地址。
+  不包含任何内部配置字段，避免白名单接口泄露未上架能力与内部地址；
+- `CapabilityInternalOut` 用于服务间内部详情，只含 AI 执行所需的六个字段。
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.constants import CODE_PATTERN, CapabilityStatus
+from app.core.schema_validation import validate_param_schema
 from app.models import Capability
 from app.schemas.common import BaseOut, validate_partial_update
 
@@ -35,6 +37,11 @@ class CapabilityCreateRequest(BaseModel):
     price_per_call: int = Field(default=0, ge=0, le=PRICE_MAX_VALUE)
     status: CapabilityStatus = CapabilityStatus.DRAFT
     description: str = Field(default="", max_length=DESCRIPTION_MAX_LENGTH)
+
+    @field_validator("param_schema")
+    @classmethod
+    def check_param_schema(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return validate_param_schema(value)
 
 
 class CapabilityUpdateRequest(BaseModel):
@@ -71,6 +78,11 @@ class CapabilityUpdateRequest(BaseModel):
             ),
         )
         return self
+
+    @field_validator("param_schema")
+    @classmethod
+    def check_param_schema(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return validate_param_schema(value)
 
 
 class CapabilityStatusUpdateRequest(BaseModel):
@@ -180,3 +192,36 @@ class CapabilityStatusOut(BaseOut):
     id: int
     status: str
     update_time: datetime
+
+
+class CapabilityInternalOut(BaseModel):
+    """服务间内部详情出参，与 AI 客户端读取的字段一一对应。
+
+    不包含 service_name / path 等可被任意代理的目标配置；状态如实返回，
+    draft / offline 由执行器在调用模型前拒绝。
+    """
+
+    id: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    code: str = Field(min_length=1, max_length=CODE_MAX_LENGTH, pattern=CODE_PATTERN)
+    status: Literal["draft", "online", "offline"]
+    param_schema: dict[str, Any]
+    price_per_call: int = Field(ge=0, le=PRICE_MAX_VALUE)
+
+    @field_validator("param_schema")
+    @classmethod
+    def check_param_schema(cls, value: dict[str, Any]) -> dict[str, Any]:
+        # 缺失或非法 Schema 会抛 ValueError，由 service 统一转成 4002。
+        validate_param_schema(value)
+        return value
+
+    @classmethod
+    def from_row(cls, capability: Capability) -> "CapabilityInternalOut":
+        return cls(
+            id=capability.id,
+            name=capability.name,
+            code=capability.code,
+            status=capability.status,
+            param_schema=capability.param_schema,
+            price_per_call=capability.price_per_call,
+        )

@@ -1,12 +1,13 @@
 """能力登记与管理接口，挂载前缀 `/api/capability`。
 
-均需要登录；状态变更走独立的 `/{capability_id}/status`，编辑接口不接收 status。
+均需要登录且通过 user-service 实时管理员授权；状态变更走独立的
+`/{capability_id}/status`，编辑接口不接收 status。
 """
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.v1.deps import current_user_id
+from app.api.v1.deps import require_admin
 from app.core.logging import get_request_id
 from app.core.result import Result
 from app.db.session import get_db
@@ -26,12 +27,11 @@ router = APIRouter()
 @router.post("", response_model=Result)
 async def create_capability(
     payload: CapabilityCreateRequest,
-    _: str = Depends(current_user_id),
+    _: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Result:
-    """登记能力；分类不存在返回 2003，编码重复返回 2006，status 缺省为 draft。"""
+    """登记能力；非管理员 2007，分类不存在 2003，编码重复 2006，status 缺省 draft。"""
 
-    # TODO(契约第 6 节待确认): 运营权限方案未定，当前按“已登录即可访问”处理。
     created = capability_service.create_capability(db, payload)
     return Result.ok(
         CapabilityManageOut.from_row(
@@ -45,7 +45,7 @@ async def create_capability(
 async def update_capability(
     capability_id: int,
     payload: CapabilityUpdateRequest,
-    _: str = Depends(current_user_id),
+    _: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Result:
     """编辑能力；能力不存在返回 2002，分类不存在返回 2003，编码重复返回 2006。"""
@@ -62,7 +62,7 @@ async def update_capability(
 @router.delete("/{capability_id}", response_model=Result)
 async def delete_capability(
     capability_id: int,
-    _: str = Depends(current_user_id),
+    _: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Result:
     """软删除能力；已上架的能力会先置为 offline，能力不存在返回 2002。"""
@@ -77,7 +77,7 @@ async def delete_capability(
 async def update_capability_status(
     capability_id: int,
     payload: CapabilityStatusUpdateRequest,
-    _: str = Depends(current_user_id),
+    _: str = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Result:
     """上架 / 下架能力；status 只接受 draft、online、offline，非法值返回 2001。"""

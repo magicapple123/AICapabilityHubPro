@@ -257,14 +257,3 @@ def test_manage_lists_draft_with_internal_fields(qa: QaCatalog) -> None:
     assert matched[0]["service_name"] == "ai-chat-service"
     assert matched[0]["path"] == "/api/chat/completions"
     assert not qa.visible_in_market(draft["code"])
-
-
-def test_manage_has_no_role_check_yet(qa: QaCatalog) -> None:
-    """越权访问现状：运营接口当前只校验“已登录”，没有角色判定。
-
-    契约第 6 节把运营权限列为待确认项，`2007` 尚未实现。实现之后本用例应改为
-    断言「普通用户访问运营接口返回 2007」，所以这里刻意固化当前行为以便被触发。
-    """
-
-    body = qa.manage_list()
-    assert body["code"] == 0

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api.v1 import (
     capabilities_router,
     categories_router,
+    internal_router,
     manage_router,
     market_router,
     ping_router,
@@ -33,6 +34,9 @@ register_exception_handlers(app)
 # 注册顺序：固定路径（ping / market / manage）先于含路径参数的路由，
 # 避免 /{capability_id} 抢占 /manage、/market 等固定路径。
 app.include_router(ping_router, prefix="/api/capability", tags=["capability"])
+app.include_router(
+    internal_router, prefix="/internal/capability", tags=["capability-internal"]
+)
 app.include_router(
     market_router, prefix="/api/capability/market", tags=["capability-market"]
 )

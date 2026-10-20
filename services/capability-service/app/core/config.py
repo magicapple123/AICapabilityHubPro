@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     db_url: str = "mysql+pymysql://root:root@127.0.0.1:3306/capability_db?charset=utf8mb4"
     internal_call_timeout: float = Field(default=10.0, gt=0)
 
+    # 运营权限由 user-service 实时判定；本服务不跨库读取角色。
+    user_service_name: str = "user-service"
+
     use_mock: bool = True
     model_base_url: str = "https://api.example.com/v1"
     model_api_key: str = "replace-me"
