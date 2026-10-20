@@ -1,43 +1,42 @@
 # AICapabilityHub Pro · 用户与积分服务
 
-user-service拥有user_db，为Pro提供账号、JWT、Key管理、余额预检和积分流水。当前角色数据、实时管理员授权与Key兑换短期JWT仍待负责人黄禹菲实现，不能把已有Key列表等同凭证兑换已完成。
+user-service拥有user_db，提供账号/role、JWT、Key生命周期/短期JWT兑换、实时授权与积分。PR #4已合入main，三人业务基线651275b；不是“仅展示Key”的旧阶段。
 
-规范从[Pro开发指南](../../AICapabilityHubPro-开发指南.md)、[用户契约](../../docs/api-contract/user-service.md)与[共享约定](../../docs/api-contract/pro-shared.md)读取。
+规范见[开发指南](../../AICapabilityHubPro-开发指南.md)、[用户契约](../../docs/api-contract/user-service.md)与[共享约定](../../docs/api-contract/pro-shared.md)。
 
 ## 当前接口
 
 | 能力 | 路径 | 边界 |
 |---|---|---|
-| 注册/登录 | POST /api/user/register、/login | 公开，账号禁用/凭证错误按实际契约 |
-| 资料 | GET/PUT /api/user/profile | 当前用户，修改仅现有允许字段 |
-| Key | POST/GET /api/user/apikeys、PUT /{id}/disable | secret_key仅创建时返回；列表无secret/hash |
-| 积分 | GET /api/user/points、/points/logs | 当前用户余额和分页流水 |
-| 预检 | GET /internal/user/check | 当前账号/余额及必要头；query目标与调用者比较待补强 |
-| 扣分 | POST /internal/user/points/deduct | 正金额、requestId幂等、余额条件更新 |
-| 健康/透传 | GET /health、/api/user/ping | health公开，ping经网关需JWT |
+| 注册/登录 | POST /api/user/register、/login | 注册默认user，防自助提权；签名role不代替实时授权 |
+| 资料 | GET/PUT /api/user/profile | 当前用户，仅允许昵称等约定字段 |
+| Key | POST/GET /api/user/apikeys、PUT /{id}/disable | Secret仅创建时返回且no-store，列表无Secret/hash |
+| 兑换 | POST /api/user/apikeys/exchange | 精确匿名JSON，校验摘要/所有者/状态/期限；默认900秒、最多3600秒且不晚于Key到期 |
+| 积分 | GET /api/user/points、/points/logs | 当前用户余额/流水隔离 |
+| 预检 | GET /internal/user/check | query目标必须与当前身份一致，不符先返回1001 |
+| 授权 | GET /internal/user/authorization | 当前normal/admin且身份匹配；每次读数据库 |
+| 扣分 | POST /internal/user/points/deduct | 正金额、条件余额更新、requestId关键字段幂等与冲突3002 |
 
-1006已用于Key不存在或不属于当前用户，Pro新增管理员权限不足约定1007。role默认user、实时authorization及exchange的准确状态/字段见契约第7节，缺失端点不能伪造成功。
+授权不足1006；API Key不存在也保留1006，由端点/消息区分。无效兑换统一1003，不枚举；账号不存在/禁用1005，依赖异常失败关闭。
 
-## 启动
+Key禁用阻止新兑换，不即时撤销已经签发的JWT。业务端仍实时校验当前账号状态/管理角色。一次性Secret不写持久化存储；普通登录JWT既有存储行为未改变。
 
-根目录完成初始化和中间件后：
+## 启动、迁移与恢复
+
+根目录初始化与Pro中间件就绪后：
 
 ```powershell
 python scripts/start_pro_local.py user-service
 ```
 
-监听8081，Pro数据库主机3307，Nacos8849；JWT与Gateway使用一致共享配置。不要照搬原版root:root配置覆盖.env，也不向Nacos注册0.0.0.0。
+监听8081，Pro DB3307/Nacos8849，与Gateway共享签名配置。不覆盖.env，不误连原项目3306。
 
-## 数据与测试
+已有库先备份核验，再由负责人在本服务目录运行`python -m app.migrate`；只增量添加role，旧账号默认user。离线`python -m app.admin <新账号>`隐藏输入密码、拒绝覆盖现有账号、新管理员积分0。本轮收尾未在现有库执行这些命令。
 
-t_user、t_api_key、t_points_account、t_points_log由sql/01_init.sql定义。secret_hash是当前校验基础，不因旧指南附录缺列而删除；secret_mask仅展示。
+回退代码可保留新增列，不执行DROP；seed会更新示例账号，不能当业务库升级工具。
 
-扣分按条件余额更新而非读version比较的版本锁。user现有requestId命中返回旧流水，尚需补齐重放字段冲突检查；billing已有关键字段冲突拒绝。GET check当前未比较query.user_id与调用者，按Pro目标补齐而非在文档标成已完成。更上层跨服务事务仍需对账。
+## 验收
 
-基线67项pytest；在独立MySQL导入本服务结构，显式配置验收DB_URL后执行pytest生成JUnit，再用根scripts/check_test_report.py严格检查。夹具会清理qa前缀账号，禁止连接开发数据库运行；DB跳过不算通过。真实链和迁移验收见[质量门禁](../../docs/质量门禁说明.md)。
+main651275b的CI39420321602：user95项零跳过/失败/错误，含角色、Key、TTL、幂等、身份不匹配及保留旧数据的迁移回归。数据库夹具会清测试行，必须显式连接独立QA实例并严格检查JUnit，不能直接用开发.env。
 
-示例demo/demopoor/demodisabled口令demo123456，仅本地隔离演示。seed更新同名记录，不能代替业务库迁移。
-
-## 待交接
-
-实现role与迁移、GET /internal/user/authorization、POST /api/user/apikeys/exchange、TTL硬上限、失效Key拒绝和Settings。Gateway白名单/role配套已有，不改路径；覆盖撤权、禁用、错误凭证、过期、泄露和旧数据保留，按[本人任务](../../docs/implementation/member-黄禹菲.md)交付。
+真实Gateway兑换、签名JWT使用、撤权/禁用及3分计量已联调；本次新增Settings浏览器证据见[收尾记录](../../docs/验收收尾记录-2026-10-20.md)与[成员交接](../../docs/implementation/member-黄禹菲.md)。隔离通过不表示部署/真实供应商/人工签字完成。

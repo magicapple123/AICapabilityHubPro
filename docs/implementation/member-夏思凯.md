@@ -1,11 +1,11 @@
 # 夏思凯任务与交接记录
 
-负责人：夏思凯。状态：能力目录、内部详情、Schema/价格对齐、运营实时授权调用侧与市场/运营 UI 已交付；修复迁移覆盖自定义 Schema 的问题后，联合 PR #4 的隔离本地环境已通过严格 internal E2E、浏览器与真实管理员授权验证。最终合并仍须 PR CI 与另一成员审批。范围capability、市场/Console能力运营UI、目录契约/SQL，不代改user/billing/Gateway/AI执行链。
+负责人：夏思凯。状态：能力目录、内部详情、Schema/价格对齐、运营实时授权调用侧与市场/运营 UI 已交付；修复迁移覆盖自定义 Schema 的问题后，联合 PR #4 的隔离本地环境已通过严格 internal E2E、浏览器与真实管理员授权验证。PR #5已合并，三人业务基线main `651275b` 的CI `39420321602` 为9/9；没有代签成员人工审批。范围capability、市场/Console能力运营UI、目录契约/SQL，不代改user/billing/Gateway/AI执行链。
 
 ## 领取
 
 - 基线：最新origin/main `9181524`。
-- 分支：`feature/pro-capability-market`，目标 main，保留 Review 保护。
+- 原分支：`feature/pro-capability-market`（c57d744），安全迁移修复与联合集成末端a332f7f，PR #5已合并为main651275b。
 - 先读[开发指南](../../AICapabilityHubPro-开发指南.md)、[共享契约](../api-contract/pro-shared.md)与[目录契约](../api-contract/capability-service.md)。
 
 ## 已完成
@@ -34,14 +34,14 @@ cd services/capability-service
 - 新增用例覆盖：内部详情字段与 requestId、draft/offline、未知/软删除、身份缺失、Schema 缺失/引用/非法 Draft 关键字/深度/体积、上架必须有合法 Schema、线上不能清空 Schema、价格 0 与 1000000 及越界、重复编码、普通用户写/读、伪造 role 头、撤权后再请求、授权超时/异常/不可信响应、市场字段最小化。
 - 独立 `test_schema_migration.py` 覆盖精确旧 Schema、Schema 自定义约束/描述保留、online NULL 修复、draft/offline NULL 保留、软删除行不变、价格/状态不变、deploy 镜像同步以及重复运行幂等。
 - Web 新增 2 项纯函数测试，市场详情可展开聊天消息数量/角色/内容长度与摘要范围/默认值；`chat-schema.test.ts` 现为 8/8。
-- 组长复核：修复版 capability 131、PR #4 user 93、billing 87、AI 56，共367项在独立 MySQL 8.4.11 通过，零跳过/失败/错误；Web lint/build、Schema 8项与公共工具13项通过。
-- 本地联合提交 `94b882f`（`f9c677b` + PR #4 `2f6f62c`）严格 internal E2E 21项与浏览器9项通过，报告 `member_internal_contract_verified=true`；独立真实管理员授权链9项通过。证据保存在 `artifacts/capability-review-fix/20261020-4a8fb7eb/integration-worktree/artifacts/leader-e2e/`，属隔离验收，不表示已合并或已人工审批。
+- 阶段性复核（GET check身份修补前的联合分支）：修复版 capability 131、PR #4 user 93、billing 87、AI 56，共367项在独立 MySQL 8.4.11 通过，零跳过/失败/错误；Web lint/build、Schema 8项与公共工具13项通过。
+- 本地联合提交 `94b882f`（`f9c677b` + PR #4 `2f6f62c`）严格 internal E2E 21项与浏览器9项通过，报告 `member_internal_contract_verified=true`；独立真实管理员授权链9项通过。证据保存在 `artifacts/capability-review-fix/20261020-4a8fb7eb/integration-worktree/artifacts/leader-e2e/`，属当时的隔离验收；随后PR #4/#5已按所有者授权合并，但不表示成员人工审批。
 
-## 未完成 / 阻塞
+## 集成结果与交付边界
 
 - [x] 联合 PR #4 提供端，真实 Gateway/capability/user 管理链已验证普通用户及伪造头拒绝、管理员写成功、撤权拒绝、禁用拒绝、依赖中断不写入；仅操作隔离数据库。
-- [ ] CI 分别运行 market/internal 两种完整真实服务与浏览器 E2E；internal 报告必须 `passed=true`、`browser_verified=true`、`member_internal_contract_verified=true`。管理员授权依赖属于独立检查，需另通过真实 capability 管理请求验证。浏览器验收使用普通用户账号，应明确预期运营拒绝。
-- [ ] 最终三成员联合验收、迁移演练与 Tag 发布。
+- [x] main651275b的CI39420321602已实际运行market/internal完整真实链，E2E22/21、原浏览器各9，严格内部标记为true；capability131、四服务369项零跳过。真实管理员成功/撤权/禁用/依赖中断另有9项证据。
+- 本次新增管理员Console分类/能力CRUD、Schema/价格、上下架及市场可见性浏览器场景见[收尾记录](../验收收尾记录-2026-10-20.md)。隔离迁移已验收，但现有环境未部署/升级；三人签字与正式最终Tag不由AI代办，仅授权候选版本。
 
 ## 依赖与兼容
 

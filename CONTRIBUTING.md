@@ -4,7 +4,7 @@
 
 ## 分支与仓库
 
-唯一 Pro 推送仓库为 magicapple123/AICapabilityHubPro，原仓库/分支保留。PR #1/#2 已合并 main 的1b89ce8；develop尚未同步这批Pro功能，当前从最新origin/main开发、PR目标main。
+唯一 Pro 推送仓库为 magicapple123/AICapabilityHubPro，原仓库/分支保留。PR #1–#5 已集成 main，三人业务基线651275b；develop尚未同步这批Pro功能，当前从最新origin/main开发、PR目标main。
 
 ```powershell
 git fetch origin
@@ -18,12 +18,12 @@ git push -u origin feature/pro-自己的任务
 
 ## Review 与合并
 
-- main/develop保留PR、至少1位审批、最后push后审批、对话解决、线性历史、管理员受约束和禁止强推/删分支。
-- 原8项检查是当前GitHub必需contexts，工作流另有真实服务/浏览器第9项，发布核对全部9项。
+- 常规协作要求PR、真实成员Review、最新提交CI和对话解决，禁止强推/删分支；合并策略须与当前规则及依赖历史一致。
+- 工作流产生9项检查，交付须全部成功。当前main保护已由仓库所有者暂时关闭，不能把建议规则描述成仍然启用的必需contexts。
 - 组长PR由另一成员Review，其他成员PR由适当负责人Review；AI验收与CI不能替代人工审批。
-- 先前合并的单次Review例外已使用并恢复，不可自动用于后续PR。
+- 2026-10-20，所有者明确授权验证后合并PR #4/#5，并再次确认非部署收尾PR #6和候选Tag。代理未代签审批、未改保护或强推；该授权不外推到后续任务。
 - 合并采用Squash，按依赖顺序；同步基础分支冲突时核对完整文件树与测试，不盲选ours/theirs、不强推。
-- 最终Tag要求三人业务、迁移、严格内部模式和评审通过，不把当前组长阶段发布成最终版。
+- 正式最终Tag要求三人业务、迁移、严格内部模式和人工评审通过。本次仅创建经确认的候选v0.1.0-pro-rc.1，部署、现有库升级和人工签字另行记录。
 
 ## 修改范围
 

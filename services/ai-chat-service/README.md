@@ -1,6 +1,6 @@
 # AICapabilityHub Pro · 受控能力执行服务
 
-ai-chat-service连接目录、Schema、聊天/摘要adapter和计量，拥有ai_chat_db。已经随PR #2合入main；默认internal目录服务端尚待交接，当前可显式market模式验证已上架详情的真实链。
+ai-chat-service连接目录、Schema、聊天/摘要adapter和计量，拥有ai_chat_db。已经随PR #2合入main；内部目录服务端已交付并通过strict internal真实链；market仅保留显式兼容，不自动回退。
 
 主规范见[开发指南](../../AICapabilityHubPro-开发指南.md)、[能力执行契约](../../docs/api-contract/ai-chat-service.md)及[共享契约](../../docs/api-contract/pro-shared.md)。
 
@@ -22,10 +22,10 @@ ai-chat-service连接目录、Schema、聊天/摘要adapter和计量，拥有ai_
 根目录初始化、并行中间件和user/capability/billing就绪后：
 
 ```powershell
-python scripts/start_leader_dev.py ai-chat-service --catalog-mode market
+python scripts/start_leader_dev.py ai-chat-service --catalog-mode internal
 ```
 
-使用Pro DB3307/Nacos8849，监听8090。默认internal要求GET /internal/capability/{id}；缺失失败关闭，不自动换来源。端点就绪后改为--catalog-mode internal并重跑严格E2E。
+使用Pro DB3307/Nacos8849，监听8090。默认internal要求GET /internal/capability/{id}；缺失失败关闭，不自动换来源。该端点已在main交付，两种模式分别有完整E2E；已有库需先备份核验成员增量迁移，本轮未操作现有环境。
 
 ENABLE_INTERNAL_CHAIN=false仅测试，仍查目录/校验输入，结果not_reported，不得作为计费通过。真实登录和模型Mock开关彼此独立。
 
@@ -41,4 +41,4 @@ Nacos热更新仅use_mock/model_base_url/model_api_key，通过不可变快照�
 
 当前业务基线AI56项，覆盖目录、输入、计量、回滚和失败关闭。fixture会清990001/990002测试用户会话，必须独立MySQL，JUnit零跳过；真实服务E2E使用独立库和HTTP模型替身。
 
-复跑命令、22项E2E/7项浏览器历史证据和严格internal验收见[质量门禁](../../docs/质量门禁说明.md)及[演示与交接](../../docs/组长功能演示与交接.md)。成员目录服务端、角色/Key与最终发布不以此模块通过代替。
+main651275b的CI39420321602为9/9，四服务369项零跳过，market/internal E2E22/21、原浏览器各9，内部契约为true。本轮新增真实Settings/Console验收见[收尾记录](../../docs/验收收尾记录-2026-10-20.md)，不代替部署/真实供应商或正式签字。

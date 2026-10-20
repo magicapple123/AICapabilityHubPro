@@ -1,6 +1,6 @@
 # AICapabilityHub Pro · billing-service 接口契约
 
-**实现状态（2026-10-20，feature/pro-user-billing）：** 已实现 nullable unit_price 存储、查询、迁移和实时管理员统计授权；兼容既有 AI 上报字段。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)。
+**实现状态（2026-10-20，PR #4已合入main `651275b`）：** 已实现 nullable unit_price 存储、查询、迁移和实时管理员统计授权；兼容既有 AI 上报字段。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)。
 
 > 负责人：黄禹菲
 > 服务名：`billing-service`

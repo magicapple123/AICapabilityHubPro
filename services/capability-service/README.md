@@ -1,10 +1,10 @@
 # AICapabilityHub Pro · 能力目录服务
 
-capability-service拥有capability_db，维护能力ID、分类、Schema、单价和上架状态。本轮提供内部详情与运营实时授权调用侧；授权服务缺失或异常时运营操作失败关闭。user-service 提供端由 PR #4 实现，联合隔离环境已通过真实授权与 strict internal E2E；最终交付仍需双方 PR 的 CI/Review/合并。
+capability-service拥有capability_db，维护能力ID、分类、Schema、单价和上架状态。本轮提供内部详情与运营实时授权调用侧；授权服务缺失或异常时运营操作失败关闭。user-service 提供端由 PR #4 实现，联合隔离环境已通过真实授权与 strict internal E2E；PR #4/#5现已合入main651275b，CI39420321602为9/9；未冒充成员人工Review。
 
 规范见[Pro开发指南](../../AICapabilityHubPro-开发指南.md)、[目录契约](../../docs/api-contract/capability-service.md)与[共享约定](../../docs/api-contract/pro-shared.md)。
 
-## 现有与待实现
+## 已实现接口
 
 | 范围 | 当前 |
 |---|---|
@@ -31,7 +31,7 @@ capability-service拥有capability_db，维护能力ID、分类、Schema、单�
 ## 启动和数据
 
 ```powershell
-# 在Pro根目录初始化与启动中间件后
+# 以下为启动说明；本轮未部署或重启现有环境
 python scripts/start_pro_local.py capability-service
 ```
 
@@ -40,10 +40,11 @@ python scripts/start_pro_local.py capability-service
 ## 验收
 
 ```powershell
+# 必须先显式配置独立QA DB_URL及TEST_DB_ISOLATED=1，不使用开发.env
 cd services/capability-service
 .\.venv\Scripts\python.exe -m pytest -q -rs
 ```
 
-原始 `feature/pro-capability-market` 有129项；增加迁移保护回归后，此修复分支在独立 MySQL 8.4.11 上共131项通过、零跳过。覆盖内部详情字段/状态/未知/软删除/身份、Schema引用/非法Draft关键字与边界、上架必须有合法Schema、价格边界、管理员/普通用户/撤权/依赖故障、自定义Schema迁移保留/旧默认Schema升级/幂等、字段最小化与重复编码。数据库夹具会清理 `qa-` 前缀测试数据，必须使用独立实例，不能用开发库。
+原始 `feature/pro-capability-market` 有129项；增加迁移保护回归后，集成main的capability共131项通过、零跳过，另有独立MySQL 8.4.11的复核证据。覆盖内部详情字段/状态/未知/软删除/身份、Schema引用/非法Draft关键字与边界、上架必须有合法Schema、价格边界、管理员/普通用户/撤权/依赖故障、自定义Schema迁移保留/旧默认Schema升级/幂等、字段最小化与重复编码。数据库夹具会清理 `qa-` 前缀测试数据，必须使用独立实例，不能用开发库。
 
-CI 分别运行 `--catalog-mode market --browser` 和 `--catalog-mode internal --browser` 的完整真实服务链，严格 internal 报告必须同时满足 `passed`、`browser_verified`、`member_internal_contract_verified=true`。PR #4 已提交 user 实时授权提供端（其 CI 通过、待 Review），真实管理员成功/撤权/禁用和 Gateway/四服务联验须在包含双方代码的隔离运行中验证。服务端/admin/市场改造和增量迁移见[本人任务](../../docs/implementation/member-夏思凯.md)，不改组长已实现AI链或让前端直连服务绕开Gateway。
+CI 分别运行 `--catalog-mode market --browser` 和 `--catalog-mode internal --browser` 的完整真实服务链，严格 internal 报告必须同时满足 `passed`、`browser_verified`、`member_internal_contract_verified=true`。main651275b已包含user提供端，真实管理员成功/撤权/禁用/依赖中断和Gateway/四服务联验均有证据；新增真实Console CRUD与市场状态浏览器验收见[收尾记录](../../docs/验收收尾记录-2026-10-20.md)。服务端/admin/市场改造和增量迁移见[本人任务](../../docs/implementation/member-夏思凯.md)，不改组长已实现AI链或让前端直连服务绕开Gateway。

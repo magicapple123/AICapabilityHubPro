@@ -1,6 +1,6 @@
 # AICapabilityHub Pro · 能力执行接口契约
 
-负责人黄岑果；服务 ai-chat-service，端口 8090，独立 ai_chat_db。实现基线 main 1b89ce8。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)；本页已将旧聊天说明与 Pro 规则统一，不存在两套相反的计价/执行顺序。
+负责人黄岑果；服务 ai-chat-service，端口 8090，独立 ai_chat_db。三人业务集成基线main `651275b`，CI `39420321602` 为9/9。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)；本页已将旧聊天说明与 Pro 规则统一，不存在两套相反的计价/执行顺序。
 
 ## 0. HTTP 与身份
 
@@ -112,17 +112,17 @@ prompt_tokens 当前按传入有效消息字符数估算，completion_tokens 沿
 | 4003 / 4004 | 未处理系统异常 / 会话不存在或越权 |
 | 5001 / 5002 | 成功结果的 error_code，degraded=true、cost=0 |
 
-新增测试覆盖目录刷新、价格改变、状态/输入拒绝前模型次数为0、禁用、收据字段、回滚、真实HTTP模型故障和会话越权。当前AI用例56项，四服务基线共229；日期/提交以[验收汇总](../联调验收记录-2026-10-19.md)为准。数据库夹具会清测试用户，必须使用独立实例并严格核验JUnit零跳过。
+新增测试覆盖目录刷新、价格改变、状态/输入拒绝前模型次数为0、禁用、收据字段、回滚、真实HTTP模型故障和会话越权。AI用例56项、集成四服务共369项零跳过；具体提交与新增页面覆盖见[收尾记录](../验收收尾记录-2026-10-20.md)。数据库夹具会清测试用户，必须使用独立实例并严格核验JUnit零跳过。
 
 ## 8. Pro 服务交接与兼容契约
 
 本节保留既有“第8节”引用，现行全部章节已经统一适配 Pro。
 
-- 默认内部客户端 GET /internal/capability/{id}，要求 id/code/status/param_schema/price_per_call；目录服务端待成员实现，缺失/格式异常失败关闭，不自动回退。
+- 默认内部客户端 GET /internal/capability/{id}，要求 id/code/status/param_schema/price_per_call；目录服务端已交付并通过完整internal真实链；缺失/格式异常仍失败关闭，不自动回退。
 - 显式 market 使用服务发现后的固定 /api/capability/market/{id}，只允许已上架详情；API 2002不可执行。通过此路径不代表内部详情端点已验收。
 - user预检 GET /internal/user/check 传 user_id/points_cost；必须返回匹配ID、normal、整数余额与价格、available=true。
-- billing POST /internal/billing/record 传 capability_id、unit_price、points、request_id、user_id、service_name、model、status、duration_ms。正常points=目录价，degraded=0；unit_price始终登记价，billing本分支已独立存储并兼容旧调用NULL。
+- billing POST /internal/billing/record 传 capability_id、unit_price、points、request_id、user_id、service_name、model、status、duration_ms。正常points=目录价，degraded=0；unit_price始终登记价，billing已在main独立存储并兼容旧调用NULL。
 - billing收据正record_id、request_id/user_id/capability_id/cost/call_status必须一致；未上报时 billing_status=not_reported，不能计费验收。
-- user角色/Key exchange与billing实时授权已在本分支实现，capability接入及完整联验待交接，见[共享契约](pro-shared.md)。用户确认授权不足使用1006，Key不存在保留同码，按端点及消息区分。
+- user角色/Key exchange、billing实时授权和capability接入已集成main并完成真实联调，见[共享契约](pro-shared.md)。用户确认授权不足使用1006，Key不存在保留同码，按端点及消息区分。
 - 市场入口固定 /chat?capability_id=<id>；Chat 与市场按钮已在10/20前端调整中接通。视觉等未支持能力不应显示可体验。
 - 内部服务就绪后运行严格 --catalog-mode internal --browser，必须实际取得 member_internal_contract_verified=true；目前 market 模式与内部失败关闭的通过不能代替它。
