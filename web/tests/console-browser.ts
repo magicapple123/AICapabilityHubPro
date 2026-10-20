@@ -54,13 +54,13 @@ export async function runConsoleScenarios(
   const editCategory = page.getByRole('dialog', { name: '编辑分类', exact: true })
   await editCategory.getByLabel('分类名称').fill(updatedCategoryName)
   await editCategory.getByLabel('排序值').fill('19')
-  await editCategory.getByLabel('状态', { exact: true }).selectOption('disabled')
+  await editCategory.getByRole('combobox', { name: /^状态/ }).selectOption('disabled')
   const categoryEdit = await submit(page, 'PUT', `/api/capability/categories/${category.id}`, () =>
     editCategory.getByRole('button', { name: '保存分类', exact: true }).click())
   assert.equal(record(categoryEdit.body.data).status, 'disabled')
   await page.getByRole('row').filter({ hasText: categoryCode }).getByText('已禁用', { exact: true }).waitFor()
   await page.getByRole('button', { name: '编辑分类' + updatedCategoryName, exact: true }).click()
-  await editCategory.getByLabel('状态', { exact: true }).selectOption('enabled')
+  await editCategory.getByRole('combobox', { name: /^状态/ }).selectOption('enabled')
   const enabled = await submit(page, 'PUT', `/api/capability/categories/${category.id}`, () =>
     editCategory.getByRole('button', { name: '保存分类', exact: true }).click())
   assert.equal(record(enabled.body.data).sort, 19)
