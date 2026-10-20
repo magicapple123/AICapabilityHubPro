@@ -133,6 +133,7 @@ export async function runSettingsScenarios(page: Page, base: string, directory: 
     page.getByRole('button', { name: '确认禁用', exact: true }).click())
   assert.equal(record(disabled.body.data).status, 'disabled')
   await row.getByText('已禁用', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '确认禁用', exact: true }).waitFor({ state: 'hidden' })
   assert.equal(await row.getByRole('button', { name: '禁用', exact: true }).isDisabled(), true)
   await request(page, 'POST', '/api/user/apikeys/exchange', {
     anonymous: true, code: 1003, data: { access_key: access, secret_key: secret },
