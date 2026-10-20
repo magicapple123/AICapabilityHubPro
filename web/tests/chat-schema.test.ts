@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { buildInput, initialValues, positiveCapabilityId, schemaFields } from '../src/features/chat/schemaInput.ts'
+import { buildInput, initialValues, positiveCapabilityId, schemaConstraintLines, schemaFields } from '../src/features/chat/schemaInput.ts'
 
 const chatSchema = { type: 'object', properties: { messages: { type: 'array' } }, required: ['messages'] }
 
@@ -46,4 +46,32 @@ test('schema fields preserve required flags and typed defaults', () => {
   const schema = { properties: { text: { type: 'string' }, limit: { type: 'integer', default: 200 } }, required: ['text'] }
   assert.equal(schemaFields(schema)[0].required, true)
   assert.deepEqual(initialValues(schema), { text: '', limit: '200' })
+})
+
+test('market detail exposes chat message and content bounds', () => {
+  const messages = {
+    type: 'array', minItems: 1, maxItems: 40,
+    items: {
+      type: 'object',
+      properties: {
+        role: { type: 'string', enum: ['system', 'user', 'assistant'] },
+        content: { type: 'string', minLength: 1, maxLength: 12000 },
+      },
+      required: ['role', 'content'],
+    },
+  }
+  const lines = schemaConstraintLines(messages)
+  assert.ok(lines.includes('数量 1–40'))
+  assert.ok(lines.includes('元素类型 object'))
+  assert.ok(lines.includes('元素必填 role、content'))
+  assert.ok(lines.includes('role：string；可选 system / user / assistant'))
+  assert.ok(lines.includes('content：string；长度 1–12000'))
+  assert.deepEqual(schemaConstraintLines({ type: 'number', minimum: 0, maximum: 2 }), ['范围 0–2'])
+})
+
+test('market detail exposes summary range and default', () => {
+  assert.deepEqual(
+    schemaConstraintLines({ type: 'integer', minimum: 30, maximum: 1000, default: 200 }),
+    ['范围 30–1000', '默认 200'],
+  )
 })

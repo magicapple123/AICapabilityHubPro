@@ -31,6 +31,50 @@ export function schemaFields(schema: Record<string, unknown>): InputField[] {
   })
 }
 
+/** 把 Schema 中的可读约束展开，供市场详情展示参数要求。 */
+export function schemaConstraintLines(schema: Record<string, unknown>): string[] {
+  const lines: string[] = []
+  const type = typeof schema.type === 'string' ? schema.type : ''
+  if (Array.isArray(schema.enum)) lines.push(`可选值 ${schema.enum.map(String).join(' / ')}`)
+  if (type === 'array') {
+    const min = typeof schema.minItems === 'number' ? String(schema.minItems) : null
+    const max = typeof schema.maxItems === 'number' ? String(schema.maxItems) : null
+    if (min !== null && max !== null) lines.push(`数量 ${min}–${max}`)
+    else if (min !== null) lines.push(`至少 ${min} 项`)
+    else if (max !== null) lines.push(`最多 ${max} 项`)
+    const items = objectValue(schema.items) ? schema.items : null
+    if (items) {
+      if (typeof items.type === 'string') lines.push(`元素类型 ${items.type}`)
+      const required = Array.isArray(items.required) ? items.required.map(String) : []
+      if (required.length) lines.push(`元素必填 ${required.join('、')}`)
+      if (objectValue(items.properties)) {
+        for (const [name, rawSpec] of Object.entries(items.properties)) {
+          const spec = objectValue(rawSpec) ? rawSpec : {}
+          const parts: string[] = []
+          if (typeof spec.type === 'string') parts.push(spec.type)
+          if (Array.isArray(spec.enum)) parts.push(`可选 ${spec.enum.map(String).join(' / ')}`)
+          if (typeof spec.minLength === 'number' || typeof spec.maxLength === 'number') {
+            parts.push(`长度 ${spec.minLength ?? 0}–${spec.maxLength ?? '不限'}`)
+          }
+          if (typeof spec.minimum === 'number' || typeof spec.maximum === 'number') {
+            parts.push(`范围 ${spec.minimum ?? '不限'}–${spec.maximum ?? '不限'}`)
+          }
+          if (parts.length) lines.push(`${name}：${parts.join('；')}`)
+        }
+      }
+    }
+    return lines
+  }
+  if (typeof schema.minLength === 'number' || typeof schema.maxLength === 'number') {
+    lines.push(`长度 ${schema.minLength ?? 0}–${schema.maxLength ?? '不限'}`)
+  }
+  if (typeof schema.minimum === 'number' || typeof schema.maximum === 'number') {
+    lines.push(`范围 ${schema.minimum ?? '不限'}–${schema.maximum ?? '不限'}`)
+  }
+  if (schema.default !== undefined) lines.push(`默认 ${String(schema.default)}`)
+  return lines
+}
+
 export function initialValues(schema: Record<string, unknown>): Record<string, string> {
   return Object.fromEntries(schemaFields(schema).map((field) => [field.name,
     field.schema.default === undefined ? '' : typeof field.schema.default === 'object'
