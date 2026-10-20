@@ -131,3 +131,26 @@ def test_anonymous_post_exchange_no_store(api, monkeypatch):
         assert response.json()['data']['user_id'] == 1
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize('caller_id,target_id,expected_code', [('7', 8, 1001), ('7', 7, 0)])
+def test_internal_points_check_enforces_current_identity(api, monkeypatch, caller_id, target_id, expected_code):
+    module = importlib.import_module('app.api.v1.internal')
+    calls = []
+
+    def check_points(db, user_id, points_cost):
+        calls.append((user_id, points_cost))
+        return {'user_id': user_id, 'status': 'normal', 'balance': 50,
+                'points_cost': points_cost, 'available': True}
+
+    monkeypatch.setattr(module.points_service, 'check', check_points)
+    app.dependency_overrides[get_db] = lambda: None
+    try:
+        body = api.get('/internal/user/check', params={'user_id': target_id, 'points_cost': 5},
+                       headers={'X-User-Id': caller_id, 'X-Request-Id': 'identity-check'}).json()
+        assert body['code'] == expected_code
+        assert calls == ([(target_id, 5)] if expected_code == 0 else [])
+        if expected_code:
+            assert body['data'] is None
+    finally:
+        app.dependency_overrides.clear()
