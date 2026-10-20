@@ -40,6 +40,8 @@ async def check_user(
     错误码：`1005` 用户不存在或已被禁用；`3001` 积分不足（执行前拦截）。
     """
 
+    if caller.user_id != str(user_id):
+        raise BizException(1001, "缺少或伪造的链路身份")
     data = points_service.check(db, user_id, points_cost)
     return Result.ok(data, request_id=caller.request_id or get_request_id())
 
