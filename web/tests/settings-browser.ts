@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
 import path from 'node:path'
 import type { Page, Request } from 'playwright'
-import { assertSecretAbsent, record, records, request, responseFor, result, shanghaiDate, submit, viewport } from './member-browser-support.ts'
+import { assertSecretAbsent, noStore, record, records, request, responseFor, result, shanghaiDate, submit, viewport } from './member-browser-support.ts'
 
 export async function runSettingsScenarios(page: Page, base: string, directory: string, checks: string[]) {
   console.log('Browser phase: real Settings')
@@ -66,7 +66,7 @@ export async function runSettingsScenarios(page: Page, base: string, directory: 
   await create.locator('input[type="datetime-local"]').fill(expiry)
   const creation = await submit(page, 'POST', '/api/user/apikeys', () =>
     create.getByRole('button', { name: '创建 API Key', exact: true }).click())
-  assert.equal(creation.headers['cache-control'], 'no-store')
+  noStore(creation.headers)
   const key = record(creation.body.data)
   const secret = key.secret_key, access = key.access_key
   assert.ok(typeof secret === 'string' && secret.length > 20, 'Expected a one-time Secret')
@@ -99,7 +99,7 @@ export async function runSettingsScenarios(page: Page, base: string, directory: 
   const exchange = await request(page, 'POST', '/api/user/apikeys/exchange', {
     anonymous: true, data: { access_key: access, secret_key: secret },
   })
-  assert.equal(exchange.headers['cache-control'], 'no-store')
+  noStore(exchange.headers)
   const token = record(exchange.body.data)
   assert.equal(token.user_id, profile.user_id)
   assert.equal(token.role, 'user')
@@ -117,7 +117,7 @@ export async function runSettingsScenarios(page: Page, base: string, directory: 
   const wrong = await request(page, 'POST', '/api/user/apikeys/exchange', {
     anonymous: true, code: 1003, data: { access_key: access, secret_key: 'invalid-qa-credential' },
   })
-  assert.equal(wrong.headers['cache-control'], 'no-store')
+  noStore(wrong.headers)
   const expired = await request(page, 'POST', '/api/user/apikeys', {
     data: { name: 'QA already expired', expire_time: shanghaiDate(-3_600_000).replace('T', ' ') + ':00' },
   })

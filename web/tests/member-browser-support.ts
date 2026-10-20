@@ -83,6 +83,12 @@ export function shanghaiDate(offsetMs: number) {
   return new Date(Date.now() + 8 * 3_600_000 + offsetMs).toISOString().slice(0, 16)
 }
 
+export function noStore(headers: Record<string, string>) {
+  // Gateway and provider both set this list-valued field (RFC 9110 section 5.3).
+  const directives = (headers['cache-control'] ?? '').toLowerCase().split(',').map((item) => item.trim())
+  assert.deepEqual([...new Set(directives)], ['no-store'], 'Credential responses must only prohibit storage')
+}
+
 export async function assertSecretAbsent(page: Page, secret: string) {
   const storage = await page.evaluate(() => JSON.stringify({
     local: Object.entries(localStorage), session: Object.entries(sessionStorage), cookie: document.cookie,
