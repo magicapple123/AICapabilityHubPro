@@ -197,23 +197,20 @@ jobs:
         run: pnpm --dir web exec playwright install --with-deps chromium
       - name: Verify leader chain with the existing published catalog
         run: python scripts/run_leader_e2e.py --nacos 127.0.0.1:8848 --catalog-mode market --browser
-      - name: Require the strict internal catalog probe when its endpoint is present
+      - name: Verify the full leader chain with the strict internal catalog
+        run: python scripts/run_leader_e2e.py --nacos 127.0.0.1:8848 --catalog-mode internal --browser
+      - name: Require real browser and strict internal catalog evidence
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-
-          endpoint = Path('services/capability-service/app/api/v1/internal.py')
-          if not endpoint.is_file():
-              print('Skip capability-owned assertion: this revision does not include the internal capability endpoint.')
-              raise SystemExit(0)
 
           reports = list(Path('artifacts/leader-e2e').glob('*/summary.json'))
           if not reports:
               raise SystemExit('Leader E2E summary.json was not produced.')
           report = max(reports, key=lambda path: path.stat().st_mtime_ns)
           summary = json.loads(report.read_text(encoding='utf-8'))
-          if summary.get('catalog_mode') != 'market' or summary.get('passed') is not True:
+          if summary.get('catalog_mode') != 'internal' or summary.get('passed') is not True:
               raise SystemExit(f'Unexpected or failed leader E2E summary: {report}')
           if summary.get('browser_verified') is not True:
               raise SystemExit('Real browser acceptance is not recorded as passed.')

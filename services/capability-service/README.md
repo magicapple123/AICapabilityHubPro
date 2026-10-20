@@ -1,6 +1,6 @@
 # AICapabilityHub Pro · 能力目录服务
 
-capability-service拥有capability_db，维护能力ID、分类、Schema、单价和上架状态。本轮提供内部详情与运营实时授权调用侧，依赖 user-service 的实时授权端点；授权服务缺失或异常时运营操作失败关闭。user-service 提供端已在 PR #4 实现，待审查合并和真实跨服务验收。
+capability-service拥有capability_db，维护能力ID、分类、Schema、单价和上架状态。本轮提供内部详情与运营实时授权调用侧；授权服务缺失或异常时运营操作失败关闭。user-service 提供端由 PR #4 实现，联合隔离环境已通过真实授权与 strict internal E2E；最终交付仍需双方 PR 的 CI/Review/合并。
 
 规范见[Pro开发指南](../../AICapabilityHubPro-开发指南.md)、[目录契约](../../docs/api-contract/capability-service.md)与[共享约定](../../docs/api-contract/pro-shared.md)。
 
@@ -14,7 +14,7 @@ capability-service拥有capability_db，维护能力ID、分类、Schema、单�
 | 运营列表 | `/api/capability/manage` 仅管理员可读；普通用户2007，依赖故障4002 |
 | GET /internal/capability/{id} | 已实现；返回id/name/code/真实status/内联Schema/整数单价 |
 | 市场体验按钮 | 已传 `/chat?capability_id=<id>`，Chat 已支持 |
-| user 授权依赖 | 调用侧与码映射已实现；提供端由 PR #4 提交，真实联调待联合 E2E |
+| user 授权依赖 | 提供端由 PR #4 提交，隔离联合环境的真实管理授权9项已通过 |
 
 公开market不泄露service_name/path/密钥、草稿或下架存在性。登记条目可见不等于有adapter；不能将任意service/path作为执行目标。
 
@@ -46,4 +46,4 @@ cd services/capability-service
 
 原始 `feature/pro-capability-market` 有129项；增加迁移保护回归后，此修复分支在独立 MySQL 8.4.11 上共131项通过、零跳过。覆盖内部详情字段/状态/未知/软删除/身份、Schema引用/非法Draft关键字与边界、上架必须有合法Schema、价格边界、管理员/普通用户/撤权/依赖故障、自定义Schema迁移保留/旧默认Schema升级/幂等、字段最小化与重复编码。数据库夹具会清理 `qa-` 前缀测试数据，必须使用独立实例，不能用开发库。
 
-组长真实服务 E2E 使用 market 主链并额外启动独立 internal 严格探针；涉及内部目录路由的 PR 必须检查 `member_internal_contract_verified=true`。PR #4 已提交 user 实时授权提供端（其 CI 通过、待 Review），真实管理员成功/撤权/禁用和 Gateway/四服务联验须在包含双方代码的隔离运行中验证。服务端/admin/市场改造和增量迁移见[本人任务](../../docs/implementation/member-夏思凯.md)，不改组长已实现AI链或让前端直连服务绕开Gateway。
+CI 分别运行 `--catalog-mode market --browser` 和 `--catalog-mode internal --browser` 的完整真实服务链，严格 internal 报告必须同时满足 `passed`、`browser_verified`、`member_internal_contract_verified=true`。PR #4 已提交 user 实时授权提供端（其 CI 通过、待 Review），真实管理员成功/撤权/禁用和 Gateway/四服务联验须在包含双方代码的隔离运行中验证。服务端/admin/市场改造和增量迁移见[本人任务](../../docs/implementation/member-夏思凯.md)，不改组长已实现AI链或让前端直连服务绕开Gateway。

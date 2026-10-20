@@ -1,6 +1,6 @@
 # 夏思凯任务与交接记录
 
-负责人：夏思凯。状态：Pro 能力目录、内部详情、Schema/价格对齐、运营实时授权调用侧与市场/运营验收已完成代码与测试；user 授权提供端已由黄禹菲提交 PR #4，待 Review/合并。真实授权联调与严格 internal 浏览器 E2E 待最终分支集成和通过 CI。范围capability、市场/Console能力运营UI、目录契约/SQL，不代改user/billing/Gateway/AI执行链。
+负责人：夏思凯。状态：能力目录、内部详情、Schema/价格对齐、运营实时授权调用侧与市场/运营 UI 已交付；修复迁移覆盖自定义 Schema 的问题后，联合 PR #4 的隔离本地环境已通过严格 internal E2E、浏览器与真实管理员授权验证。最终合并仍须 PR CI 与另一成员审批。范围capability、市场/Console能力运营UI、目录契约/SQL，不代改user/billing/Gateway/AI执行链。
 
 ## 领取
 
@@ -34,11 +34,13 @@ cd services/capability-service
 - 新增用例覆盖：内部详情字段与 requestId、draft/offline、未知/软删除、身份缺失、Schema 缺失/引用/非法 Draft 关键字/深度/体积、上架必须有合法 Schema、线上不能清空 Schema、价格 0 与 1000000 及越界、重复编码、普通用户写/读、伪造 role 头、撤权后再请求、授权超时/异常/不可信响应、市场字段最小化。
 - 独立 `test_schema_migration.py` 覆盖精确旧 Schema、Schema 自定义约束/描述保留、online NULL 修复、draft/offline NULL 保留、软删除行不变、价格/状态不变、deploy 镜像同步以及重复运行幂等。
 - Web 新增 2 项纯函数测试，市场详情可展开聊天消息数量/角色/内容长度与摘要范围/默认值；`chat-schema.test.ts` 现为 8/8。
+- 组长复核：修复版 capability 131、PR #4 user 93、billing 87、AI 56，共367项在独立 MySQL 8.4.11 通过，零跳过/失败/错误；Web lint/build、Schema 8项与公共工具13项通过。
+- 本地联合提交 `94b882f`（`f9c677b` + PR #4 `2f6f62c`）严格 internal E2E 21项与浏览器9项通过，报告 `member_internal_contract_verified=true`；独立真实管理员授权链9项通过。证据保存在 `artifacts/capability-review-fix/20261020-4a8fb7eb/integration-worktree/artifacts/leader-e2e/`，属隔离验收，不表示已合并或已人工审批。
 
 ## 未完成 / 阻塞
 
-- [ ] user-service 授权提供端已在黄禹菲 PR #4 实现；实际 capability 管理 success/deny/revoke/disabled 的跨服务联调待合并后或在隔离联合工作树完成。
-- [ ] 独立内部目录 E2E 探针只在 market 主链成功后验证一条 `/internal/capability/{id}` 执行链；结果需 `member_internal_contract_verified=true`。管理员授权依赖属于独立检查，需另通过真实 capability 管理请求验证，不能以此探针代替。浏览器验收使用普通用户账号，应明确预期运营拒绝。
+- [x] 联合 PR #4 提供端，真实 Gateway/capability/user 管理链已验证普通用户及伪造头拒绝、管理员写成功、撤权拒绝、禁用拒绝、依赖中断不写入；仅操作隔离数据库。
+- [ ] CI 分别运行 market/internal 两种完整真实服务与浏览器 E2E；internal 报告必须 `passed=true`、`browser_verified=true`、`member_internal_contract_verified=true`。管理员授权依赖属于独立检查，需另通过真实 capability 管理请求验证。浏览器验收使用普通用户账号，应明确预期运营拒绝。
 - [ ] 最终三成员联合验收、迁移演练与 Tag 发布。
 
 ## 依赖与兼容

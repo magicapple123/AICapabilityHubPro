@@ -29,7 +29,9 @@ def _migration_updates(path: Path) -> tuple[str, ...]:
 
 
 def test_deploy_init_contains_the_service_migration() -> None:
-    assert _migration_updates(DEPLOY_MIGRATION) == _migration_updates(SERVICE_MIGRATION)
+    service_updates = _migration_updates(SERVICE_MIGRATION)
+    assert len(service_updates) == 2
+    assert _migration_updates(DEPLOY_MIGRATION) == service_updates
 
 
 def _decode_schema(value: object) -> dict | None:
@@ -60,7 +62,6 @@ def test_migration_upgrades_legacy_defaults_without_overwriting_custom_schemas()
         "properties": {
             "messages": {
                 "type": "array",
-                "maxItems": 4,
                 "items": {
                     "type": "object",
                     "properties": {
@@ -94,9 +95,11 @@ def test_migration_upgrades_legacy_defaults_without_overwriting_custom_schemas()
         ("null-draft-chat", "chat-completions", "draft", 0, 10, None),
         ("deleted-chat", "chat-completions", "online", 1, 11, legacy_chat),
         ("legacy-summary", "long-summary", "online", 0, 3, legacy_summary),
+        ("legacy-offline-summary", "long-summary", "offline", 0, 15, legacy_summary),
         ("custom-summary", "long-summary", "online", 0, 12, custom_summary),
         ("null-online-summary", "long-summary", "online", 0, 13, None),
         ("null-offline-summary", "long-summary", "offline", 0, 14, None),
+        ("other-adapter", "qa-custom-adapter", "online", 0, 16, legacy_chat),
     ]
     table = "qa_schema_migration_" + uuid4().hex
     connection = engine.connect()
@@ -149,6 +152,7 @@ def test_migration_upgrades_legacy_defaults_without_overwriting_custom_schemas()
         assert migrated["legacy-online"][3]["properties"]["messages"]["maxItems"] == 40
         assert migrated["legacy-draft"][3]["properties"]["messages"]["maxItems"] == 40
         assert migrated["legacy-summary"][3]["properties"]["max_length"]["default"] == 200
+        assert migrated["legacy-offline-summary"][3]["properties"]["max_length"]["default"] == 200
         assert migrated["null-online-chat"][3] is not None
         assert migrated["null-online-summary"][3] is not None
         assert migrated["custom-chat"][3] == custom_chat
@@ -157,6 +161,7 @@ def test_migration_upgrades_legacy_defaults_without_overwriting_custom_schemas()
         assert migrated["null-draft-chat"][3] is None
         assert migrated["null-offline-summary"][3] is None
         assert migrated["deleted-chat"][3] == legacy_chat
+        assert migrated["other-adapter"][3] == legacy_chat
         for name, _, status, deleted, price, _ in rows:
             assert migrated[name][:3] == (status, deleted, price)
 

@@ -1,6 +1,6 @@
 # AICapabilityHub Pro · capability-service 接口契约
 
-**实现状态（2026-10-20，`feature/pro-capability-market` + user provider PR #4）：** 分类、登记/上下架、公开市场为基础实现；本分支交付 `GET /internal/capability/{id}` 和运营实时授权调用侧，PR #4 提交匹配的 user-service `/internal/user/authorization` 提供端。PR #4 的自动检查通过，仍待审批；真实联调仅在隔离集成环境验证通过前，不记为端到端验收。市场按钮传选中 ID 已随10/20前端调整完成，见[验收记录](../前端改版与验收-2026-10-20.md)。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)。
+**实现状态（2026-10-20，`feature/pro-capability-market` 修复版 + user provider PR #4）：** 本分支交付内部目录与实时授权调用侧，PR #4 提供匹配的 user 授权端点。本地隔离联合工作树已通过完整 strict internal E2E（21项）、浏览器（9项）和真实管理授权（9项）；PR 的 CI/审批/合并仍以 GitHub 当前状态为准，不把本地验收等同人工审批。市场按钮传选中 ID 已随10/20前端调整完成，见[验收记录](../前端改版与验收-2026-10-20.md)。规则见 [Pro 开发指南](../../AICapabilityHubPro-开发指南.md)与[共享契约](pro-shared.md)。
 
 > 负责人：夏思凯
 > 服务名：`capability-service`
@@ -246,7 +246,7 @@
 1. 运营列表与分类/能力全部写操作已接入 GET `/internal/user/authorization?user_id=<当前用户ID>&required_role=admin`。只有返回 ID 匹配、`normal`/`admin`/`authorized=true` 才放行；普通用户 `2007`，超时、端点缺失、响应格式异常 `4002` 失败关闭。Gateway 透传的 role 不作为授权依据，也不存在本地管理员白名单。
 2. 授权码以[共享契约](pro-shared.md)和 user-service PR #4 为准：授权上下文中的 `1006` 表示权限不足，capability 映射为对外 `2007`。API Key 业务的 `1006` 仍保留原语义；错误码只在各自端点上下文解释。capability 为兼容分支/旧版本也会把 user 返回的 `1007` 视作拒绝，不能放行。
 3. 已提供 GET `/internal/capability/{capability_id}`，成功 data 为匹配正整数 id、name、code、真实 status、内联 param_schema、0–1000000 整数 price_per_call。不返回可供任意代理的 URL；未知/软删除 `2002`，draft/offline 如实标识，AI 会拒绝。
-4. AI 客户端、allowlist 和目录价计量已实现，默认 internal 缺失端点失败关闭。质量门禁通过 market 主链运行浏览器后，还会启动独立 internal 严格探针；存在本服务 internal endpoint 的版本必须从 `summary.json` 取得 `member_internal_contract_verified=true`，market 主链/浏览器测试本身不能替代该标记。
+4. AI 客户端、allowlist 和目录价计量已实现，默认 internal 缺失端点失败关闭。质量门禁分别运行 market 与 internal 两种模式的完整真实服务/浏览器验收；internal `summary.json` 必须同时记录 `passed=true`、`browser_verified=true`、`member_internal_contract_verified=true`。market 主链成功或单独探针不能替代完整 internal 验收。
 5. code 固定 chat-completions / long-summary，对应 input.messages / input.text 与可选 max_length。Schema 按现有执行器内联结构（对象根类型、无 `$ref/$dynamicRef/$recursiveRef/$id`、大小≤32768、深度≤20、节点≤2000），登记与内部详情都通过 Draft 2020-12 元 Schema 校验；非法关键字在登记时返回 2001、在内部详情返回 4002，不会留到执行期。上架要求已有合法 Schema，避免市场展示必然失败的配置。状态/单价一改在下一次调用生效，不缓存旧状态。
 6. 市场使用真实目录接口。按钮传 `/chat?capability_id=<id>`，Chat 已接受；未实现执行器的视觉等能力明确不可体验，不补虚构延迟或耗时。
 7. 分类 enabled/disabled、能力 draft/online/offline、价格整数积分已定稿。注册记录的 service/path 不决定执行目标，新增 code 需真正 adapter 与安全验收。
