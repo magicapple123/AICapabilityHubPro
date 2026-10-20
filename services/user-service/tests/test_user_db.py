@@ -217,7 +217,15 @@ def test_internal_check_rejects_disabled_user(qa: QaUser) -> None:
 def test_internal_check_rejects_unknown_user(qa: QaUser) -> None:
     qa.register()
 
-    assert qa.check(user_id=99_999_999)["code"] == 1005
+    unknown_id = 99_999_999
+    # Unknown accounts and identity mismatches are separate rejection paths.
+    # Keep the caller and query consistent so this still tests unknown-user 1005.
+    body = qa.client.get(
+        "/internal/user/check",
+        headers={**qa.headers, "X-User-Id": str(unknown_id)},
+        params={"user_id": unknown_id, "points_cost": 0},
+    ).json()
+    assert body["code"] == 1005
 
 
 # ---------------------------------------------------------------- 扣分
