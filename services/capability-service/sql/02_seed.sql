@@ -1,3 +1,4 @@
+SET NAMES utf8mb4;
 -- capability-service 演示数据：可重复导入，导入后回到已知状态。
 -- 对应开发指南 13.2 与接口契约第 7 节：2 个分类 + 3 个能力（其中 1 个对话能力 online）。
 -- chat-completions / long-summary 的 param_schema 与 ai-chat-service 执行器约束一致：

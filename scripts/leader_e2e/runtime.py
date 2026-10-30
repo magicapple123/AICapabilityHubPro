@@ -109,7 +109,8 @@ JSON_OBJECT('type','object'),8,'online','Test-only unsupported adapter');""")
         self.ports["gateway"] = gateway_port
         jar = self.root / "gateway/target/api-gateway-0.1.0-SNAPSHOT.jar"
         if not jar.exists(): raise RuntimeError("Package Gateway with mvn package before E2E")
-        self.start("gateway", [shutil.which("java") or "java", "-jar", str(jar)], self.root / "gateway",
+        self.start("gateway", [shutil.which("java") or "java", "-jar", str(jar),
+                   f"--server.port={gateway_port}"], self.root / "gateway",
                    {**environment, "GATEWAY_PORT": str(gateway_port), "SENTINEL_DASHBOARD": "127.0.0.1:8859"})
         self.gateway = f"http://127.0.0.1:{gateway_port}"
         wait_http(self.gateway + "/api/capability/market", 120)

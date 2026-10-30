@@ -30,7 +30,8 @@ export function Modal({ title, open, onClose, children, footer }: {
   title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode
 }) {
   return <AntModal title={title} open={open} onCancel={onClose} footer={footer ?? null}
-    centered width={560} destroyOnHidden styles={{ body: { paddingTop: 18 }, footer: { paddingTop: 15 } }}>
+    centered width={560}
+    styles={{ body: { paddingTop: 18, maxHeight: 'calc(100vh - 210px)', overflowY: 'auto' }, footer: { paddingTop: 15 } }}>
     {children}
   </AntModal>
 }

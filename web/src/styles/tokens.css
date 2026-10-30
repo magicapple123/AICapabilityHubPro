@@ -70,7 +70,7 @@ textarea.form-control { resize: vertical; min-height: 84px; }
 .pager .button-secondary { min-height: 30px; font-size: 11px; padding: 5px 9px; }
 .segmented { display: flex; flex-wrap: wrap; gap: 3px; border-radius: 5px; padding: 3px; background: #edeeea; }
 .segmented button { background: transparent; border: 0; border-radius: 3px; padding: 6px 10px; color: #616561; font-size: 11px; line-height: 1.5; }
-.segmented button[aria-pressed="true"] { background: #fff; color: #353935; box-shadow: 0 1px 2px #1d351012; }
+.segmented button[aria-pressed="true"] { background: #fff; color: #1f2a1f; font-weight: 600; box-shadow: 0 1px 3px #1d351026, inset 0 0 0 1px #d5d8d0; }
 .copy-button { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: #626662; padding: 3px; font-size: 11px; }
 .copy-button:hover { color: #3a3e3a; }
 .data-table-wrap { overflow: auto; }

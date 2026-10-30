@@ -1,3 +1,4 @@
+SET NAMES utf8mb4;
 -- capability-service 建表脚本；在已存在的 capability_db 上重复执行安全。
 CREATE DATABASE IF NOT EXISTS capability_db
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

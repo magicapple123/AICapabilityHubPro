@@ -1,3 +1,4 @@
+SET NAMES utf8mb4;
 -- billing-service 建表脚本；在已存在的 billing_db 上重复执行安全。
 CREATE DATABASE IF NOT EXISTS billing_db
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

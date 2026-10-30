@@ -1,3 +1,4 @@
+SET NAMES utf8mb4;
 -- 本文件由服务目录的 sql 脚本复制生成，供 MySQL 容器首次初始化时自动建表。
 -- 修改请以 services/<服务名>/sql/*.sql 为准，并同步本文件。
 

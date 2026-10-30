@@ -1,3 +1,4 @@
+SET NAMES utf8mb4;
 -- ai-chat-service 建表脚本；在已存在的 ai_chat_db 上重复执行安全。
 CREATE DATABASE IF NOT EXISTS ai_chat_db
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

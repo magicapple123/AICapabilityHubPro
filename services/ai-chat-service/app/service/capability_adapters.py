@@ -33,12 +33,16 @@ def prepare_execution(definition: CapabilityDefinition, request: ChatCompletionR
             effective = request.model_copy(update={
                 "messages": validated.messages,
                 "temperature": validated.temperature if validated.temperature is not None else request.temperature,
+                "model": request.model or settings.model_name,
             })
             return PreparedExecution(effective, definition.code)
         validated = SummaryInput.model_validate(payload)
         if request.session_id is not None:
             raise BizException(2001, "摘要为单次执行，请勿传入会话 ID")
-        effective = request.model_copy(update={"messages": [ChatMessage(role="user", content=validated.text)]})
+        effective = request.model_copy(update={
+            "messages": [ChatMessage(role="user", content=validated.text)],
+            "model": request.model or settings.model_name,
+        })
         return PreparedExecution(effective, definition.code, validated.max_length)
     except ValidationError as error:
         raise BizException(2001, "输入与所选执行器不兼容") from error

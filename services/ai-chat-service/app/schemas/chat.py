@@ -20,7 +20,7 @@ class ChatCompletionRequest(BaseModel):
     capability_id: int = Field(default=1, ge=1, strict=True)
     input: dict[str, Any] | None = None
     session_id: int | None = Field(default=None, ge=1, strict=True)
-    model: str = Field(default="mock-model", min_length=1, max_length=128)
+    model: str | None = Field(default=None, max_length=128)
     messages: list[ChatMessage] = Field(default_factory=list, max_length=40)
     temperature: float = Field(default=0.7, ge=0, le=2)
     stream: bool = False

@@ -1,3 +1,4 @@
+SET NAMES utf8mb4;
 -- capability-service 增量迁移：把已登记执行器的 param_schema 对齐到
 -- ai-chat-service 的受控输入约束（内联 Draft 2020-12，无任何 $ref/$id）。
 --

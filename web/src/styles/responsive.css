@@ -144,3 +144,24 @@
   .schema-form-bottom > span { max-width: 145px; font-size: 9px; }
   .points-request code { max-width: 145px; }
 }
+
+/* 窄屏下调用记录改为逐条卡片，避免多列表格把页面撑出横向滚动。 */
+@media (max-width: 767px) {
+  .records-table,
+  .records-table tbody,
+  .records-table tr,
+  .records-table td { display: block; width: auto; white-space: normal; }
+  .records-table thead { display: none; }
+  .records-table tbody tr {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+    padding: 15px 19px; border-bottom: 1px solid #ebece8;
+  }
+  .records-table tbody tr:last-child { border-bottom: 0; }
+  .records-table td { padding: 0; border: 0; }
+  .records-table td:nth-child(1) { flex: 1 1 100%; }
+  /* 非紧凑表格的“耗时”列在手机上省略，保留状态、费用和时间。 */
+  .records-table td:nth-child(4):not(:nth-last-child(2)) { display: none; }
+  .records-table td:nth-last-child(2) { margin-left: auto; color: #8a8e8a; font-size: 11px; }
+  .records-table td:last-child { margin-left: 2px; }
+  .records-table .record-service small { font-size: 10px; }
+}

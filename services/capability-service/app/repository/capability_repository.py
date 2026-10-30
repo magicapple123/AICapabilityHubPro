@@ -53,7 +53,11 @@ class CapabilityRepository:
         if keyword:
             like = f"%{keyword}%"
             conditions.append(
-                or_(Capability.name.like(like), Capability.description.like(like))
+                or_(
+                    Capability.name.like(like),
+                    Capability.code.like(like),
+                    Capability.description.like(like),
+                )
             )
         return conditions
 

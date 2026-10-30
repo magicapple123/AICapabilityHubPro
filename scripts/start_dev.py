@@ -23,7 +23,14 @@ def main() -> int:
     elif name == "gateway":
         if len(environment.get("JWT_SECRET", "").encode("utf-8")) < 32:
             parser.error("Initialize the shared .env with python scripts/init_dev.py first")
-        command, directory, port = ["mvn", "spring-boot:run"], root / "gateway", int(environment.get("GATEWAY_PORT", "8080"))
+        # 显式传入端口：外部环境若存在 GATEWAY_PORT/SERVER_PORT 之类的变量，
+        # 直接读 application.yml 的占位符会被覆盖到非预期端口。
+        gateway_port = int(environment.get("GATEWAY_PORT", "8080"))
+        command = [
+            "mvn", "spring-boot:run",
+            f"-Dspring-boot.run.jvmArguments=-Dserver.port={gateway_port}",
+        ]
+        directory, port = root / "gateway", gateway_port
     elif name == "web":
         directory = root / "web"
         values = {**read_env(directory / ".env"), **environment}

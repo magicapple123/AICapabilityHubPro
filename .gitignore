@@ -35,3 +35,6 @@ nacos-data/
 # Local verification reports, safety snapshots, and generated evidence
 artifacts/
 test-results*.xml
+
+# Agent-local workspace state
+.workbuddy/

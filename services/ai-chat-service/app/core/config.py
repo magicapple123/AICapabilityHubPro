@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     use_mock: bool = True
     model_base_url: str = "https://api.example.com/v1"
     model_api_key: str = "replace-me"
+    # 服务端默认模型名。请求未显式指定 model 时使用；真实供应商要求模型名与其目录一致
+    # （例如 deepseek-flash），留默认值只在 Mock/测试替身下有效。
+    model_name: str = "mock-model"
 
 
 @lru_cache

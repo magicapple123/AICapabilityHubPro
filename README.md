@@ -58,6 +58,17 @@ flowchart LR
 
 `USE_MOCK=true` 时执行本地模拟并明确返回 `mock=true`；摘要模拟结果来自输入文本的提取。真实模型模式使用服务端配置的兼容接口。模拟执行、HTTP 模型替身测试和真实供应商验收分别记录。
 
+真实模型只需在 `services/ai-chat-service/.env` 配置四项，不必改代码：
+
+| 配置项 | 说明 |
+|---|---|
+| `USE_MOCK` | `false` 走真实供应商，`true` 走本地模拟 |
+| `MODEL_BASE_URL` | OpenAI 兼容根地址，如 `https://api.deepseek.com/v1` |
+| `MODEL_API_KEY` | 供应商密钥，仅存本地 `.env`，不提交仓库 |
+| `MODEL_NAME` | 服务端默认模型名，如 `deepseek-flash`；请求显式传 `model` 时以请求为准 |
+
+模型名必须与供应商目录一致，否则会被对方拒绝并降级为不计费的兜底回复（回执中 `degraded=true`、`error_code=5002`）。
+
 ## 架构与技术栈
 
 | 层级 | 组件 | 职责 |
