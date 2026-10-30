@@ -73,3 +73,19 @@ class ApiKeyExchangeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     access_key: str = Field(min_length=1, max_length=64, repr=False)
     secret_key: SecretStr = Field(min_length=1, max_length=128)
+
+class ApiKeyVerifyRequest(BaseModel):
+    """内部凭据校验：只传 SHA-256 摘要，调用方不接触明文密钥。"""
+
+    model_config = ConfigDict(extra="forbid")
+    secret_hash: str = Field(min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+
+
+class ApiKeyVerifiedOut(BaseModel):
+    """校验通过后返回的归属信息，仅限服务间使用。"""
+
+    user_id: int
+    username: str
+    role: str
+    key_id: int
+    access_key: str

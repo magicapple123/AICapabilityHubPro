@@ -35,6 +35,7 @@ AICapabilityHub Pro 面向 AI 能力的接入、调试与调用核验。开发�
 | 市场体验入口 | 市场卡片携带所选能力 ID 进入调试台，提供参数详情与执行器状态 | 已实现，随本轮前端提交验收 |
 | 角色与权限 | user 实时授权，capability 管理与 billing 全局统计保护 | 已实现并联调，旧 JWT 不绕过撤权 |
 | API Key 兑换 | 一次性 Secret、摘要校验、状态/期限与受限 JWT；Gateway 精确 POST/限流/no-store | 已实现并通过真实兑换链 |
+| OpenAI 兼容入口 | `/v1/chat/completions`、`/v1/models`；外部客户端用 API Key 的 Secret 直接接入，模型别名映射到能力 | 已实现，通过非流式/流式与计费一致性验证 |
 
 2026-10-20，PR #4（黄禹菲：user/billing/Settings）与 PR #5（夏思凯：capability/市场/Console，含安全迁移修复）已合入 main `651275b`，主分支 CI `39420321602` 为 9/9。收尾新增的真实 Settings/管理员 Console 浏览器验收、演示与候选版本约定见[非部署收尾记录](docs/验收收尾记录-2026-10-20.md)。完整正式版尚未发布。
 
@@ -68,6 +69,22 @@ flowchart LR
 | `MODEL_NAME` | 服务端默认模型名，如 `deepseek-flash`；请求显式传 `model` 时以请求为准 |
 
 模型名必须与供应商目录一致，否则会被对方拒绝并降级为不计费的兜底回复（回执中 `degraded=true`、`error_code=5002`）。
+
+### OpenAI 兼容入口
+
+除平台自有接口外，`ai-chat-service` 还提供一组 OpenAI 兼容接口，供 Cherry Studio、Continue、LangChain 等只认 OpenAI 协议的客户端直接接入：
+
+| 项 | 填什么 |
+|---|---|
+| Base URL | `http://localhost:8080/v1` |
+| API Key | 账号设置里创建的 API Key 的 **Secret**（`sk_...`，只在创建时显示一次） |
+| 模型 | `deepseek-flash`（别名映射到能力 1） |
+
+```bash
+curl http://localhost:8080/v1/chat/completions   -H "Authorization: Bearer sk_xxx" -H "Content-Type: application/json"   -d '{"model":"deepseek-flash","messages":[{"role":"user","content":"hi"}]}'
+```
+
+模型别名到能力的映射由 `OPENAI_COMPAT_MODEL_MAP` 配置。兼容层复用同一条执行链，因此同样按目录价扣积分、写账单，响应额外返回 `platform_request_id` 与 `platform_cost` 便于对账。字段、错误码与流式行为见 [OpenAI 兼容契约](docs/api-contract/openai-compat.md)。
 
 ## 架构与技术栈
 

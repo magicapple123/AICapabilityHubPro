@@ -115,6 +115,33 @@ class ApiKeyService:
         return {"token": token, "token_type": "Bearer", "expire_at": expire_at,
                 "expires_in": ttl, "user_id": owner.id, "username": owner.username, "role": owner.role}
 
+    def verify_secret(self, db: Session, secret_hash: str) -> tuple[ApiKey, User]:
+        """按密钥摘要校验并返回 (Key, 用户)；供 OpenAI 兼容层以 `Bearer sk_...` 认证。
+
+        校验口径与 `exchange` 保持一致：Key 必须启用且未过期，账号必须正常，
+        角色只允许 user/admin。任何不满足都返回同一个 1003，不区分原因。
+        """
+
+        key = self.api_keys.find_by_secret_hash(db, secret_hash)
+        now = datetime.now(timezone.utc)
+        local_zone = timezone(timedelta(hours=8))
+        expiry = (
+            key.expire_time.replace(tzinfo=local_zone).astimezone(timezone.utc)
+            if key and key.expire_time
+            else None
+        )
+        owner = self.users.find_by_id(db, key.user_id) if key else None
+        if (
+            key is None
+            or key.status != ApiKeyStatus.ENABLED.value
+            or (expiry is not None and expiry <= now)
+            or owner is None
+            or owner.status != "normal"
+            or owner.role not in {"user", "admin"}
+        ):
+            raise BizException(1003, "API Key 凭证无效")
+        return key, owner
+
     def list_keys(self, db: Session, user_id: int) -> list[ApiKey]:
         self._require_available_user(db, user_id)
         return self.api_keys.list_by_user(db, user_id)

@@ -9,21 +9,24 @@
 `X-User-Id`（身份）与 `X-Request-Id`（幂等键），见 `app/api/v1/deps.py`。
 """
 
+import secrets
 from typing import Literal
 
 from app.core.exceptions import BizException
 from app.service.user_service import require_available_user
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import internal_caller
 from app.core.logging import get_request_id
 from app.core.result import Result
 from app.core.security import UserContext
+from app.core.service_auth import expected_internal_token
 from app.db.session import get_db
 from app.schemas import PointsDeductRequest
-from app.service import points_service
+from app.schemas.apikey import ApiKeyVerifyRequest
+from app.service import api_key_service, points_service
 
 router = APIRouter()
 
@@ -76,3 +79,30 @@ async def authorization(
         raise BizException(1006, "权限不足")
     return Result.ok({"user_id": user.id, "status": user.status, "role": user.role,
                       "authorized": True}, request_id=caller.request_id)
+
+@router.post("/apikey/verify", response_model=Result)
+async def verify_api_key(
+    payload: ApiKeyVerifyRequest,
+    x_internal_token: str = Header(default="", alias="X-Internal-Token"),
+    db: Session = Depends(get_db),
+) -> Result:
+    """API Key 凭据校验：把 `Bearer sk_...` 的摘要换成归属用户。
+
+    与其它内部接口不同，这一步发生在"知道用户是谁"之前，无法携带 `X-User-Id`，
+    因此改用从共享 JWT_SECRET 派生的服务间令牌。令牌未配置时失败关闭。
+    """
+
+    expected = expected_internal_token()
+    if not expected or not secrets.compare_digest(x_internal_token, expected):
+        raise BizException(1001, "缺少或伪造的链路身份")
+    key, owner = api_key_service.verify_secret(db, payload.secret_hash)
+    return Result.ok(
+        {
+            "user_id": owner.id,
+            "username": owner.username,
+            "role": owner.role,
+            "key_id": key.id,
+            "access_key": key.access_key,
+        },
+        request_id=get_request_id(),
+    )

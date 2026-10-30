@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     use_mock: bool = True
     model_base_url: str = "https://api.example.com/v1"
     model_api_key: str = "replace-me"
+
+    # OpenAI 兼容层：外部客户端用 `Bearer sk_...`（平台 API Key 的 Secret）接入。
+    # 校验走 user-service 内部接口，服务间令牌由共享 JWT_SECRET 派生，缺失时失败关闭。
+    jwt_secret: str = ""
+    openai_compat_enabled: bool = True
+    # 形如 deepseek-flash=1，逗号分隔；等号右侧是 capability_id。
+    openai_compat_model_map: str = "deepseek-flash=1,deepseek-chat=1,chat-completions=1"
     # 服务端默认模型名。请求未显式指定 model 时使用；真实供应商要求模型名与其目录一致
     # （例如 deepseek-flash），留默认值只在 Mock/测试替身下有效。
     model_name: str = "mock-model"

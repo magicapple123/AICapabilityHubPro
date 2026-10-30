@@ -17,6 +17,7 @@
 | [能力目录契约](api-contract/capability-service.md) | 公开市场、内部详情/Schema/价格与实时运营授权，已实现 |
 | [计量契约](api-contract/billing-service.md) | capability_id、实际 cost、幂等账单及单价扩展 |
 | [能力执行契约](api-contract/ai-chat-service.md) | 当前聊天/摘要请求、Schema、价格与追踪 |
+| [OpenAI 兼容契约](api-contract/openai-compat.md) | `/v1/chat/completions`、`/v1/models`、Bearer 认证与错误映射 |
 | [契约模板](api-contract/_template.md) | 新接口需写实现状态、兼容、授权和测试 |
 | [协作规范](../CONTRIBUTING.md) | 从 main 开发、PR、Review 和目录边界 |
 | [定位与描述规范](项目定位与描述规范.md) | 统一 Pro 文案和功能状态，避免夸大 |

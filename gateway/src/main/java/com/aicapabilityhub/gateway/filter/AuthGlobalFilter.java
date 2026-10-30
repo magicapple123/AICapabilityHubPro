@@ -112,6 +112,8 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         return isExactPath(path, "/api/user/register")
                 || isExactPath(path, "/api/user/login")
                 || isPathOrChild(path, "/api/capability/market")
+                // OpenAI 兼容层自带 API Key 校验，不依赖平台 JWT。
+                || isPathOrChild(path, "/v1")
                 || isHealthPath(path);
     }
 

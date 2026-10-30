@@ -34,6 +34,13 @@ class ApiKeyRepository:
     def find_by_access_key(self, db: Session, access_key: str) -> ApiKey | None:
         return db.scalar(select(ApiKey).where(ApiKey.access_key == access_key, ApiKey.is_deleted == 0))
 
+    def find_by_secret_hash(self, db: Session, secret_hash: str) -> ApiKey | None:
+        """按密钥摘要查找；供 OpenAI 兼容层用 `Bearer sk_...` 反查归属用户。"""
+
+        return db.scalar(
+            select(ApiKey).where(ApiKey.secret_hash == secret_hash, ApiKey.is_deleted == 0)
+        )
+
     def exists_access_key(self, db: Session, access_key: str) -> bool:
         statement = select(func.count(ApiKey.id)).where(
             ApiKey.access_key == access_key, ApiKey.is_deleted == 0

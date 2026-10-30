@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.v1 import chat_router, ping_router, sessions_router
+from app.api.v1 import chat_router, openai_router, ping_router, sessions_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_request_id, register_request_logging
@@ -27,6 +27,9 @@ register_exception_handlers(app)
 app.include_router(ping_router, prefix="/api/chat", tags=["chat"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(sessions_router, prefix="/api/chat", tags=["chat"])
+if settings.openai_compat_enabled:
+    # 客户端以 Base URL `http://<host>:8080/v1` + API Key（平台 Key 的 Secret）接入。
+    app.include_router(openai_router, prefix="/v1", tags=["openai-compat"])
 
 
 @app.get("/health", response_model=Result)

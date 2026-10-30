@@ -35,6 +35,11 @@ spring:
           uri: lb://ai-chat-service
           predicates:
             - Path=/api/chat/**
+        # OpenAI 兼容层：客户端把 Base URL 指向 http://host:8080/v1
+        - id: ai-chat-compat
+          uri: lb://ai-chat-service
+          predicates:
+            - Path=/v1/**
       globalcors:
         add-to-simple-url-handler-mapping: true
         cors-configurations:
@@ -74,6 +79,9 @@ gateway:
         count: ${GATEWAY_RATE_LIMIT_BILLING_QPS:50}
         interval-sec: 1
       - resource: ai-chat-service
+        count: ${GATEWAY_RATE_LIMIT_CHAT_QPS:20}
+        interval-sec: 1
+      - resource: ai-chat-compat
         count: ${GATEWAY_RATE_LIMIT_CHAT_QPS:20}
         interval-sec: 1
 

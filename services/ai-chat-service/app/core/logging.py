@@ -1,5 +1,6 @@
 import sys
 import time
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from uuid import uuid4
 
@@ -23,6 +24,23 @@ def get_user_id() -> str:
 
 def get_user_name() -> str:
     return _user_name_context.get()
+
+
+@contextmanager
+def use_identity(user_id: str, user_name: str = ""):
+    """在非网关入口（例如 OpenAI 兼容层）显式声明调用者身份。
+
+    服务间调用通过上下文变量透传 `X-User-Id`，网关正常请求由中间件写入；
+    兼容层的身份来自 API Key，需要在调用业务逻辑前补上同样的上下文。
+    """
+
+    user_token = _user_id_context.set(user_id or "anonymous")
+    name_token = _user_name_context.set(user_name)
+    try:
+        yield
+    finally:
+        _user_id_context.reset(user_token)
+        _user_name_context.reset(name_token)
 
 
 def _reset_context(request_token: Token[str], user_token: Token[str], user_name_token: Token[str]) -> None:
