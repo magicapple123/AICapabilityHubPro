@@ -13,13 +13,17 @@ const mockToken = () => env.devToken || 'dev-token-configure-via-VITE_DEV_TOKEN'
  */
 export const login = async (payload: LoginPayload): Promise<LoginData> => {
   if (env.useMockLogin) {
-    return { token: mockToken(), user_id: 'dev-user', user_name: payload.username || '开发者' }
+    const name = payload.username || 'dev-user'
+    return { token: mockToken(), user_id: 'dev-user', user_name: name, username: name }
   }
   const data = await request<LoginData>({ method: 'POST', url: '/user/login', data: payload })
   return {
     token: data.token,
     user_id: data.user_id,
+    // 保留登录名与过期时间：多账号切换需要稳定唯一键，也要能判断令牌是否过期。
+    username: data.username || payload.username,
     user_name: data.username || data.user_name || payload.username,
+    expire_at: data.expire_at,
   }
 }
 

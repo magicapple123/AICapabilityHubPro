@@ -94,3 +94,24 @@
 .profile-form .panel-head > svg { display: none; }
 .settings-tabs > button { font-size: 12px; }
 .settings-tabs > button > svg { display: none; }
+/* 多账号切换 */
+.account-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 16px; padding: 0; list-style: none; }
+.account-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: #fcfdf9;
+}
+.account-row.current { border-color: #c8dcc0; background: #f6faf1; }
+.account-avatar {
+  width: 34px; height: 34px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; background: #e8efe2; color: #2f4a2a;
+  font-size: 13px; font-weight: 500;
+}
+.account-info { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.account-info strong { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--ink); }
+.account-info strong em {
+  font-style: normal; font-size: 10px; padding: 1px 6px; border-radius: 999px;
+  background: #dff0d6; color: #3b6d11;
+}
+.account-info small { font-size: 11px; color: var(--muted); }
+.account-action { padding: 5px 12px; font-size: 12px; }
+.account-switcher-footer { display: flex; justify-content: flex-end; }

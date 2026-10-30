@@ -1,11 +1,12 @@
 import { App, Drawer, Dropdown } from 'antd'
-import { ArrowUpRight, BookOpen, ChevronDown, ChevronRight, CircleHelp, LogOut, Menu, PanelLeftClose, Search, Settings2 } from 'lucide-react'
+import { ArrowLeftRight, ArrowUpRight, BookOpen, ChevronDown, ChevronRight, CircleHelp, LogOut, Menu, PanelLeftClose, Search, Settings2 } from 'lucide-react'
 import { Suspense, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { fetchPoints } from '@/api/user'
 import { useAsyncResource } from '@/hooks/useAsyncResource'
 import { useAuthStore } from '@/stores/auth'
 import { formatNumber } from '@/lib/dateRange'
+import { AccountSwitcher } from './AccountSwitcher'
 import { BrandMark } from './BrandMark'
 import { CommandMenu } from './CommandMenu'
 import { accountLinks, navigationLinks, workspaceLinks } from './navigation'
@@ -21,6 +22,7 @@ export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const active = navigationLinks.find((link) => link.href === location.pathname)
   useEffect(() => {
@@ -73,6 +75,7 @@ export function AppShell() {
           <span className="topbar-divider" /><button className="icon-button help-button" aria-label="使用指南" onClick={() => setHelpOpen(true)}><BookOpen size={18} /></button>
           <Dropdown menu={{ items: [
             { key: 'settings', icon: <Settings2 size={15} />, label: '账号设置', onClick: () => navigate('/settings') },
+            { key: 'switch', icon: <ArrowLeftRight size={15} />, label: '切换账号', onClick: () => setSwitcherOpen(true) },
             { type: 'divider' }, { key: 'logout', icon: <LogOut size={15} />, label: '退出登录', danger: true, onClick: logout },
           ] }} trigger={['click']}>
             <button className="account-trigger" aria-label="账号菜单"><span className="avatar">{(userName || 'D').slice(0, 1).toUpperCase()}</span><span>{userName || '开发者'}</span><ChevronDown size={12} /></button>
@@ -84,6 +87,7 @@ export function AppShell() {
       <footer className="app-footer"><span>© {new Date().getFullYear()} AICapabilityHub Pro</span><span>开发者控制台</span></footer>
     </div>
     <CommandMenu open={commandOpen} onClose={() => setCommandOpen(false)} />
+    <AccountSwitcher open={switcherOpen} onClose={() => setSwitcherOpen(false)} />
     <Modal title="从选择能力到核对结果" open={helpOpen} onClose={() => setHelpOpen(false)}>
       <ol className="help-steps"><li><b>发现能力</b><p>在能力市场选择聊天或文本摘要，查看每次调用的积分价格。</p></li>
         <li><b>在线调试</b><p>根据输入要求填写参数。聊天支持多轮上下文；摘要使用独立文本输入。</p></li>

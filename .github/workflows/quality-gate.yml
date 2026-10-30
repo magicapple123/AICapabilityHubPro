@@ -111,7 +111,7 @@ jobs:
           cache: true
           require-lockfile: true
       - run: pnpm lint
-      - run: node --experimental-strip-types --test tests/chat-schema.test.ts
+      - run: node --experimental-strip-types --test tests/chat-schema.test.ts tests/account-vault.test.ts
       - run: pnpm build
 
   repository:

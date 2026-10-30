@@ -36,6 +36,7 @@ AICapabilityHub Pro 面向 AI 能力的接入、调试与调用核验。开发�
 | 角色与权限 | user 实时授权，capability 管理与 billing 全局统计保护 | 已实现并联调，旧 JWT 不绕过撤权 |
 | API Key 兑换 | 一次性 Secret、摘要校验、状态/期限与受限 JWT；Gateway 精确 POST/限流/no-store | 已实现并通过真实兑换链 |
 | OpenAI 兼容入口 | `/v1/chat/completions`、`/v1/models`；外部客户端用 API Key 的 Secret 直接接入，模型别名映射到能力 | 已实现，通过非流式/流式与计费一致性验证 |
+| 多账号切换 | 头像菜单一键切换本机登录过的账号；只保存令牌不存密码，过期令牌置灰 | 已实现 |
 
 2026-10-20，PR #4（黄禹菲：user/billing/Settings）与 PR #5（夏思凯：capability/市场/Console，含安全迁移修复）已合入 main `651275b`，主分支 CI `39420321602` 为 9/9。收尾新增的真实 Settings/管理员 Console 浏览器验收、演示与候选版本约定见[非部署收尾记录](docs/验收收尾记录-2026-10-20.md)。完整正式版尚未发布。
 
