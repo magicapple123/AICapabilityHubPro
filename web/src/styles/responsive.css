@@ -19,7 +19,8 @@
 @media (max-width: 1023px) {
   :root { --sidebar-w: 0px; }
   .desktop-sidebar { display: none; }
-  .application-main, .sidebar-collapsed .application-main { margin-left: 0; }
+  /* 断点切换时主区偏移是瞬时归零的；若保留 240ms 过渡，缩窗过程中内容会被推到视口外，出现横向滚动条 */
+  .application-main, .sidebar-collapsed .application-main { margin-left: 0; transition: none; }
   .mobile-menu { display: inline-flex; }
   .mobile-sidebar .sidebar-inner { height: calc(100dvh - 78px); padding: 16px 12px; overflow-y: auto; overflow-x: hidden; }
   .mobile-sidebar .sidebar-brand { display: flex; padding: 0 4px; margin-bottom: 16px; }
