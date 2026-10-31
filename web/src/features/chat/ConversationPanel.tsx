@@ -8,7 +8,6 @@ import { usePendingNavigation } from './usePendingNavigation'
 import { initialValues } from './schemaInput'
 import { SchemaForm } from './SchemaForm'
 import { ConversationView } from './ConversationView'
-import { ExecutionReceipt } from './ExecutionReceipt'
 import type { MarketDetail } from './types'
 
 export function ConversationPanel({ detail, executable, onBusy }: {
@@ -48,9 +47,8 @@ export function ConversationPanel({ detail, executable, onBusy }: {
     </aside>
     <div className="conversation-main">
       <div className="conversation-topline"><span><span />{detail.code === 'long-summary' ? '文本摘要工作区' : '多轮对话工作区'}</span><span>{chat.sending ? '正在执行…' : chat.historyLoading ? '读取历史…' : '按能力计量'}</span></div>
-      <ConversationView bubbles={chat.bubbles} busy={chat.sending || chat.historyLoading} code={detail.code}
+      <ConversationView bubbles={chat.bubbles} busy={chat.sending || chat.historyLoading} code={detail.code} receipt={chat.receipt}
         onExample={(text) => chat.setValues({ ...chat.values, [detail.code === 'long-summary' ? 'text' : 'messages']: text })} />
-      {chat.receipt && <ExecutionReceipt receipt={chat.receipt} />}
       {chat.failure && <div className="chat-call-error"><ErrorNote message={chat.failure.message} />
         {chat.failure.requestId && <div className="chat-failure-id"><code>{chat.failure.requestId}</code><CopyButton text={chat.failure.requestId} label="复制 requestId" /></div>}</div>}
       <SchemaForm schema={detail.param_schema ?? {}} values={chat.values} onChange={chat.setValues}

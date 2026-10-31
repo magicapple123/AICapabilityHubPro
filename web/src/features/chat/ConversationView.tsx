@@ -1,11 +1,13 @@
 import { LoaderCircle } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import type { ChatCompletionData } from '@/api/chat'
 import { CopyButton } from '@/components/CopyButton'
+import { ExecutionReceipt } from './ExecutionReceipt'
 import { MessageContent } from './MessageContent'
 import type { Bubble } from './types'
 
-export function ConversationView({ bubbles, busy, code, onExample }: {
-  bubbles: Bubble[]; busy: boolean; code: string; onExample: (text: string) => void
+export function ConversationView({ bubbles, busy, code, receipt, onExample }: {
+  bubbles: Bubble[]; busy: boolean; code: string; receipt: ChatCompletionData | null; onExample: (text: string) => void
 }) {
   const container = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -13,7 +15,7 @@ export function ConversationView({ bubbles, busy, code, onExample }: {
     if (stick.current && container.current) container.current.scrollTo({
       top: container.current.scrollHeight, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
     })
-  }, [bubbles, busy])
+  }, [bubbles, busy, receipt])
   const empty = bubbles.every((bubble) => !bubble.context)
   const summary = code === 'long-summary'
   return <div ref={container} className="conversation-scroll" aria-live="polite" aria-busy={busy}
@@ -27,10 +29,11 @@ export function ConversationView({ bubbles, busy, code, onExample }: {
       ] : ['用一个简单例子解释什么是 API', '帮我整理一份三周的项目学习计划', '写代码前，应该如何拆分任务？']).map((text, index) =>
         <button key={text} type="button" onClick={() => onExample(text)}>{summary ? ['试试：提炼文章要点', '试试：整理周报摘要'][index] : text}</button>)}</div>
     </div> : bubbles.filter((bubble) => bubble.context).map((bubble) => <article key={bubble.key} className={'message-row ' + (bubble.role === 'user' ? 'message-user' : 'message-assistant')}>
-      <div className="message-body"><span className="message-author">{bubble.role === 'user' ? '你' : '助手'}</span>
+      <div className="message-body"><span className="message-author">{bubble.role === 'user' ? (summary ? '待摘要文本' : '你') : (summary ? '摘要结果' : '助手')}</span>
         <div className="message-content"><MessageContent text={bubble.content} /></div><div className="message-meta">{bubble.meta && <span>{bubble.meta}</span>}
-          {bubble.role === 'assistant' && <CopyButton text={bubble.content} label="复制回复" />}</div></div>
+          {bubble.role === 'assistant' && <CopyButton text={bubble.content} label={summary ? '复制摘要' : '复制回复'} />}</div></div>
     </article>)}
+    {receipt && <ExecutionReceipt receipt={receipt} />}
     {busy && <div className="chat-thinking" role="status"><LoaderCircle size={15} className="spinner" /><span>正在处理…</span></div>}
   </div>
 }
