@@ -7,10 +7,10 @@ export default function App() {
   return (
     <ConfigProvider locale={zhCN} theme={{
       token: {
-        colorPrimary: '#315e4c', colorText: '#272b28', colorTextSecondary: '#6d726d',
+        colorPrimary: '#3a34a8', colorText: '#0e1626', colorTextSecondary: '#46536a',
         colorBgContainer: '#ffffff', colorBgElevated: '#ffffff',
-        colorBorder: '#dedfda', borderRadius: 8, controlHeight: 40,
-        fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif',
+        colorBorder: '#d3d9e5', borderRadius: 8, borderRadiusLG: 12, controlHeight: 40,
+        fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif',
       },
       components: { Modal: { titleFontSize: 18 }, Drawer: { paddingLG: 24 } },
     }}>

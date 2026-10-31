@@ -1,5 +1,5 @@
 import { App, Drawer, Dropdown } from 'antd'
-import { ArrowLeftRight, ArrowUpRight, BookOpen, ChevronDown, ChevronRight, CircleHelp, LogOut, Menu, PanelLeftClose, Search, Settings2 } from 'lucide-react'
+import { ArrowLeftRight, ArrowUpRight, BookOpen, ChevronDown, ChevronRight, ChevronsLeft, CircleHelp, LogOut, Menu, Search, Settings2 } from 'lucide-react'
 import { Suspense, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { fetchPoints } from '@/api/user'
@@ -23,7 +23,12 @@ export function AppShell() {
   const [commandOpen, setCommandOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [switcherOpen, setSwitcherOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('hub:sidebar-collapsed') === '1' } catch { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('hub:sidebar-collapsed', collapsed ? '1' : '0') } catch { /* 隐私模式下忽略写入失败 */ }
+  }, [collapsed])
   const active = navigationLinks.find((link) => link.href === location.pathname)
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -47,11 +52,11 @@ export function AppShell() {
     <div className="workspace-badge"><span>个人空间</span><small>{userName || '开发者'}</small></div>
     <p className="nav-group-label">工作空间</p>
     <nav aria-label="工作空间导航">{workspaceLinks.map((link) => <NavLink key={link.href} to={link.href} end={link.href === '/'}
-      onClick={() => setMobileOpen(false)} className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} title={collapsed ? link.label : undefined}>
+      onClick={() => setMobileOpen(false)} className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} data-tip={link.label}>
       <link.icon size={18} strokeWidth={1.6} /><span>{link.label}</span></NavLink>)}</nav>
     <p className="nav-group-label nav-second">管理与设置</p>
     <nav aria-label="管理与设置导航">{accountLinks.map((link) => <NavLink key={link.href} to={link.href}
-      onClick={() => setMobileOpen(false)} className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} title={collapsed ? link.label : undefined}>
+      onClick={() => setMobileOpen(false)} className={({ isActive }) => 'sidebar-link' + (isActive ? ' active' : '')} data-tip={link.label}>
       <link.icon size={18} strokeWidth={1.6} /><span>{link.label}</span></NavLink>)}</nav>
     <div className="sidebar-bottom">
       <div className="sidebar-balance"><div><span>可用积分</span><strong>{points.error ? '暂不可用' : points.loading && !points.data ? '···' : formatNumber(points.data?.balance)}</strong></div>
@@ -59,7 +64,7 @@ export function AppShell() {
       </div>
       <button className="sidebar-help" onClick={() => { setHelpOpen(true); setMobileOpen(false) }}><CircleHelp size={17} /><span>使用指南</span><ArrowUpRight size={13} /></button>
       <div className="sidebar-footer"><span className="sidebar-version">AICapabilityHub Pro</span><button aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
-        className="collapse-button" onClick={() => setCollapsed((value) => !value)}><PanelLeftClose size={16} /></button></div>
+        className="collapse-button" onClick={() => setCollapsed((value) => !value)}><ChevronsLeft size={15} /></button></div>
     </div>
   </div>
   return <div className={'application' + (collapsed ? ' sidebar-collapsed' : '')}>

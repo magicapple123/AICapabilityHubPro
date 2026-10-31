@@ -27,13 +27,13 @@ export function UsageChart({ usage }: { usage: UsageData }) {
     <div className="chart-summary"><span><i />调用次数</span><strong>{selected ? selected.stat_date.slice(5) + ' · ' + selected.call_count + ' 次 / ' + selected.total_cost + ' 积分' : '共 ' + usage.summary.call_count.toLocaleString() + ' 次调用'}</strong></div>
     <div className="chart-plot"><div className="chart-y-labels" aria-hidden="true">{[4, 3, 2, 1, 0].map((tick) => <span key={tick}>{Math.round(maximum * tick / 4)}</span>)}</div>
     <svg viewBox="0 0 590 184" role="img" aria-label="每日调用次数折线图" preserveAspectRatio="none">
-      <defs><linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#798477" stopOpacity=".28" /><stop offset="100%" stopColor="#798477" stopOpacity=".02" /></linearGradient></defs>
-      {[0, 1, 2, 3, 4].map((tick) => <g key={tick}><line x1="30" x2="560" y1={28 + tick * 30.5} y2={28 + tick * 30.5} stroke="#e9eae5" strokeDasharray="4 5" /></g>)}
+      <defs><linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" className="chart-stop-a" /><stop offset="100%" className="chart-stop-b" /></linearGradient></defs>
+      {[0, 1, 2, 3, 4].map((tick) => <g key={tick}><line className="chart-grid" x1="30" x2="560" y1={28 + tick * 30.5} y2={28 + tick * 30.5} /></g>)}
       {area && <path d={area} fill={'url(#' + gradient + ')'} />}
-      {line && <path d={line} fill="none" stroke="#6c7b69" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
+      {line && <path className="chart-line" d={line} />}
       {days.map((day, index) => <g key={day.stat_date} onMouseEnter={() => setActive(index)} onMouseLeave={() => setActive(null)}>
         <rect x={x(index) - 10} y="20" width="20" height="140" fill="transparent" />
-        <circle cx={x(index)} cy={y(day.call_count)} r={active === index ? 4.5 : 3} fill="#fff" stroke="#6c7b69" strokeWidth="2" />
+        <circle className="chart-point" cx={x(index)} cy={y(day.call_count)} r={active === index ? 4.5 : 3} />
         <title>{day.stat_date + '：' + day.call_count + ' 次，' + day.total_cost + ' 积分'}</title>
       </g>)}
     </svg></div>
