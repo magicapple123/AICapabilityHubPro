@@ -85,6 +85,11 @@ class BillingService:
             call_status=payload.status.value,
             duration_ms=payload.duration_ms,
             model_name=payload.model,
+            billing_mode=payload.billing_mode,
+            prompt_tokens=payload.prompt_tokens,
+            completion_tokens=payload.completion_tokens,
+            token_source=payload.token_source,
+            units=payload.units,
         )
         try:
             # 先占住幂等键：并发同 requestId 时，后到者会在此处阻塞并最终冲突。
@@ -285,6 +290,11 @@ class BillingService:
             and existing.model_name == payload.model
             and existing.duration_ms == payload.duration_ms
             and existing.call_status == payload.status.value
+            # C1/C2：同一次调用的 token 明细与计价模式必须一致，否则视为复用幂等键。
+            and existing.billing_mode == payload.billing_mode
+            and existing.prompt_tokens == payload.prompt_tokens
+            and existing.completion_tokens == payload.completion_tokens
+            and existing.units == payload.units
         )
 
     def _result(
@@ -316,6 +326,11 @@ class BillingService:
             stat_date=stat_date,
             call_count=usage.call_count if usage is not None else 0,
             total_cost=usage.total_cost if usage is not None else 0,
+            billing_mode=record.billing_mode,
+            prompt_tokens=record.prompt_tokens,
+            completion_tokens=record.completion_tokens,
+            token_source=record.token_source,
+            units=record.units,
         )
 
     @staticmethod

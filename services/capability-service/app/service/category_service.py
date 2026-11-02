@@ -7,11 +7,21 @@
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from app.core.audit_context import current_audit_actor
 from app.core.exceptions import BizException
 from app.models import CapabilityCategory
 from app.repository import CapabilityRepository, CategoryRepository
 from app.repository import capability_repository, category_repository
 from app.schemas import CategoryCreateRequest, CategoryUpdateRequest
+from app.service.audit_service import (
+    ACTION_CREATE,
+    ACTION_DELETE,
+    ACTION_UPDATE,
+    CATEGORY_AUDIT_FIELDS,
+    RESOURCE_CATEGORY,
+    build_entry,
+    snapshot,
+)
 
 
 class CategoryService:
@@ -42,15 +52,21 @@ class CategoryService:
         if self.categories.exists_code(db, payload.code):
             raise BizException(2004, "分类编码已存在")
 
-        created = self.categories.create(
-            db,
-            CapabilityCategory(
-                name=payload.name,
-                code=payload.code,
-                sort=payload.sort,
-                status=payload.status.value,
-            ),
+        entity = CapabilityCategory(
+            name=payload.name,
+            code=payload.code,
+            sort=payload.sort,
+            status=payload.status.value,
         )
+        audit = build_entry(
+            actor=current_audit_actor(),
+            resource_type=RESOURCE_CATEGORY,
+            resource_id="",
+            action=ACTION_CREATE,
+            before=None,
+            after=snapshot(entity, CATEGORY_AUDIT_FIELDS),
+        )
+        created = self.categories.create(db, entity, audit=audit)
         logger.info("分类已创建 category_id={} code={}", created.id, created.code)
         return created
 
@@ -72,7 +88,17 @@ class CategoryService:
         if "status" in values:
             values["status"] = values["status"].value
 
-        return self.categories.update_fields(db, category, values)
+        before = snapshot(category, CATEGORY_AUDIT_FIELDS)
+        after = {**before, **{k: v for k, v in values.items() if k in CATEGORY_AUDIT_FIELDS}}
+        audit = build_entry(
+            actor=current_audit_actor(),
+            resource_type=RESOURCE_CATEGORY,
+            resource_id=category_id,
+            action=ACTION_UPDATE,
+            before=before,
+            after=after,
+        )
+        return self.categories.update_fields(db, category, values, audit=audit)
 
     def delete_category(self, db: Session, category_id: int) -> None:
         category = self.require_category(db, category_id)
@@ -80,7 +106,15 @@ class CategoryService:
         if self.capabilities.count_by_category(db, category_id) > 0:
             raise BizException(2005, "分类下仍有能力，不可删除")
 
-        self.categories.soft_delete(db, category)
+        audit = build_entry(
+            actor=current_audit_actor(),
+            resource_type=RESOURCE_CATEGORY,
+            resource_id=category_id,
+            action=ACTION_DELETE,
+            before=snapshot(category, CATEGORY_AUDIT_FIELDS),
+            after={"is_deleted": 1},
+        )
+        self.categories.soft_delete(db, category, audit=audit)
         logger.info("分类已软删除 category_id={}", category_id)
 
     def require_category(self, db: Session, category_id: int) -> CapabilityCategory:

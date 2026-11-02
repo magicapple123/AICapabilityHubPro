@@ -100,3 +100,20 @@
 }
 .request-id code { font-size: 11px; overflow-wrap: anywhere; color: var(--ink-2); }
 .request-id .copy-button { margin-left: auto; }
+
+/* ---------- 操作审计 ---------- */
+.audit-diff { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; white-space: normal; }
+.audit-diff li { display: flex; align-items: baseline; gap: 6px; font-size: 10.5px; color: var(--ink-3); }
+.audit-diff code { font-size: 10px; color: var(--ink-2); background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+.audit-diff strong { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.audit-diff span { overflow-wrap: anywhere; max-width: 220px; }
+.inline-form { display: flex; align-items: center; gap: 8px; }
+.inline-form select { height: 30px; padding: 0 8px; font-size: 11px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-input); }
+
+.switch-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-2); cursor: pointer; }
+.switch-inline input { accent-color: var(--accent, #2563eb); }
+.text-button { background: none; border: 0; padding: 0; color: var(--accent, #2563eb); font-size: 11px; cursor: pointer; }
+.text-button:hover { text-decoration: underline; }
+.admin-actions { display: flex; gap: 10px; }
+.inline-form input { height: 30px; padding: 0 8px; font-size: 11px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-input); }

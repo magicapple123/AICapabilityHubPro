@@ -7,7 +7,20 @@ OpenAI 兼容路由单独挂在 `/v1`，与平台自有接口互不影响。
 
 from app.api.v1.chat import router as chat_router
 from app.api.v1.openai_compat import router as openai_router
+from app.api.v1.internal_catalog import router as internal_catalog_router
+from app.api.v1.internal_provider import router as internal_provider_router
 from app.api.v1.ping import router as ping_router
+from app.api.v1.provider import router as provider_router
+from app.api.v1.responses import router as responses_router
 from app.api.v1.sessions import router as sessions_router
 
-__all__ = ["chat_router", "openai_router", "ping_router", "sessions_router"]
+__all__ = [
+    "chat_router",
+    "internal_catalog_router",
+    "internal_provider_router",
+    "openai_router",
+    "ping_router",
+    "provider_router",
+    "responses_router",
+    "sessions_router",
+]

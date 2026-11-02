@@ -4,6 +4,7 @@
 避免 `/{capability_id}` 抢占 `/manage`、`/market` 等固定路径。
 """
 
+from app.api.v1.audit import router as audit_router
 from app.api.v1.capabilities import router as capabilities_router
 from app.api.v1.categories import router as categories_router
 from app.api.v1.internal import router as internal_router
@@ -12,6 +13,7 @@ from app.api.v1.market import router as market_router
 from app.api.v1.ping import router as ping_router
 
 __all__ = [
+    "audit_router",
     "capabilities_router",
     "categories_router",
     "internal_router",

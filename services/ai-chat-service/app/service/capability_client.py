@@ -9,10 +9,21 @@ from app.core.logging import get_request_id
 from app.core.nacos_client import nacos_register
 from app.core.service_call import call_internal
 from app.schemas.capability import CapabilityDefinition
+from app.service.catalog_cache import catalog_cache
 
 
 class CapabilityClient:
     async def fetch(self, capability_id: int) -> CapabilityDefinition:
+        """A3：先查 5 秒缓存；未命中再取快照。失效通知由 capability 写操作触发。"""
+
+        cached = catalog_cache.get(capability_id)
+        if cached is not None:
+            return cached
+        definition = await self._fetch_uncached(capability_id)
+        catalog_cache.put(capability_id, definition)
+        return definition
+
+    async def _fetch_uncached(self, capability_id: int) -> CapabilityDefinition:
         mode = capability_settings.capability_catalog_mode
         try:
             if mode == "internal":

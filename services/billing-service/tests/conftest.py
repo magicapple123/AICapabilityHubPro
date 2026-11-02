@@ -182,21 +182,26 @@ class QaBilling:
         user_id: int | None = None,
         capability_id: int = 0,
         duration_ms: int = 0,
+        **extra: object,
     ) -> dict:
         rid = request_id or self.next_request_id()
+        body = {
+            "request_id": rid,
+            "user_id": user_id or self.user_id,
+            "service_name": service_name,
+            "model": model,
+            "points": points,
+            "status": status,
+            "capability_id": capability_id,
+            "duration_ms": duration_ms,
+        }
+        # C1/C2 扩展字段（billing_mode / token 明细 / 单价副本）通过 **extra 透传，
+        # 旧用例不传时行为与改造前完全一致。
+        body.update(extra)
         return self.client.post(
             "/internal/billing/record",
             headers=self.headers(rid),
-            json={
-                "request_id": rid,
-                "user_id": user_id or self.user_id,
-                "service_name": service_name,
-                "model": model,
-                "points": points,
-                "status": status,
-                "capability_id": capability_id,
-                "duration_ms": duration_ms,
-            },
+            json=body,
         ).json()
 
     # ---------------- 对外查询 ----------------

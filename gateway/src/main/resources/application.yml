@@ -89,6 +89,8 @@ security:
   jwt:
     # 本地启动前设置 JWT_SECRET，且 UTF-8 编码后至少 32 字节。
     secret: ${JWT_SECRET}
+    # F2：轮换期设置旧密钥，验签时新旧并行；切换完成后置空即可下线旧 key。
+    previous-secret: ${JWT_SECRET_PREVIOUS:}
     issuer: ${JWT_ISSUER:ai-capability-hub}
     ttl: ${JWT_TTL:PT24H}
 

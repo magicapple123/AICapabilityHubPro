@@ -89,6 +89,15 @@ def test_internal_detail_returns_contract_fields(qa: QaCatalog) -> None:
         "status",
         "param_schema",
         "price_per_call",
+        # C2：AI 执行链据此决定预检门槛与结算金额。
+        "billing_mode",
+        "price_per_1k_input",
+        "price_per_1k_output",
+        "price_per_unit",
+        "unit",
+        "executor",
+        "provider_alias",
+        "max_output_tokens",
     }
 
 
@@ -294,6 +303,15 @@ def test_market_detail_hides_internal_configuration(qa: QaCatalog) -> None:
         "category_name",
         "description",
         "price_per_call",
+        # C2：市场侧只需知道"按次/按 token/按张"与计价明细。
+        "billing_mode",
+        "unit",
+        "price_per_1k_input",
+        "price_per_1k_output",
+        "price_per_unit",
+        "executor",
+        "provider_alias",
+        "max_output_tokens",
         "update_time",
         "param_schema",
     }

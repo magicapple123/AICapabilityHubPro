@@ -75,6 +75,7 @@ class ChatRepository:
         content: str,
         call_status: str = CallStatus.SUCCESS.value,
         token_count: int = 0,
+        error_code: int | None = None,
     ) -> ChatMessage:
         message = ChatMessage(
             session_id=session_id,
@@ -83,6 +84,7 @@ class ChatRepository:
             content=content,
             call_status=call_status,
             token_count=token_count,
+            error_code=error_code,
         )
         db.add(message)
         db.flush()

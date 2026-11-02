@@ -7,7 +7,7 @@ repository 可以让 service 层不直接接触 SQLAlchemy 的会话细节。
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import CapabilityCategory
+from app.models import CapabilityCategory, OperationLog
 
 
 class CategoryRepository:
@@ -85,28 +85,50 @@ class CategoryRepository:
             conditions.append(CapabilityCategory.id != exclude_id)
         return bool(db.scalar(select(func.count(CapabilityCategory.id)).where(*conditions)))
 
-    def create(self, db: Session, category: CapabilityCategory) -> CapabilityCategory:
+    def create(
+        self, db: Session, category: CapabilityCategory, *, audit: OperationLog | None = None
+    ) -> CapabilityCategory:
         db.add(category)
+        db.flush()
+        self._attach_audit(db, audit, category.id)
         db.commit()
         db.refresh(category)
         return category
 
     def update_fields(
-        self, db: Session, category: CapabilityCategory, values: dict[str, object]
+        self,
+        db: Session,
+        category: CapabilityCategory,
+        values: dict[str, object],
+        *,
+        audit: OperationLog | None = None,
     ) -> CapabilityCategory:
         """按字段名更新；values 应为 model_dump(exclude_unset=True) 的结果。"""
 
         for field, value in values.items():
             setattr(category, field, value)
+        self._attach_audit(db, audit, category.id)
         db.commit()
         db.refresh(category)
         return category
 
-    def soft_delete(self, db: Session, category: CapabilityCategory) -> None:
+    def soft_delete(
+        self, db: Session, category: CapabilityCategory, *, audit: OperationLog | None = None
+    ) -> None:
         """软删除；唯一索引按 (列, is_deleted) 组合，因此这里只置标记位。"""
 
         category.is_deleted = 1
+        self._attach_audit(db, audit, category.id)
         db.commit()
+
+    @staticmethod
+    def _attach_audit(
+        db: Session, audit: OperationLog | None, resource_id: int
+    ) -> None:
+        if audit is None:
+            return
+        audit.resource_id = str(resource_id)
+        db.add(audit)
 
 
 category_repository = CategoryRepository()

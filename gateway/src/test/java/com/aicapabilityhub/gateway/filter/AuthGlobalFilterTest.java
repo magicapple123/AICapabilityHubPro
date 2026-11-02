@@ -31,7 +31,7 @@ class AuthGlobalFilterTest {
 
     @BeforeEach
     void setUp() {
-        jwtService = new JwtService(new JwtProperties(SECRET, "ai-capability-hub", Duration.ofHours(1)));
+        jwtService = new JwtService(new JwtProperties(SECRET, null, "ai-capability-hub", Duration.ofHours(1)));
         filter = new AuthGlobalFilter(jwtService, objectMapper);
     }
 

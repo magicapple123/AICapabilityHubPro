@@ -3,7 +3,7 @@ from datetime import datetime
 from loguru import logger
 from sqlalchemy.orm import Session
 from app.core.config import settings
-from app.core.constants import DEFAULT_SESSION_TITLE, SESSION_TITLE_MAX_LENGTH, MessageRole
+from app.core.constants import DEFAULT_SESSION_TITLE, FAILED_REPLY, SESSION_TITLE_MAX_LENGTH, CallStatus, MessageRole
 from app.core.exceptions import BizException
 from app.models.chat import ChatMessage, ChatSession
 from app.repository.chat_repository import chat_repository
@@ -79,7 +79,8 @@ class ConversationStore:
             user_id=user_id,
             role=MessageRole.USER.value,
             content=last_user_content,
-            token_count=len(last_user_content),
+            # 用户消息的 token 数要等上游 usage 才知道准确值；这里不猜，避免与助手消息口径不一致。
+            token_count=0,
         )
 
     def _persist_assistant_message(
@@ -98,10 +99,37 @@ class ConversationStore:
             role=MessageRole.ASSISTANT.value,
             content=reply.content,
             call_status=reply.call_status,
-            token_count=reply.token_count,
+            token_count=reply.total_tokens,
+            error_code=reply.error_code,
         )
         # 刷新会话活跃时间；新建会话时标题已在 _prepare_session 中确定。
         chat_repository.touch_session(db, session, now=datetime.now())
         if is_new_session:
             logger.info("新建会话 session_id={} user_id={}", session.id, user_id)
+        return message
+
+    def _persist_failed_message(
+        self,
+        db: Session,
+        session: ChatSession,
+        user_id: str,
+        error_code: int,
+    ) -> ChatMessage:
+        """A1：模型/计费失败时写一条占位消息，明确标记 `failed` 与错误码。
+
+        用户消息已在前一个事务提交，若这里什么都不写，历史里会留下"只有提问"的
+        缺口，且无法区分"用户没发"与"调用失败"。
+        """
+
+        message = chat_repository.add_message(
+            db,
+            session_id=session.id,
+            user_id=user_id,
+            role=MessageRole.ASSISTANT.value,
+            content=FAILED_REPLY,
+            call_status=CallStatus.FAILED.value,
+            token_count=0,
+            error_code=error_code,
+        )
+        chat_repository.touch_session(db, session, now=datetime.now())
         return message

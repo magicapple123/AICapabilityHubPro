@@ -78,3 +78,60 @@ Gateway 已提供匿名 POST、10 次/直接地址/分钟和 no-store。user 已
 每服务本地事务不是分布式原子提交。远端扣分/账单成功但 AI 最终提交失败需按 requestId 对账，不盲目重试模型。增量迁移保留旧数据，历史未知单价不可伪造；SQL seed 仅供新环境/明确的隔离示例库。
 
 各接口分别留正常/拒绝/故障与字段一致性测试；严格 internal E2E 必须实际通过并标记 member_internal_contract_verified=true。main `651275b` 的CI `39420321602` 已通过9/9、四服务369项零跳过、market/internal完整真实链和浏览器。另有真实管理员撤权/禁用/故障及Key兑换/计量证据。本次新增Settings/管理员Console浏览器覆盖与限制见[非部署收尾记录](../验收收尾记录-2026-10-20.md)，后续以对应提交自己的CI为准。
+
+
+## 8. 本轮增量：readiness、指标与对账（批 2）
+
+### 8.1 `GET /health/ready`（四个服务一致）
+
+- **每次真查** `SELECT 1`，不缓存状态：停 MySQL 后立即 503，恢复后自动 200。
+- 成功：HTTP 200
+
+```json
+{"code": 0, "message": "success", "data": {"status": "READY", "service": "capability-service", "checks": {"db": "up"}}, "requestId": "..."}
+```
+
+- 失败：HTTP 503
+
+```json
+{"code": 4003, "message": "服务未就绪", "data": {"status": "NOT_READY", "service": "capability-service", "reason": "DB_UNAVAILABLE", "checks": {"db": "down"}}, "requestId": "..."}
+```
+
+- 原因码：`DB_UNAVAILABLE`（唯一硬依赖；上游模型是否可用属于指标范畴，不进 readiness）。
+- `/ping`、`/health` **保持不变**（契约兼容）。
+
+### 8.2 `GET /metrics`（Prometheus 文本格式）
+
+无需鉴权（与 `/health` 同层，由部署侧网络策略限制），指标清单：
+
+| 指标 | 类型 | label | 说明 |
+|---|---|---|---|
+| `http_requests_total` | Counter | `service, route, method, code` | `route` 用**路由模板**（如 `/api/billing/records`），避免高基数 |
+| `http_request_duration_seconds` | Histogram | `service, route` | p95 由此计算 |
+| `db_pool_checkout_wait_seconds` | Histogram | `service` | 取连接耗时（含新建连接） |
+| `db_pool_checked_out` | Gauge | `service` | 当前借出连接数 |
+| `db_up` | Gauge | `service` | readiness 探测结果 |
+| `model_call_duration_seconds` | Histogram | `service, model, outcome` | 模型调用耗时 |
+| `points_deduct_total` | Counter | `service, result` | 扣分成功/失败 |
+| `catalog_query_failures_total` | Counter | `service, reason` | 目录查询失败 |
+| `upstream_errors_total` | Counter | `service, provider, error_code` | 按 provider 的上游错误；**批 3 前 provider 固定为 `default`** |
+
+### 8.3 对账（B4）
+
+`scripts/reconcile_billing.py`，独立运维脚本（服务层禁止跨库）：
+
+```bash
+services/billing-service/.venv/Scripts/python.exe scripts/reconcile_billing.py   --billing-url "<billing_db url>" --user-url "<user_db url>" --days 7
+```
+
+- 三类差异：`billing_without_log` / `log_without_billing` / `request_id_mismatch`
+  （同用户同金额 5 分钟内成对但 requestId 不同）。
+- 只读：不写任何业务表；报告落 `artifacts/reconcile/`。
+- **幂等**：差异按 `kind:request_id` 记入 `artifacts/reconcile/state.json`，
+  只有首次出现算 `is_new=true`，连续跑两次第二次 `new=0`。
+- `cost=0` 的降级账单本来就不产生流水，不算差异。
+
+### 8.4 连接池容量口径（A2）
+
+`4 服务 × UVICORN_WORKERS × (DB_POOL_SIZE + DB_MAX_OVERFLOW) ≤ MySQL max_connections`。
+默认 5 + 10、worker 4 → 240 ≤ 300；本项目实例统一设 `max_connections=500`。

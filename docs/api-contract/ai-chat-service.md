@@ -126,3 +126,100 @@ prompt_tokens 当前按传入有效消息字符数估算，completion_tokens 沿
 - user角色/Key exchange、billing实时授权和capability接入已集成main并完成真实联调，见[共享契约](pro-shared.md)。用户确认授权不足使用1006，Key不存在保留同码，按端点及消息区分。
 - 市场入口固定 /chat?capability_id=<id>；Chat 与市场按钮已在10/20前端调整中接通。视觉等未支持能力不应显示可体验。
 - 内部服务就绪后运行严格 --catalog-mode internal --browser，必须实际取得 member_internal_contract_verified=true；目前 market 模式与内部失败关闭的通过不能代替它。
+
+
+## 9. 本轮增量：C1 token 用量 / C2 计价 / A1 事务边界
+
+### 9.1 响应新增字段
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `usage.prompt_tokens` | int | 上游 `usage.prompt_tokens`（Responses 为 `input_tokens`），**不再用字符数** |
+| `usage.completion_tokens` | int | 上游 `usage.completion_tokens`（Responses 为 `output_tokens`） |
+| `usage.total_tokens` | int | 两者之和，可与上游控制台逐项对上 |
+| `usage_source` | string | `upstream` / `mock` / `missing`，调用方可据此判断能否用于核算 |
+| `billing_mode` | string | 本次调用采用的计价模式 |
+
+旧字段（`price_per_call`、`cost`、`record_id`、`billing_status`、`call_status` 等）保持不变。
+
+### 9.2 token 缺失的失败关闭
+
+- `per_call` 能力：上游没有 usage 只影响 `usage` 展示，**金额不变**（仍按 `price_per_call`）。
+- `per_token` 能力：上游缺 usage 或 `usage_source != upstream`（含 Mock）时返回 **`5002`**，且**不产生账单**——不允许按 0 元记账，也不允许编造 token 数。
+- Mock 模式 `usage_source='mock'`，token 数为估算值（约 2 字符 1 token），仅用于开发与测试。
+
+### 9.3 事务边界（A1）
+
+执行链拆成三段：
+
+1. 目录读取 + 余额预检（不占数据库连接）；
+2. **事务 1**：建/取会话 + 写用户消息 → `commit`；
+3. 模型调用（**不持有数据库连接**）；
+4. **事务 2**：写助手消息 + 上报账单 → `commit`。
+
+失败语义：
+
+| 场景 | 落库结果 | 对外 |
+|---|---|---|
+| 模型降级 | 助手消息 `call_status=degraded`，`cost=0` | `code=0` + 兜底话术 |
+| 模型硬异常 | 用户消息保留 + 一条 `failed` 占位消息（`error_code=4003`） | `4003` |
+| 账单失败 | 用户消息保留 + 一条 `failed` 占位消息（`error_code` 为账单错误码） | 对应错误码 |
+
+`t_chat_message.error_code` 为本轮新增列（`sql/02_add_message_error_code.sql`），仅失败占位消息写入。
+
+
+## 10. 本轮增量：D1 供应商 / D2 执行器 / D4 参数与容错
+
+### 10.1 供应商管理（`/api/chat/providers`，仅管理员）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/chat/providers` | 列表，**只返回 `api_key_mask`**，永不返回明文/密文 |
+| POST | `/api/chat/providers` | 登记；**固定为草稿态**，别名重复 `2006`，地址不安全 `2001` |
+| PUT | `/api/chat/providers/{id}` | 编辑；`api_key` 为空表示不轮换，换密钥会退回草稿并清空测通时间 |
+| POST | `/api/chat/providers/{id}/test` | 连通性测试，返回 `{ok, reason, http_status, elapsed_ms}` |
+| PUT | `/api/chat/providers/{id}/status` | `draft`/`enabled`/`disabled`；**未测通直接启用返回 `2001`** |
+
+`t_model_provider`（`ai_chat_db`）：`name / alias / protocol / base_url / api_key_cipher /
+api_key_mask / default_model / timeout_ms / extra_json / status / last_test_ok_at`。
+`api_key_cipher` 为 `v1:<nonce_b64>:<cipher_b64>`（AES-256-GCM），主密钥 `PROVIDER_MASTER_KEY_V1`
+（base64 32 字节）**只在 ai-chat 内存**，缺失时失败关闭。
+
+地址防护（保存与每次调用前都校验）：只允许 https；域名必须在 `PROVIDER_ALLOWED_HOSTS`
+（逗号分隔，支持 `*.example.com`，为空则全拒）；解析后拒绝 `10/8`、`172.16/12`、`192.168/16`、
+`127/8`、`169.254/16`、`0.0.0.0/8`、`100.64/10`、`::1`、`fc00::/7`、`fe80::/10`；不跟随重定向。
+
+> 已知限制：校验与建连之间仍有极短 TOCTOU 窗口；完全消除需要把连接钉在已校验 IP 上
+> （自定义 SNI + 证书校验），本轮未做，已列入后续建议。
+
+内部详情 `GET /internal/provider/{alias}` 只返回 `{alias, protocol, status, default_model}`，
+供 capability 在保存阶段做执行器绑定校验。
+
+### 10.2 执行器（D2）
+
+- 能力表 `executor` 取值：`chat` / `summary` / `image-generate` / `embedding`；
+  本服务已实现 `chat`、`summary` 两个（`image-generate` 在 D3 落地）。
+- `GET /api/chat/executors` 新增 `executors` 与 `executor_protocols`；`codes` 保留给旧前端。
+- 判断"暂无执行器"以 `executor ∈ EXECUTORS` 为准，不再看 `code`；`code` 为空执行器时
+  保留 `chat-completions → chat`、`long-summary → summary` 的历史兜底。
+
+### 10.3 参数白名单（D4）
+
+`ChatInput` 仍为 `extra="forbid"`，只新增这 8 个可选字段：
+`top_p`、`stop`、`seed`、`response_format`、`presence_penalty`、`frequency_penalty`、
+`logprobs`、`max_tokens`。未列入白名单的字段照旧 `2001`。
+
+`max_tokens` 实际下发 `min(请求值, 能力.max_output_tokens)`；能力未配置时用全局默认。
+
+### 10.4 错误码细分与重试（D4）
+
+| 上游情况 | 错误码 |
+|---|---|
+| 429 | `5003` 上游限流 |
+| 401 / 402 / 403 | `5004` 上游鉴权或欠费 |
+| 5xx | `5005` 上游故障 |
+| 超时 | `5001` |
+| 响应结构不符 | `5002` |
+
+**只对超时与 5xx 重试一次**（退避 300ms），4xx 不重试。重试发生在计费之前，
+一次调用**只产生一条账单、一次扣分**，仍挂同一 `requestId`。

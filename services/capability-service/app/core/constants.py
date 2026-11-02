@@ -24,3 +24,30 @@ class CapabilityStatus(str, Enum):
     DRAFT = "draft"
     ONLINE = "online"
     OFFLINE = "offline"
+
+
+class BillingMode(str, Enum):
+    """计价模式（C2）；与 billing-service / ai-chat-service 同名同值。"""
+
+    PER_CALL = "per_call"
+    PER_TOKEN = "per_token"
+    PER_UNIT = "per_unit"
+
+
+class Executor(str, Enum):
+    """执行器类型（D2）；与 ai-chat-service 的 EXECUTORS 键同名。"""
+
+    CHAT = "chat"
+    SUMMARY = "summary"
+    IMAGE_GENERATE = "image-generate"
+    EMBEDDING = "embedding"
+
+
+# 执行器 → 允许绑定的供应商协议（保存阶段就拒绝错配）。
+EXECUTOR_PROTOCOLS = {
+    Executor.CHAT.value: {"openai-chat"},
+    Executor.SUMMARY.value: {"openai-chat"},
+    Executor.IMAGE_GENERATE.value: {"openai-image", "dashscope-image"},
+    Executor.EMBEDDING.value: {"openai-embedding"},
+    "custom-http": {"custom-http"},
+}

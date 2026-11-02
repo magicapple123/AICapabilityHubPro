@@ -31,6 +31,10 @@ class User(Base):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=UserStatus.NORMAL.value
     )
+    # C3：日积分上限，0 表示不限。与余额独立：余额管"总量"，上限管"每天烧多少"。
+    daily_points_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     create_time: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )

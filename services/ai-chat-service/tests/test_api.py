@@ -213,12 +213,12 @@ def test_degraded_model_reply_is_reported_without_charge(client, monkeypatch) ->
     """真实模型超时：返回 5xxx 降级话术，计费上报 points=0 但仍留流水。"""
 
     class _DegradedModelClient:
-        async def complete(self, messages, *, model, temperature, runtime):
+        async def complete(self, messages, *, model, temperature, runtime, **kwargs):
             return ModelReply(
                 content=DEGRADED_REPLY,
                 call_status=CallStatus.DEGRADED.value,
-                token_count=len(DEGRADED_REPLY),
                 model_name=model,
+                usage_source="missing",
                 error_code=int(ModelErrorCode.TIMEOUT),
             )
 

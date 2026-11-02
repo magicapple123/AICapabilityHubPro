@@ -88,6 +88,16 @@ export interface CapabilityManageItem {
   path: string
   param_schema: Record<string, unknown> | null
   price_per_call: number
+  // 服务端新增字段（C2/D2/D4/E4）；旧后端不返回时按缺省渲染。
+  billing_mode?: 'per_call' | 'per_token' | 'per_unit'
+  price_per_1k_input?: number
+  price_per_1k_output?: number
+  price_per_unit?: number
+  unit?: string
+  executor?: string
+  provider_alias?: string
+  max_output_tokens?: number
+  exposed_to_market?: boolean
   status: CapabilityStatus
   description: string
   create_time: string
@@ -129,6 +139,16 @@ export interface CapabilityUpdatePayload {
   path?: string
   param_schema?: Record<string, unknown> | null
   price_per_call?: number
+  // C2 / D2 / D4 / E4：计价模式、执行器、输出上限与市场展示开关
+  billing_mode?: 'per_call' | 'per_token' | 'per_unit'
+  price_per_1k_input?: number
+  price_per_1k_output?: number
+  price_per_unit?: number
+  unit?: string
+  executor?: string
+  provider_alias?: string
+  max_output_tokens?: number
+  exposed_to_market?: boolean
   description?: string
 }
 

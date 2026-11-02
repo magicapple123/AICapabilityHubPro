@@ -31,6 +31,16 @@ class _FakeChatService:
             "cost": 5,
         }
 
+    async def stream(self, db, request, user):
+        """E1 后兼容层走真流式：替身按上游 SSE 的样子逐块产出。"""
+
+        self.calls.append({"capability_id": request.capability_id, "input": request.input,
+                           "user_id": user.user_id, "stream": True})
+        yield 'data: {"model":"deepseek-flash","choices":[{"delta":{"content":"你"}}]}'
+        yield 'data: {"model":"deepseek-flash","choices":[{"delta":{"content":"好"}}]}'
+        yield ('data: {"model":"deepseek-flash","choices":[],'
+               '"usage":{"prompt_tokens":3,"completion_tokens":6,"total_tokens":9}}')
+
 
 @pytest.fixture()
 def compat(monkeypatch):
@@ -102,8 +112,10 @@ def test_empty_messages_rejected(compat) -> None:
     assert response.json()["error"]["code"] == "platform_2001"
 
 
-def test_stream_returns_single_sse_chunk_and_done(compat) -> None:
-    _, client = compat
+def test_stream_returns_incremental_chunks_and_usage(compat) -> None:
+    """E1：不再是"一次性一个 chunk"，而是逐块转发并附带上游 usage。"""
+
+    fake, client = compat
     response = client.post("/v1/chat/completions", headers=HEADERS, json={
         "model": "deepseek-flash", "stream": True,
         "messages": [{"role": "user", "content": "你好"}],
@@ -113,6 +125,11 @@ def test_stream_returns_single_sse_chunk_and_done(compat) -> None:
     text = response.text
     assert '"object": "chat.completion.chunk"' in text
     assert "data: [DONE]" in text
+    # 两个内容块分别出现，证明是增量而不是一次性整段
+    assert '"content": "你"' in text and '"content": "好"' in text
+    # usage 只在最后一块出现，且数值来自上游
+    assert '"total_tokens": 9' in text
+    assert fake.calls[-1].get("stream") is True
 
 
 def test_models_endpoint_lists_mapped_aliases(compat) -> None:

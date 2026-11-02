@@ -8,6 +8,7 @@ import javax.crypto.SecretKey;
 
 import com.aicapabilityhub.gateway.config.JwtProperties;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
@@ -18,12 +19,20 @@ public class JwtService {
 
     private static final int MIN_SECRET_BYTES = 32;
 
+    /* F2：当前密钥的 keyId，签发时写进 JWT header，便于轮换期定位。 */
+    static final String CURRENT_KEY_ID = "v1";
+
     private final JwtProperties properties;
     private final SecretKey key;
+    /* F2：轮换期并行接受的上一把密钥；未配置时为 null。 */
+    private final SecretKey previousKey;
 
     public JwtService(JwtProperties properties) {
         this.properties = properties;
         this.key = createKey(properties.secret());
+        this.previousKey = StringUtils.hasText(properties.previousSecret())
+                ? createKey(properties.previousSecret())
+                : null;
         if (!StringUtils.hasText(properties.issuer())) {
             throw new IllegalStateException("JWT_ISSUER 不能为空");
         }
@@ -33,12 +42,14 @@ public class JwtService {
     }
 
     public JwtIdentity parse(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(key)
-                .requireIssuer(properties.issuer())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        Claims claims = parseWith(token, key);
+        if (claims == null && previousKey != null) {
+            /* 轮换期：旧 key 签发的 Token 在 TTL 内仍可用，过期后自然淘汰。 */
+            claims = parseWith(token, previousKey);
+        }
+        if (claims == null) {
+            throw new IllegalArgumentException("JWT 签名校验失败");
+        }
 
         String userId = claims.getSubject();
         String userName = firstTextClaim(claims, "username", "user_name", "userName");
@@ -56,6 +67,19 @@ public class JwtService {
         return new JwtIdentity(userId, userName, role);
     }
 
+    private Claims parseWith(String token, SecretKey signingKey) {
+        try {
+            return Jwts.parser()
+                    .verifyWith(signingKey)
+                    .requireIssuer(properties.issuer())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+        } catch (JwtException | IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
     public String createDevToken(String userId, String userName) {
         if (!StringUtils.hasText(userId) || !StringUtils.hasText(userName)) {
             throw new IllegalArgumentException("测试用户 ID 和用户名不能为空");
@@ -67,6 +91,7 @@ public class JwtService {
                 .claim("username", userName)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(properties.ttl())))
+                .header().keyId(CURRENT_KEY_ID).and()
                 .signWith(key)
                 .compact();
     }

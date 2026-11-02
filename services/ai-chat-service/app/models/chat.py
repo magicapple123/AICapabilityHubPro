@@ -51,8 +51,11 @@ class ChatMessage(Base):
     call_status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=CallStatus.SUCCESS.value
     )
-    # token 数：真实模型取 usage.total_tokens，Mock / 降级按字符数估算。
+    # token 数：上游 usage 的 total（prompt + completion）；Mock 模式为估算值，
+    # 是否上游真值由响应里的 usage_source 标明（C1）。
     token_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 失败标记：仅 call_status=failed 的占位消息写入，便于审计失败原因（A1）。
+    error_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     create_time: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )

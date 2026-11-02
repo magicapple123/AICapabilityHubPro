@@ -8,7 +8,9 @@
 `X-User-Id`（身份）与 `X-Request-Id`（幂等键，与 body 中的 request_id 一致）。
 """
 
-from fastapi import APIRouter, Depends
+from datetime import date, timedelta
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import internal_caller
@@ -36,3 +38,26 @@ async def record_call(
 
     data = await billing_service.record(db, payload, caller.user_id)
     return Result.ok(data.model_dump(), request_id=caller.request_id or get_request_id())
+
+
+@router.get("/users/{user_id}/usage", response_model=Result)
+async def user_usage(
+    user_id: int,
+    days: int = Query(default=30, ge=1, le=366),
+    caller: UserContext = Depends(internal_caller),
+    db: Session = Depends(get_db),
+) -> Result:
+    """供运营后台查看**指定用户**的用量（F1）。
+
+    与个人用量同一个统计口径（`personal_usage`），只是把 user_id 换成目标用户。
+    只允许内部链路调用：网关对外 `/internal/**` 一律 403。
+    """
+
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days - 1)
+    data = billing_service.personal_usage(
+        db, user_id, start_date=start_date, end_date=end_date
+    )
+    return Result.ok(
+        data.model_dump(mode="json"), request_id=caller.request_id or get_request_id()
+    )

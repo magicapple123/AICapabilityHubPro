@@ -30,6 +30,17 @@ class Settings(BaseSettings):
     nacos_config_timeout: float = Field(default=5.0, gt=0)
 
     db_url: str = "mysql+pymysql://root:root@127.0.0.1:3306/capability_db?charset=utf8mb4"
+    # A2 连接池参数化：容量公式 4 服务 × UVICORN_WORKERS × (pool+overflow)，
+    # 生产 4 worker 时为 4×4×15=240，故 MySQL max_connections 必须 ≥300。
+    # D2：保存阶段向 ai-chat 校验 provider 绑定
+    ai_chat_service_name: str = "ai-chat-service"
+    # A3：目录缓存失效通知开关；本地/单测关闭后不发起跨服务调用
+    enable_internal_chain: bool = True
+    db_pool_size: int = Field(default=5, ge=1, le=100)
+    db_max_overflow: int = Field(default=10, ge=0, le=100)
+    db_pool_timeout: int = Field(default=30, ge=1, le=300)
+    db_pool_recycle: int = Field(default=1800, ge=-1)
+    uvicorn_workers: int = Field(default=1, ge=1, le=16)
     internal_call_timeout: float = Field(default=10.0, gt=0)
 
     # 运营权限由 user-service 实时判定；本服务不跨库读取角色。

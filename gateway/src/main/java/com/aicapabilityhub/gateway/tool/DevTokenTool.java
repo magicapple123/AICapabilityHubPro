@@ -24,7 +24,7 @@ public final class DevTokenTool {
         String issuer = environmentOrDefault("JWT_ISSUER", DEFAULT_ISSUER);
         Duration ttl = Duration.parse(environmentOrDefault("JWT_TTL", DEFAULT_TTL));
 
-        JwtService jwtService = new JwtService(new JwtProperties(secret, issuer, ttl));
+        JwtService jwtService = new JwtService(new JwtProperties(secret, null, issuer, ttl));
         String token = jwtService.createDevToken(userId, userName);
         JwtIdentity verified = jwtService.parse(token);
 

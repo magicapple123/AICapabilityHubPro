@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.db.session import engine
 from app.main import app
 from app.schemas.common import PAGE_SIZE_MAX
@@ -59,6 +60,12 @@ def _purge_test_rows() -> None:
     if not DB_READY:
         return
     with engine.begin() as connection:
+        # 审计行按 request_id 前缀清理：测试统一用 qa-test* 作为 X-Request-Id，
+        # 不用 operator_id 判定，避免误删真实管理员（id=1）的历史记录。
+        connection.execute(
+            text("DELETE FROM t_operation_log WHERE request_id LIKE :prefix"),
+            {"prefix": "qa-%"},
+        )
         connection.execute(
             text("DELETE FROM t_capability WHERE code LIKE :prefix"),
             {"prefix": f"{TEST_PREFIX}%"},
@@ -243,6 +250,8 @@ def qa(api: TestClient, monkeypatch: pytest.MonkeyPatch) -> Generator[QaCatalog,
         return None
 
     monkeypatch.setattr(authorization_service, "require_admin", allow_admin)
+    # A3：单测不发起跨服务失效通知，避免每次写操作等一次服务发现超时
+    monkeypatch.setattr(settings, "enable_internal_chain", False)
     _purge_test_rows()  # 清理上次异常退出可能残留的数据
     try:
         yield QaCatalog(api)

@@ -37,6 +37,11 @@
 | `service_name` | VARCHAR(64) | NOT NULL DEFAULT '' | 承载调用的服务名，如 `ai-chat-service` |
 | `unit_price` | BIGINT | NULL | 登记单价；历史未知为 NULL，不从 cost 推断 |
 | `cost` | BIGINT | NOT NULL DEFAULT 0 | 本次消耗积分（整数） |
+| `billing_mode` | VARCHAR(16) | NOT NULL DEFAULT 'per_call' | C2：`per_call` / `per_token` / `per_unit` |
+| `prompt_tokens` | INT | NOT NULL DEFAULT 0 | C1：输入 token，取自上游 `usage.prompt_tokens`（Responses 为 `input_tokens`）；旧行为 0 |
+| `completion_tokens` | INT | NOT NULL DEFAULT 0 | C1：输出 token，取自上游 `usage.completion_tokens`（Responses 为 `output_tokens`）；旧行为 0 |
+| `token_source` | VARCHAR(16) | NOT NULL DEFAULT 'unknown' | C1：`upstream`（上游真值）/`mock`（本地模拟）/`missing`（上游未给）/`unknown`（历史未记录） |
+| `units` | INT | NOT NULL DEFAULT 1 | C2：按件计费的数量（张/次），其余模式为 1 |
 | `call_status` | VARCHAR(16) | NOT NULL DEFAULT 'success' | `success` / `degraded` / `failed`（Pro统一调用状态） |
 | `duration_ms` | INT | NOT NULL DEFAULT 0 | 调用耗时，缺省 0 |
 | `model_name` | VARCHAR(128) | NOT NULL DEFAULT '' | 模型名；Mock 模式为请求中的 `model` |
@@ -81,9 +86,43 @@
   "status": "success",
   "capability_id": 1,
   "duration_ms": 12,
-  "remark": ""
+  "remark": "",
+  "billing_mode": "per_call",
+  "prompt_tokens": 0,
+  "completion_tokens": 0,
+  "token_source": "unknown",
+  "units": 1
 }
 ```
+
+C1/C2 新增字段全部有默认值，**旧调用方只发原有字段时行为与改造前完全一致**（`billing_mode` 缺省 `per_call`）。按 token 计费时还应带上单价副本，供 billing 侧独立复算：
+
+```json
+{
+  "request_id": "b3f1...c2",
+  "user_id": 1,
+  "service_name": "ai-chat-service",
+  "model": "deepseek-flash",
+  "billing_mode": "per_token",
+  "prompt_tokens": 3000,
+  "completion_tokens": 1050,
+  "token_source": "upstream",
+  "price_per_1k_input": 1,
+  "price_per_1k_output": 1,
+  "unit_price": null,
+  "points": 5,
+  "status": "success",
+  "capability_id": 3
+}
+```
+
+**金额校验规则（按模式）**：
+
+| 模式 | 入口校验 | 说明 |
+|---|---|---|
+| `per_call` | `points == unit_price`（成功）/ `points == 0`（非成功）；不带 `unit_price` 时不校验 | 与改造前完全一致 |
+| `per_token` | 非成功必须 `points == 0`；成功时若带 `price_per_1k_input/output`，则 `points` 必须等于 `ceil((p·in + c·out)/1000)`；`p+c` 必须 > 0 | 防止上游算错价后静默记账 |
+| `per_unit` | `points == price_per_unit × units`（成功）/ `0`（非成功） | 缺 `price_per_unit` 时退回 `unit_price` |
 
 - 成功 data：
 
@@ -101,14 +140,19 @@
   "balance_after": 95,
   "stat_date": "2026-10-19",
   "call_count": 1,
-  "total_cost": 5
+  "total_cost": 5,
+  "billing_mode": "per_call",
+  "prompt_tokens": 0,
+  "completion_tokens": 0,
+  "token_source": "unknown",
+  "units": 1
 }
 ```
 
 - 错误码：`1001` 链路身份与目标用户不一致 / 缺少链路头；`1005` 用户不存在或已被禁用；`2001` 参数不符合 Schema；`3001` 积分不足；`3002` 同一 `requestId` 被不同调用占用；`4002` user-service 不可用；`4003` 系统内部错误
 - 备注：
   - **处理顺序固定**为“幂等写调用记录 → 调 user 扣分 → 累计日用量”，账单与聚合在**同一本地事务**内（远端扣分独立提交）：明细先 `flush` 抢占 `request_id` 唯一键但不提交；扣分失败（含 `3001` / `1005` / `4002`）立即 `rollback`，明细与日用量都不会落库，**不留半成功状态**。
-  - **幂等**：`request_id` 已存在且关键字段（`user_id`、`service_name`、`capability_id`、`cost`、`unit_price`、`model_name`、`duration_ms`、`call_status`）一致时，返回 `code=0` + `duplicated=true`，`balance_after` 为 `null`（本次未扣分），不会重复扣费、不会重复累计用量；关键字段不一致时返回 `3002`。
+  - **幂等**：`request_id` 已存在且关键字段（`user_id`、`service_name`、`capability_id`、`cost`、`unit_price`、`model_name`、`duration_ms`、`call_status`、`billing_mode`、`prompt_tokens`、`completion_tokens`、`units`）一致时，返回 `code=0` + `duplicated=true`，`balance_after` 为 `null`（本次未扣分），不会重复扣费、不会重复累计用量；关键字段不一致时返回 `3002`。
   - **扣分**：只调用 `user-service` 的 `/internal/user/points/deduct`，自动服务发现，不写死地址、不读 `user_db`；`request_id` 原样透传，用户侧幂等键与计费侧一致。
   - **账号状态**：`points > 0` 时由扣分调用顺带完成状态校验（用户侧 `1005` 直接透传）；`points = 0` 的免费能力**不发起**扣分请求（用户侧要求 `amount ≥ 1`），因此单独调 `/internal/user/check` 校验状态，避免禁用账号经免费能力绕过校验。两种情况都不留半成功状态。
   - **日用量累加**：使用 `INSERT ... ON DUPLICATE KEY UPDATE call_count = call_count + 1, total_cost = total_cost + cost`，由数据库原子完成，避免并发丢失更新。
@@ -204,3 +248,24 @@
 ## 8. 迁移与验收
 
 运行 `python -m app.migrate` 可重复增加 nullable unit_price；不删除账单或修改历史费用。参见[升级说明](../../services/user-service/UPGRADE.md)和[本人交接](../implementation/member-黄禹菲.md)。本地账单/聚合事务与远端 user 扣分不具备分布式原子性，最终提交失败须按 requestId 对账。
+
+
+## 9. 本轮增量：C1 token 用量 / C2 双轨计费
+
+### 9.1 token 口径（C1）
+
+- `prompt_tokens` / `completion_tokens` **只采信上游 `usage`**：Chat Completions 取 `prompt_tokens` / `completion_tokens`，Responses 协议取 `input_tokens` / `output_tokens`，两者归一化后落库。
+- 上游未返回 usage（或返回 0/0、负数、浮点、布尔）时，记为 `0/0` + `token_source='missing'`，**不再用字符数冒充 token**。
+- 历史记录保持 `0/0` + `token_source='unknown'`，不回填、不估算。
+- `t_chat_message.token_count` 语义固定为 `prompt_tokens + completion_tokens`；失败占位消息为 0。
+
+### 9.2 计价模式（C2）
+
+- 换算基准：**1000 tokens = 1 积分**（已在 capability 目录价中体现为 `price_per_1k_*`）。
+- 公式：`per_token` 为 `ceil((prompt·price_per_1k_input + completion·price_per_1k_output) / 1000)`，整数向上取整，不使用浮点；`per_unit` 为 `price_per_unit × units`；`per_call` 为 `price_per_call`。
+- 降级/失败一律 `cost = 0`，但仍保留一条账单（与改造前一致）。
+
+### 9.3 迁移
+
+- 增量脚本：`services/billing-service/sql/03_add_token_usage.sql`（可重复执行）。
+- 只增列、不改旧数据；`01_init.sql` 同步更新，供全新环境直接建表。

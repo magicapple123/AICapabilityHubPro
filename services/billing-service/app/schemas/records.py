@@ -17,7 +17,11 @@ from app.schemas.common import BaseOut
 
 
 class CallRecordOut(BaseOut):
-    """调用明细项。当前用户只能看到自己的记录。"""
+    """调用明细项。当前用户只能看到自己的记录。
+
+    `billing_mode` / token 明细为 C1/C2 新增；旧记录回落到
+    `per_call` / 0 / 0 / ""，前端可按 `billing_mode` 决定是否展示。
+    """
 
     id: int
     request_id: str
@@ -30,6 +34,11 @@ class CallRecordOut(BaseOut):
     duration_ms: int
     model_name: str
     create_time: datetime
+    billing_mode: str = "per_call"
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    token_source: str = ""
+    units: int = 1
 
 
 class UsageDailyOut(BaseOut):

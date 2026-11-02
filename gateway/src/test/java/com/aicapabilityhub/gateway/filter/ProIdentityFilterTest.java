@@ -24,7 +24,7 @@ class ProIdentityFilterTest {
     private static final String SECRET = "leader-filter-secret-at-least-32-bytes";
     private final ObjectMapper mapper = new ObjectMapper();
     private final JwtService jwt = new JwtService(
-            new JwtProperties(SECRET, "ai-capability-hub", Duration.ofHours(1)));
+            new JwtProperties(SECRET, null, "ai-capability-hub", Duration.ofHours(1)));
     private final AuthGlobalFilter filter = new AuthGlobalFilter(jwt, mapper);
 
     @Test

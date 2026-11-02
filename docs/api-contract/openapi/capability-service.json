@@ -1,0 +1,529 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/capability": {
+      "post": {
+        "operationId": "create_capability_api_capability_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/capability/audit": {
+      "get": {
+        "operationId": "list_audit_logs_api_capability_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_type",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "operator_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/capability/categories": {
+      "get": {
+        "operationId": "list_categories_api_capability_categories_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      },
+      "post": {
+        "operationId": "create_category_api_capability_categories_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/capability/categories/{category_id}": {
+      "delete": {
+        "operationId": "delete_category_api_capability_categories__category_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      },
+      "put": {
+        "operationId": "update_category_api_capability_categories__category_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/capability/manage": {
+      "get": {
+        "operationId": "list_manage_api_capability_manage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "category_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/capability/market": {
+      "get": {
+        "operationId": "list_market_api_capability_market_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/capability/market/categories": {
+      "get": {
+        "operationId": "list_market_categories_api_capability_market_categories_get",
+        "parameters": [],
+        "requestBody": false,
+        "responses": [
+          "200"
+        ]
+      }
+    },
+    "/api/capability/market/{capability_id}": {
+      "get": {
+        "operationId": "get_market_detail_api_capability_market__capability_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "capability_id",
+            "required": true
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/capability/ping": {
+      "get": {
+        "operationId": "ping_api_capability_ping_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/capability/{capability_id}": {
+      "delete": {
+        "operationId": "delete_capability_api_capability__capability_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "capability_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      },
+      "put": {
+        "operationId": "update_capability_api_capability__capability_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "capability_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/capability/{capability_id}/rollback": {
+      "post": {
+        "operationId": "rollback_capability_api_capability__capability_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "capability_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/capability/{capability_id}/status": {
+      "put": {
+        "operationId": "update_capability_status_api_capability__capability_id__status_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "capability_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "parameters": [],
+        "requestBody": false,
+        "responses": [
+          "200"
+        ]
+      }
+    },
+    "/internal/capability/{capability_id}": {
+      "get": {
+        "operationId": "get_internal_capability_internal_capability__capability_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "capability_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    }
+  }
+}

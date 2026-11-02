@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.constants import CapabilityStatus, CategoryStatus
+from app.core.constants import BillingMode, CapabilityStatus, CategoryStatus
 from app.db.session import Base
 
 
@@ -55,6 +55,39 @@ class Capability(Base):
     path: Mapped[str] = mapped_column(String(255), nullable=False)
     param_schema: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     price_per_call: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # C2 双轨计费：旧能力全部是 per_call，price_per_call 语义与金额不变。
+    billing_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=BillingMode.PER_CALL.value,
+        server_default=BillingMode.PER_CALL.value,
+    )
+    price_per_1k_input: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    price_per_1k_output: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    price_per_unit: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    unit: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="", server_default=""
+    )
+    # D2：执行器与供应商别名。code 不再兼任"执行器选择"。
+    executor: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="", server_default=""
+    )
+    provider_alias: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="", server_default=""
+    )
+    # D4：单次输出 token 上限，实际请求取 min(请求值, 本值)。
+    max_output_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1024, server_default="1024"
+    )
+    # E4：是否在市场展示。默认 1，保证历史能力行为不变；
+    # 与 status 是两个维度：status=online 表示可执行，exposed=1 表示愿意被看见。
+    exposed_to_market: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=CapabilityStatus.DRAFT.value
     )

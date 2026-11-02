@@ -1,0 +1,423 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/chat/completions": {
+      "post": {
+        "operationId": "completions_api_chat_completions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/chat/executors": {
+      "get": {
+        "operationId": "executors_api_chat_executors_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/chat/ping": {
+      "get": {
+        "operationId": "ping_api_chat_ping_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/chat/providers": {
+      "get": {
+        "operationId": "list_providers_api_chat_providers_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      },
+      "post": {
+        "operationId": "create_provider_api_chat_providers_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/chat/providers/{provider_id}": {
+      "put": {
+        "operationId": "update_provider_api_chat_providers__provider_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/chat/providers/{provider_id}/status": {
+      "put": {
+        "operationId": "set_provider_status_api_chat_providers__provider_id__status_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/chat/providers/{provider_id}/test": {
+      "post": {
+        "operationId": "test_provider_api_chat_providers__provider_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/chat/sessions": {
+      "get": {
+        "operationId": "list_sessions_api_chat_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/chat/sessions/{session_id}/messages": {
+      "get": {
+        "operationId": "list_messages_api_chat_sessions__session_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "parameters": [],
+        "requestBody": false,
+        "responses": [
+          "200"
+        ]
+      }
+    },
+    "/internal/capability-cache/invalidate": {
+      "post": {
+        "operationId": "invalidate_internal_capability_cache_invalidate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/internal/provider/{alias}": {
+      "get": {
+        "operationId": "get_provider_internal_provider__alias__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alias",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "operationId": "chat_completions_v1_chat_completions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "list_models_v1_models_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/v1/responses": {
+      "post": {
+        "operationId": "create_response_v1_responses_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    }
+  }
+}

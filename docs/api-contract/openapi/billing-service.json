@@ -1,0 +1,237 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/billing/ping": {
+      "get": {
+        "operationId": "ping_api_billing_ping_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/billing/records": {
+      "get": {
+        "operationId": "list_records_api_billing_records_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "service_name",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "call_status",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/billing/stat/overview": {
+      "get": {
+        "operationId": "get_overview_api_billing_stat_overview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/billing/usage": {
+      "get": {
+        "operationId": "get_usage_api_billing_usage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "parameters": [],
+        "requestBody": false,
+        "responses": [
+          "200"
+        ]
+      }
+    },
+    "/internal/billing/record": {
+      "post": {
+        "operationId": "record_call_internal_billing_record_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/internal/billing/users/{user_id}/usage": {
+      "get": {
+        "operationId": "user_usage_internal_billing_users__user_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    }
+  }
+}

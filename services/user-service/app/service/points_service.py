@@ -30,6 +30,9 @@ from app.service.user_service import require_available_user
 # - 积分不足按指南 5.2 / 3.4 使用计费号段 3001，与 billing-service 判定口径一致。
 INSUFFICIENT_POINTS_CODE = 3001
 INSUFFICIENT_POINTS_MESSAGE = "积分不足"
+# C3：超出当日预算用 3003，与"余额不足"区分开，前端可提示"明天再来"。
+DAILY_LIMIT_CODE = 3003
+DAILY_LIMIT_MESSAGE = "已超出当日积分预算"
 USER_UNAVAILABLE_MESSAGE = "用户不存在或已被禁用"
 
 
@@ -93,6 +96,25 @@ class PointsService:
             "available": True,
         }
 
+    def _ensure_daily_budget(self, db: Session, user_id: int, amount: int) -> None:
+        """C3：当日累计 + 本次 不得超上限；上限为 0 表示不限。
+
+        已知局限：并发两笔可能同时通过校验（校验与扣减不在同一条语句里）。
+        影响面是"当天最多多花一笔"，远小于不加限制；彻底解决需要把预算
+        写进账户行做原子条件更新，已列入后续建议。
+        """
+
+        user = self.users.find_by_id(db, user_id)
+        if user is None or user.daily_points_limit <= 0:
+            return
+        used = self.points.sum_today_call_outflow(db, user_id)
+        if used + amount > user.daily_points_limit:
+            logger.info(
+                "当日预算不足 user_id={} used={} amount={} limit={}",
+                user_id, used, amount, user.daily_points_limit,
+            )
+            raise BizException(DAILY_LIMIT_CODE, DAILY_LIMIT_MESSAGE)
+
     def deduct(
         self, db: Session, payload: PointsDeductRequest, caller_user_id: str
     ) -> PointsDeductOut:
@@ -103,6 +125,7 @@ class PointsService:
             raise BizException(1001, "缺少或伪造的链路身份")
 
         self._require_available_user(db, payload.user_id)
+        self._ensure_daily_budget(db, payload.user_id, payload.amount)
 
         # 快路径：该 requestId 已扣过分，直接返回首次结果。
         existing = self.points.find_log_by_request_id(db, payload.request_id)

@@ -16,7 +16,7 @@ class ChatSessionResponse(BaseModel):
 
 
 class ChatMessageResponse(BaseModel):
-    """会话消息项；`call_status` / `token_count` 只对助手消息有意义。"""
+    """会话消息项；`call_status` / `token_count` / `error_code` 只对助手消息有意义。"""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -26,4 +26,5 @@ class ChatMessageResponse(BaseModel):
     content: str
     call_status: str
     token_count: int
+    error_code: int | None = None
     create_time: datetime

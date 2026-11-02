@@ -14,7 +14,7 @@ def payload(**changes):
             "price_per_call": 5, "param_schema": {"type": "object"}, **changes}
 
 
-def test_internal_read_is_fresh_and_uses_only_fixed_service_path(monkeypatch):
+def test_internal_read_caches_for_five_seconds_then_refreshes(monkeypatch):
     calls = []
     async def read(service, method, path):
         calls.append((service, method, path))
@@ -22,7 +22,13 @@ def test_internal_read_is_fresh_and_uses_only_fixed_service_path(monkeypatch):
     monkeypatch.setattr(capability_settings, "capability_catalog_mode", "internal")
     monkeypatch.setattr(module, "call_internal", read)
     client = CapabilityClient()
+    # A3：5 秒内命中缓存（只打一次目录服务），主动失效后重新读取。
+    from app.service.catalog_cache import catalog_cache
+
     assert asyncio.run(client.fetch(1)).price_per_call == 1
+    assert asyncio.run(client.fetch(1)).price_per_call == 1
+    assert calls == [("capability-service", "GET", "/internal/capability/1")]
+    catalog_cache.invalidate(1)
     assert asyncio.run(client.fetch(1)).price_per_call == 2
     assert calls == [("capability-service", "GET", "/internal/capability/1")] * 2
 

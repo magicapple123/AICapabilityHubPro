@@ -5,12 +5,14 @@
 """
 
 from app.api.v1.accounts import router as accounts_router
+from app.api.v1.admin import router as admin_router
 from app.api.v1.apikeys import router as apikeys_router
 from app.api.v1.internal import router as internal_router
 from app.api.v1.ping import router as ping_router
 from app.api.v1.points import router as points_router
 
 __all__ = [
+    "admin_router",
     "accounts_router",
     "apikeys_router",
     "internal_router",

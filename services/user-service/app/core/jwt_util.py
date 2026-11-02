@@ -26,6 +26,12 @@ MIN_SECRET_BYTES = 32
 JWT_ALGORITHM = "HS256"
 
 
+def _key_id() -> str:
+    """密钥标识；与网关 JwtService.CURRENT_KEY_ID 对齐（默认 v1）。"""
+
+    return (settings.jwt_key_id or "v1").strip() or "v1"
+
+
 def _signing_key() -> str:
     """校验密钥配置；不合法时记录原因，对外只返回统一系统错误。"""
 
@@ -74,5 +80,7 @@ def create_token(
         },
         _signing_key(),
         algorithm=JWT_ALGORITHM,
+        # F2：header 带 kid，轮换期能看出 Token 由哪把密钥签名（网关按 kid 尝试验签）。
+        headers={"kid": _key_id()},
     )
     return token, expire_at

@@ -123,7 +123,12 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
     private boolean isHealthPath(String path) {
         String normalized = normalizePath(path);
-        return normalized.equals("/health") || normalized.endsWith("/health");
+        // B2：readiness 探针同样是匿名可访问的健康检查（/health、/health/ready），
+        // 否则 K8s/负载均衡器经网关探测会拿到 401，永远判定"未就绪"。
+        return normalized.equals("/health")
+                || normalized.endsWith("/health")
+                || normalized.equals("/health/ready")
+                || normalized.endsWith("/health/ready");
     }
 
     private boolean isExactPath(String path, String expected) {

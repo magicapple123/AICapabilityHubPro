@@ -35,6 +35,14 @@ class PointBizType(str, Enum):
     CALL = "call"
 
 
+class BillingMode(str, Enum):
+    """计价模式；与 capability-service / ai-chat-service 同名同值（C2）。"""
+
+    PER_CALL = "per_call"
+    PER_TOKEN = "per_token"
+    PER_UNIT = "per_unit"
+
+
 class StatGroupBy(str, Enum):
     """用量统计的分组维度。"""
 

@@ -16,7 +16,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class JwtIdentitySecurityTest {
     private static final String SECRET = "leader-test-secret-with-at-least-32-bytes";
     private final JwtService service = new JwtService(
-            new JwtProperties(SECRET, "ai-capability-hub", Duration.ofHours(1)));
+            new JwtProperties(SECRET, null, "ai-capability-hub", Duration.ofHours(1)));
 
     private String token(String userId, String role, boolean expires) {
         var builder = Jwts.builder().issuer("ai-capability-hub")

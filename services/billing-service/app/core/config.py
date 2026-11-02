@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     nacos_config_timeout: float = Field(default=5.0, gt=0)
 
     db_url: str = "mysql+pymysql://root:root@127.0.0.1:3306/billing_db?charset=utf8mb4"
+    # A2 连接池参数化：容量公式 4 服务 × UVICORN_WORKERS × (pool+overflow)，
+    # 生产 4 worker 时为 4×4×15=240，故 MySQL max_connections 必须 ≥300。
+    db_pool_size: int = Field(default=5, ge=1, le=100)
+    db_max_overflow: int = Field(default=10, ge=0, le=100)
+    db_pool_timeout: int = Field(default=30, ge=1, le=300)
+    db_pool_recycle: int = Field(default=1800, ge=-1)
+    uvicorn_workers: int = Field(default=1, ge=1, le=16)
     internal_call_timeout: float = Field(default=10.0, gt=0)
 
     # 扣分只能调用 user-service 的内部契约，不允许直接读写 user_db。

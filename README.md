@@ -132,7 +132,7 @@ python scripts/start_pro_local.py middleware
 | Sentinel Dashboard | 8859 | `aihub-pro-sentinel` |
 | Gateway | 8080 | 本机 JVM |
 | user / capability / billing / ai-chat | 8081 / 8082 / 8083 / 8090 | 本机独立 Python 环境 |
-| Web | 5173 | Vite，绑定 localhost |
+| Web | 5173（被占用时 5174） | Vite，绑定 localhost；端口取 `web/.env` 的 `VITE_PORT` |
 
 Pro Compose project 为 `aicapabilityhubpro`，不挂载原项目的数据卷。首次新建卷会执行初始化脚本；已有数据库升级不能靠清空卷或重复导入 seed 替代。详见 [双项目并行联调](docs/双项目并行联调.md)。
 
@@ -153,7 +153,9 @@ python scripts/start_leader_dev.py web
 
 ### 4. 登录与体验
 
-访问 `http://localhost:5173`，本地公开演示账号为 `demo / demo123456`。默认使用真实账号登录；模型模拟与占位登录是两个独立开关。
+访问 `http://localhost:5173`（若 `web/.env` 的 `VITE_PORT` 已改为其他值，则用对应端口，例如 `http://localhost:5174`），本地公开演示账号为 `demo / demo123456`。默认使用真实账号登录；模型模拟与占位登录是两个独立开关。
+
+若 5173 已被其他项目占用，把 `web/.env` 的 `VITE_PORT` 改为 5174 再启动 web，并访问 `http://localhost:5174`。
 
 - 聊天：`/chat?capability_id=1`，演示目录价格 5 积分。
 - 文本摘要：`/chat?capability_id=2`，演示目录价格 3 积分。
@@ -225,9 +227,39 @@ AICapabilityHubPro/
 
 项目统一名称、简介、About 和对外表达见 [项目定位与描述规范](docs/项目定位与描述规范.md)。详细协作流程见 [CONTRIBUTING](CONTRIBUTING.md)，接口以 [Pro 执行契约](docs/api-contract/ai-chat-service.md) 和各服务契约为准。
 
+## 2026-11 升级（进行中）
+
+本轮按 [升级需求清单](docs/升级需求清单-2026-11-02.md) 分批实施，进度逐条记录在
+[升级实施日志](docs/升级实施日志.md)（**唯一事实源**，含改动文件、关键决策、门禁结果）。
+已完成 14 条：C1 token 计量 · C2 双轨计费 · A1 事务边界 · A2 连接池/多 worker ·
+B1 审计 · B2 readiness · B3 指标 · B4 对账 · D1 供应商 · D2 执行器抽象 · D4 参数与容错 ·
+E1 真流式 · F3 依赖锁 · F4 备份恢复。
+
+新增命令：
+
+```bash
+# 批次门禁（固定隔离库与 Mock 口径，避免假红假绿）
+bash scripts/gate.sh 1        # 1..6 | all
+bash scripts/gate.sh all      # 四服务 pytest + 契约 + 网关 + 工具 + 前端 + 冒烟
+
+# 账单与积分流水对账（只读、幂等，连跑两次不重复告警）
+services/billing-service/.venv/Scripts/python.exe scripts/reconcile_billing.py \
+  --billing-url "mysql+pymysql://root:<pwd>@127.0.0.1:3307/billing_db?charset=utf8mb4" \
+  --user-url    "mysql+pymysql://root:<pwd>@127.0.0.1:3307/user_db?charset=utf8mb4" --days 7
+
+# 备份与恢复演练（恢复默认落到 <db>_restore_check 并自动清理）
+# 先设置 MYSQL_ROOT_PASSWORD，再执行：
+#   scripts/backup_db.ps1  -OutDir artifacts/db-backup
+#   scripts/restore_db.ps1 -BackupDir artifacts/db-backup/<stamp> -Verify
+```
+
+新增运维接口：`GET /health/ready`（每次真查库，失败 503 + `DB_UNAVAILABLE`）、
+`GET /metrics`（Prometheus，另开 `/internal/metrics`）。
+
 ## 已知边界
 
 - 三人业务与严格内部目录已集成；现有环境部署/迁移、真实供应商验收和三人正式签字不以隔离自动化通过替代。
 - 会话本地事务与远端记账不构成分布式原子事务；远端成功、本地最终提交失败时按 requestId 对账，不能盲目重试模型。
-- Pro 目前支持受控聊天与文本摘要，不包含任意插件执行、视觉/语音执行、SSE、真实支付或外部供应商可用性保证。
+- Pro 目前支持受控聊天与文本摘要（含 OpenAI 兼容的真流式 SSE）；不包含工具调用、`/v1/responses`、视觉/语音执行、真实支付或外部供应商可用性保证。
+- 账单与流水对账是独立运维脚本（服务层禁止跨库）；供应商地址校验与建连之间仍有极短 TOCTOU 窗口，完全消除需把连接钉在已校验 IP 上。
 - 组长业务无需新增数据库列；其他成员的数据结构升级须提供保留旧数据的增量迁移。

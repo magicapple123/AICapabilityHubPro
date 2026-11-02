@@ -4,9 +4,28 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ChatMessage(BaseModel):
+    """一条消息。
+
+    E2：新增 `tool` 角色与两个工具字段。工具调用是多轮的：
+    模型回 `tool_calls` → 客户端执行 → 以 `role="tool"` 回灌结果 →
+    再发一次请求。平台**不在服务端跑工具**，所以每轮天然是一条独立账单。
+    """
+
     model_config = ConfigDict(extra="forbid")
-    role: Literal["system", "user", "assistant"]
+    role: Literal["system", "user", "assistant", "tool"]
     content: str = Field(min_length=1, max_length=12000)
+    # 仅 `role="tool"` 使用：对应上一轮 assistant 的 tool_call id。
+    tool_call_id: str | None = Field(default=None, max_length=64)
+    # 可选的名字（OpenAI 的 name 字段），工具结果回灌时常用。
+    name: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def tool_fields_consistent(self):
+        if self.role == "tool" and not self.tool_call_id:
+            raise ValueError("tool 角色的消息必须带 tool_call_id")
+        if self.role != "tool" and self.tool_call_id:
+            raise ValueError("只有 tool 角色可以带 tool_call_id")
+        return self
 
 
 class ChatCompletionRequest(BaseModel):
@@ -38,4 +57,5 @@ class ChatCompletionRequest(BaseModel):
     def capability_input(self) -> dict[str, Any]:
         if self.input is not None:
             return self.input
-        return {"messages": [message.model_dump() for message in self.messages]}
+        # exclude_none：非 tool 消息不应把 tool_call_id/name 的 null 发给上游。
+        return {"messages": [message.model_dump(exclude_none=True) for message in self.messages]}

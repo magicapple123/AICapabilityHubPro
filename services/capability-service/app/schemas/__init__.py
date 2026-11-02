@@ -1,5 +1,6 @@
 """本服务的 Pydantic 请求与响应模型。"""
 
+from app.schemas.audit import AuditLogOut
 from app.schemas.capability import (
     CapabilityCreateRequest,
     CapabilityDeleteOut,
@@ -26,6 +27,7 @@ from app.schemas.common import (
 )
 
 __all__ = [
+    "AuditLogOut",
     "PAGE_SIZE_DEFAULT",
     "PAGE_SIZE_MAX",
     "CapabilityCreateRequest",

@@ -1,0 +1,645 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/user/admin/audit": {
+      "get": {
+        "operationId": "list_audit_api_user_admin_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resource_type",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "operator_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/admin/users": {
+      "get": {
+        "operationId": "list_users_api_user_admin_users_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/admin/users/export": {
+      "get": {
+        "operationId": "export_users_api_user_admin_users_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/admin/users/{user_id}": {
+      "get": {
+        "operationId": "user_detail_api_user_admin_users__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/admin/users/{user_id}/points": {
+      "post": {
+        "operationId": "adjust_points_api_user_admin_users__user_id__points_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/admin/users/{user_id}/status": {
+      "put": {
+        "operationId": "set_user_status_api_user_admin_users__user_id__status_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/apikeys": {
+      "get": {
+        "operationId": "list_api_keys_api_user_apikeys_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      },
+      "post": {
+        "operationId": "create_api_key_api_user_apikeys_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/apikeys/exchange": {
+      "post": {
+        "operationId": "exchange_api_key_api_user_apikeys_exchange_post",
+        "parameters": [],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/apikeys/{api_key_id}/disable": {
+      "put": {
+        "operationId": "disable_api_key_api_user_apikeys__api_key_id__disable_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "api_key_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/login": {
+      "post": {
+        "operationId": "login_api_user_login_post",
+        "parameters": [],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/ping": {
+      "get": {
+        "operationId": "ping_api_user_ping_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/points": {
+      "get": {
+        "operationId": "get_points_api_user_points_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/points/logs": {
+      "get": {
+        "operationId": "list_point_logs_api_user_points_logs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/profile": {
+      "get": {
+        "operationId": "get_profile_api_user_profile_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      },
+      "put": {
+        "operationId": "update_profile_api_user_profile_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/user/register": {
+      "post": {
+        "operationId": "register_api_user_register_post",
+        "parameters": [],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "parameters": [],
+        "requestBody": false,
+        "responses": [
+          "200"
+        ]
+      }
+    },
+    "/internal/user/apikey/verify": {
+      "post": {
+        "operationId": "verify_api_key_internal_user_apikey_verify_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Internal-Token",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/internal/user/authorization": {
+      "get": {
+        "operationId": "authorization_internal_user_authorization_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "required_role",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/internal/user/check": {
+      "get": {
+        "operationId": "check_user_internal_user_check_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "points_cost",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/internal/user/points/deduct": {
+      "post": {
+        "operationId": "deduct_points_internal_user_points_deduct_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    }
+  }
+}

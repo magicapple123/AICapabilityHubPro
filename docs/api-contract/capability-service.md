@@ -264,3 +264,107 @@
 - `chat-completions` / `long-summary` 的 `param_schema` 已与执行器约束对齐：聊天 `messages` 1–40 条、role 三选一、content 1–12000、可选 temperature 0–2；摘要 `text` 1–12000、可选 `max_length` 30–1000（默认 200）；使用布尔 `additionalProperties=false`。
 - 已有业务库的结构升级使用独立增量脚本 `sql/03_align_executor_schema.sql`：只有 Schema 完整匹配历史 seed 默认值，或 online 能力的 Schema 为空时才应用适配器模板；不根据单个字段缺失推断“旧版”，以免覆盖自定义限制/元数据。draft/offline 的空 Schema 保持为空；单价与状态始终不改。执行前备份受影响行。`sql/02_seed.sql` 仅用于新环境或明确的隔离示例库。迁移可重复执行，迁移过滤规则另有真实 MySQL 回归测试。未知/自定义结构升级需由运营人员单独审阅，不做自动覆盖。
 - 已覆盖内部详情、公开字段最小化、状态变化、未知/软删除、Schema 引用/非法 Draft 关键字/上架必须有合法 Schema/价格边界、重复编码、非管理员直接写/管理读取、授权撤销/故障、迁移保留自定义 Schema/升级旧 Schema/幂等以及市场选中 ID 的浏览器入口。集成main `651275b` 的CI中capability-service实际 `131 passed`、零跳过；迁移也已覆盖自定义Schema保留和重复运行。真实管理员授权、严格 internal 目录链与完整浏览器运行须依据最终 CI artifact 和 `summary.json` 分开核对，替身测试不当作真实联调。
+
+
+## 8. 本轮增量：C2 双轨计费
+
+### 8.1 计价字段与组合约束
+
+新增 5 个字段（见第 1 节数据字典）。**校验在保存阶段完成**，不满足返回 `2001`：
+
+| 模式 | 必须满足 | 说明 |
+|---|---|---|
+| `per_call` | `price_per_1k_input = price_per_1k_output = price_per_unit = 0` | 允许 `price_per_call = 0`（免费能力） |
+| `per_token` | `price_per_1k_input > 0 或 price_per_1k_output > 0`，且 `price_per_call = 0` | 防止"按次 + 按 token"双重计价 |
+| `per_unit` | `price_per_unit > 0` 且 `unit` 非空，且 `price_per_call = 0` | 单位必填，避免"3 积分/?" |
+
+编辑接口按**改后整组**校验：只把 `billing_mode` 改成 `per_token` 而不把 `price_per_call` 清零会被拒绝。
+
+### 8.2 出参变化（旧字段不动）
+
+| 出参 | 新增字段 |
+|---|---|
+| `GET /internal/capability/{id}` | `billing_mode`、`price_per_1k_input`、`price_per_1k_output`、`price_per_unit`、`unit` |
+| `GET /api/capability/market` | `billing_mode`、`unit`（仍不含 `service_name` / `path`） |
+| `GET /api/capability/market/{id}` | 上述 + `price_per_1k_input`、`price_per_1k_output`、`price_per_unit` |
+| `GET /api/capability/manage` | 全部 5 个计价字段 |
+
+`price_per_call` 在所有出参中保留原语义，旧前端不感知新字段也能正常工作。
+
+### 8.3 迁移
+
+- 增量脚本：`services/capability-service/sql/04_add_billing_mode.sql`（可重复执行）。
+- 迁移后旧两行（`chat-completions` / `long-summary`）仍是 `per_call`、单价 5 / 3，脚本末尾会打印自检结果。
+
+
+## 9. 本轮增量：B1 运营审计
+
+### 9.1 `t_operation_log`（只追加）
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | BIGINT | PK | 主键 |
+| `operator_id` | VARCHAR(64) | NOT NULL | 操作人 user_id（网关注入，服务端可信） |
+| `operator_name` | VARCHAR(64) | NOT NULL DEFAULT '' | 操作人名称快照 |
+| `resource_type` | VARCHAR(32) | NOT NULL | `capability` / `category` / `user` / `points` / `apikey` |
+| `resource_id` | VARCHAR(64) | NOT NULL DEFAULT '' | 自增 ID 或业务编码 |
+| `action` | VARCHAR(32) | NOT NULL | `create` / `update` / `status` / `delete` / `rollback` |
+| `before_json` | JSON | NULL | 变更前白名单字段快照（已脱敏） |
+| `after_json` | JSON | NULL | 变更后白名单字段快照（已脱敏） |
+| `request_id` | VARCHAR(64) | NOT NULL DEFAULT '' | 全链路 requestId |
+| `create_time` / `is_deleted` | — | 通用字段 | `is_deleted` 不参与业务，审计不使用 |
+
+**一库一张同构表**：capability 的写操作落 `capability_db`；user-service 的用户管理写操作在
+批 5 落 `user_db` 的同构表。四库物理隔离，**不跨库查询**。
+
+**只追加的保证（三层）**：接口只有 `GET`；`AuditService` 没有写方法；
+repository 没有 update/delete 方法。写入由业务 repository 在**同一个 `commit`** 内完成。
+
+**脱敏**：键名命中 `password/passwd/secret/api_key/apikey/token/cipher` 的值替换为 `***`。
+
+### 9.2 `GET /api/capability/audit`
+
+- 权限：`require_admin` 实时校验（普通用户 `2007`，依赖不可用 `4002`）
+- 查询参数：`resource_type`、`resource_id`、`action`、`operator_id`、`start_date`、`end_date`、`page`、`page_size`
+- 出参：标准分页 `{list,total,page,page_size}`，元素字段同 9.1（不含 `is_deleted`）
+- 排序：`id` 倒序
+
+### 9.3 埋点位置
+
+| 资源 | 动作 | 位置 |
+|---|---|---|
+| 能力 | create / update / status / delete | `capability_service.*` → `capability_repository.*` |
+| 分类 | create / update / delete | `category_service.*` → `category_repository.*` |
+
+> 操作者来自 `require_admin` 写入的请求级上下文（ContextVar），service 不新增参数；
+> 无操作者上下文（内部调用/测试直调）时跳过审计，不伪造 operator。
+
+
+## 10. 本轮增量：D2 执行器抽象 / D4 输出上限
+
+### 10.1 新增字段
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `executor` | VARCHAR(32) | `chat`（创建时） | `chat` / `summary` / `image-generate` / `embedding` |
+| `provider_alias` | VARCHAR(64) | `''` | 供应商别名（在 ai_chat_db，跨库不建外键） |
+| `max_output_tokens` | INT | 1024 | 单次输出上限，执行时取 `min(请求值, 本值)` |
+
+### 10.2 保存阶段的绑定校验
+
+- `executor` 必须是四个取值之一，否则 `2001`；
+- `image-generate` / `embedding` **必须**绑定 `provider_alias`（否则 `2001`，避免"上架了但跑不了"）；
+- 绑定别名时，capability 会调 ai-chat 的 `GET /internal/provider/{alias}` 确认协议：
+  `chat`/`summary` → `openai-chat`，`image-generate` → `openai-image`，`embedding` → `openai-embedding`；
+  别名不存在 `2001`，对端不可用 `4002`（失败关闭）。
+- 编辑按"改后整组"校验，与计价字段同一套规则。
+
+### 10.3 出参
+
+内部详情、市场列表/详情、运营列表均新增 `executor`、`provider_alias`、`max_output_tokens`；
+市场侧仍不含 `service_name` / `path`。旧字段不变。
+
+### 10.4 迁移
+
+`sql/06_add_executor.sql`：增 3 列，并按已知 code 回填 `chat-completions → chat`、
+`long-summary → summary`（幂等，不猜测其它编码）。

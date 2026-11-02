@@ -40,6 +40,35 @@ class UserRepository:
         db.flush()
         return user
 
+    def search(
+        self,
+        db: Session,
+        *,
+        keyword: str | None = None,
+        status: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[User], int]:
+        """运营后台的用户检索；按 id 升序，便于稳定翻页。"""
+
+        from sqlalchemy import func, or_, select
+
+        conditions: list[object] = [User.is_deleted == 0]
+        if keyword:
+            like = f"%{keyword}%"
+            conditions.append(or_(User.username.like(like), User.nickname.like(like)))
+        if status:
+            conditions.append(User.status == status)
+        total = db.scalar(select(func.count(User.id)).where(*conditions)) or 0
+        rows = db.scalars(
+            select(User)
+            .where(*conditions)
+            .order_by(User.id)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        return list(rows), total
+
     def update_fields(self, db: Session, user: User, values: dict[str, object]) -> User:
         """按字段名更新；values 应来自 model_dump(exclude_unset=True)。"""
 

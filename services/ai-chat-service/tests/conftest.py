@@ -11,6 +11,26 @@
 from collections.abc import Generator
 
 import pytest
+
+from app.service.catalog_cache import catalog_cache
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limit(monkeypatch):
+    """A4：其余用例不测限流，默认关闭，避免多请求用例误触 2009。"""
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "rate_limit_enabled", False)
+
+
+@pytest.fixture(autouse=True)
+def _clear_catalog_cache():
+    """A3：目录缓存是进程级单例，用例之间必须清空，否则会读到上一条用例的能力。"""
+
+    catalog_cache.clear()
+    yield
+    catalog_cache.clear()
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 

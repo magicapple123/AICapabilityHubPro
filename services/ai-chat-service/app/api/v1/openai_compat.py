@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import hashlib
+from uuid import uuid4
 import json
 import time
 from typing import Any
@@ -34,6 +35,7 @@ from app.core.service_call import call_internal
 from app.db.session import get_db
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
 from app.service.chat_service import chat_service
+from app.service.stream_service import DONE_FRAME, parse_sse_line, sse_frame
 
 router = APIRouter()
 
@@ -130,6 +132,61 @@ def _openai_error(error: BizException) -> JSONResponse:
     )
 
 
+async def _stream_response(
+    db: Session, request: ChatCompletionRequest, user: UserContext, alias: str
+) -> StreamingResponse:
+    """E1：把上游真实 SSE 翻译成 OpenAI `chat.completion.chunk`。
+
+    逐块转发；`usage` 只在上游真的给了的时候附在最后一块上，
+    没给就不伪造（C1 口径）。客户端断开时上层生成器会被关闭，
+    `chat_service.stream` 的 `finally` 负责落一条失败占位且不计费。
+    """
+
+    created = int(time.time())
+    chunk_id = f"chatcmpl-{uuid4().hex}"
+    model_name = alias
+
+    def _chunk(delta: dict[str, Any], finish: str | None, usage: dict | None = None) -> str:
+        frame: dict[str, Any] = {
+            "id": chunk_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model_name,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+        }
+        if usage is not None:
+            frame["usage"] = usage
+        return sse_frame(frame)
+
+    async def _generate():
+        with use_identity(user.user_id, user.user_name):
+            yield _chunk({"role": "assistant"}, None)
+            usage: dict | None = None
+            async for line in chat_service.stream(db, request, user):
+                frame = parse_sse_line(line)
+                if frame is None:
+                    continue
+                if isinstance(frame.get("model"), str):
+                    model_name = frame["model"]
+                if isinstance(frame.get("usage"), dict):
+                    usage = frame["usage"]
+                choices = frame.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    continue
+                delta = choices[0].get("delta") if isinstance(choices[0], dict) else None
+                text = delta.get("content") if isinstance(delta, dict) else None
+                if isinstance(text, str) and text:
+                    yield _chunk({"content": text}, None)
+            yield _chunk({}, "stop", usage)
+            yield DONE_FRAME
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.get("/models")
 async def list_models(authorization: str | None = Header(default=None)) -> Any:
     """返回配置里可用的模型别名，供客户端下拉框使用。"""
@@ -192,6 +249,8 @@ async def chat_completions(
             capability_id=capability_id, input=capability_input
         )
         # 兼容层不带网关注入的身份头，执行前补上上下文，后续内部调用才会带上 X-User-Id。
+        if payload.get("stream"):
+            return await _stream_response(db, request, user, alias)
         with use_identity(user.user_id, user.user_name):
             data = await chat_service.complete(db, request, user)
     except BizException as error:
@@ -200,7 +259,10 @@ async def chat_completions(
         logger.error("兼容层执行失败 type={}", type(error).__name__)
         return _error(500, "平台执行失败，请稍后重试", "platform_error", "api_error")
 
-    text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+    choice = (data.get("choices") or [{}])[0]
+    message = choice.get("message", {})
+    text = message.get("content", "")
+    tool_calls = message.get("tool_calls")
     body = {
         "id": data["id"],
         "object": "chat.completion",
@@ -209,8 +271,12 @@ async def chat_completions(
         "choices": [
             {
                 "index": 0,
-                "message": {"role": "assistant", "content": text},
-                "finish_reason": "stop",
+                # E2：只有存在 tool_calls 时才加字段，普通回复的响应体不变。
+                "message": {
+                    "role": "assistant", "content": text,
+                    **({"tool_calls": tool_calls} if tool_calls else {}),
+                },
+                "finish_reason": choice.get("finish_reason", "stop"),
             }
         ],
         "usage": data["usage"],
@@ -218,25 +284,6 @@ async def chat_completions(
         "platform_cost": data.get("cost"),
     }
 
-    if not payload.get("stream"):
-        return body
+    return body
 
-    created = data["created"]
-    chunk_id = data["id"]
 
-    def _chunk(delta: dict[str, Any], finish: str | None) -> str:
-        frame = {
-            "id": chunk_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": data["model"],
-            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
-        }
-        return f"data: {json.dumps(frame, ensure_ascii=False)}\n\n"
-
-    def _stream():
-        yield _chunk({"role": "assistant", "content": text}, None)
-        yield _chunk({}, "stop")
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(_stream(), media_type="text/event-stream")

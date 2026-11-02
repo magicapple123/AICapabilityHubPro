@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.v1 import (
+    audit_router,
     capabilities_router,
     categories_router,
     internal_router,
@@ -14,7 +15,9 @@ from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_request_id, register_request_logging
 from app.core.nacos_client import nacos_register
+from app.core.observability import install_observability
 from app.core.result import Result
+from app.db.session import engine
 
 
 configure_logging()
@@ -31,6 +34,8 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title=settings.service_name, lifespan=lifespan)
 register_request_logging(app)
 register_exception_handlers(app)
+# B2/B3：readiness 与 Prometheus 指标（/health/ready、/metrics）
+install_observability(app, engine, settings.service_name)
 # 注册顺序：固定路径（ping / market / manage）先于含路径参数的路由，
 # 避免 /{capability_id} 抢占 /manage、/market 等固定路径。
 app.include_router(ping_router, prefix="/api/capability", tags=["capability"])
@@ -41,6 +46,8 @@ app.include_router(
     market_router, prefix="/api/capability/market", tags=["capability-market"]
 )
 app.include_router(manage_router, prefix="/api/capability", tags=["capability-manage"])
+# 审计是只读接口；注册在含路径参数的能力写路由之前，避免被 /{capability_id} 抢占。
+app.include_router(audit_router, prefix="/api/capability", tags=["capability-audit"])
 app.include_router(
     categories_router, prefix="/api/capability/categories", tags=["capability-category"]
 )

@@ -42,7 +42,15 @@ def main() -> int:
             parser.error("Install service environments with python scripts/init_dev.py --install")
         values = {**read_env(directory / ".env"), **environment}
         port = int(values.get("SERVICE_PORT", str(SERVICES[name][1])))
-        command = [str(executable), "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)]
+        # A2：worker 数走环境变量；默认 1（便于本地调试与热重载），
+        # 生产设 UVICORN_WORKERS=4，并同步确认 MySQL max_connections ≥300。
+        workers = int(values.get("UVICORN_WORKERS", "1") or "1")
+        command = [
+            str(executable), "-m", "uvicorn", "app.main:app",
+            "--host", "127.0.0.1", "--port", str(port),
+        ]
+        if workers > 1:
+            command += ["--workers", str(workers)]
     if port:
         with socket.socket() as probe:
             if probe.connect_ex(("127.0.0.1", port)) == 0:

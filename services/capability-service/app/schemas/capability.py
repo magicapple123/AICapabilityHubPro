@@ -7,12 +7,19 @@
 - `CapabilityInternalOut` 用于服务间内部详情，只含 AI 执行所需的六个字段。
 """
 
+import re
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.core.constants import CODE_PATTERN, CapabilityStatus
+from app.core.constants import (
+    CODE_PATTERN,
+    EXECUTOR_PROTOCOLS,
+    BillingMode,
+    CapabilityStatus,
+    Executor,
+)
 from app.core.schema_validation import validate_param_schema
 from app.models import Capability
 from app.schemas.common import BaseOut, validate_partial_update
@@ -23,6 +30,63 @@ SERVICE_NAME_MAX_LENGTH = 64
 PATH_MAX_LENGTH = 255
 DESCRIPTION_MAX_LENGTH = 512
 PRICE_MAX_VALUE = 1_000_000
+UNIT_MAX_LENGTH = 16
+
+
+ALIAS_PATTERN = r"^[a-z0-9][a-z0-9-]*$"
+MAX_OUTPUT_TOKENS_LIMIT = 32768
+
+
+def validate_executor(executor: str, provider_alias: str) -> None:
+    """执行器与供应商别名的组合校验（D2）；协议是否匹配由 service 跨服务确认。"""
+
+    allowed = {item.value for item in Executor}
+    if executor not in allowed:
+        raise ValueError("执行器只能是 " + "/".join(sorted(allowed)))
+    if provider_alias:
+        if not re.match(ALIAS_PATTERN, provider_alias):
+            raise ValueError("供应商别名只能是小写字母/数字/连字符")
+    elif executor in (Executor.IMAGE_GENERATE.value, Executor.EMBEDDING.value):
+        raise ValueError("文生图/向量化执行器必须绑定供应商别名")
+
+
+def _billing_mode_of(capability: Capability) -> str:
+    """取计价模式；未落库的临时对象/迁移前的行回落 per_call（与 DB 默认值一致）。"""
+
+    return getattr(capability, "billing_mode", None) or BillingMode.PER_CALL.value
+
+
+def validate_billing_fields(
+    billing_mode: str,
+    price_per_call: int,
+    price_per_1k_input: int,
+    price_per_1k_output: int,
+    price_per_unit: int,
+    unit: str,
+) -> None:
+    """计价字段的组合约束（C2）；不满足直接 2001，不让"半套价格"上线。
+
+    - `per_call`  ：必须有 `price_per_call` 或允许为 0（免费能力），其余计价字段忽略；
+    - `per_token` ：输入/输出单价至少一项 > 0；
+    - `per_unit`  ：`price_per_unit > 0` 且 `unit` 不能为空（如"张"）。
+    """
+
+    if billing_mode == BillingMode.PER_TOKEN.value:
+        if price_per_1k_input <= 0 and price_per_1k_output <= 0:
+            raise ValueError("按 token 计费需要至少一项 token 单价大于 0")
+        if price_per_call != 0:
+            raise ValueError("按 token 计费时 price_per_call 必须为 0，避免双重计价")
+        return
+    if billing_mode == BillingMode.PER_UNIT.value:
+        if price_per_unit <= 0:
+            raise ValueError("按件计费需要 price_per_unit 大于 0")
+        if not unit.strip():
+            raise ValueError("按件计费必须声明计价单位，如 张")
+        if price_per_call != 0:
+            raise ValueError("按件计费时 price_per_call 必须为 0，避免双重计价")
+        return
+    if price_per_1k_input or price_per_1k_output or price_per_unit:
+        raise ValueError("按次计费不应同时设置按 token / 按件单价")
 
 
 class CapabilityCreateRequest(BaseModel):
@@ -35,6 +99,17 @@ class CapabilityCreateRequest(BaseModel):
     path: str = Field(min_length=1, max_length=PATH_MAX_LENGTH)
     param_schema: dict[str, Any] | None = None
     price_per_call: int = Field(default=0, ge=0, le=PRICE_MAX_VALUE)
+    billing_mode: BillingMode = BillingMode.PER_CALL
+    price_per_1k_input: int = Field(default=0, ge=0, le=PRICE_MAX_VALUE)
+    price_per_1k_output: int = Field(default=0, ge=0, le=PRICE_MAX_VALUE)
+    price_per_unit: int = Field(default=0, ge=0, le=PRICE_MAX_VALUE)
+    unit: str = Field(default="", max_length=UNIT_MAX_LENGTH)
+    # D2/D4：执行器与供应商绑定、输出 token 上限
+    executor: str = Field(default=Executor.CHAT.value, max_length=32)
+    provider_alias: str = Field(default="", max_length=64)
+    max_output_tokens: int = Field(default=1024, ge=1, le=MAX_OUTPUT_TOKENS_LIMIT)
+    # E4：市场展示开关（与 status 独立）
+    exposed_to_market: bool = True
     status: CapabilityStatus = CapabilityStatus.DRAFT
     description: str = Field(default="", max_length=DESCRIPTION_MAX_LENGTH)
 
@@ -42,6 +117,15 @@ class CapabilityCreateRequest(BaseModel):
     @classmethod
     def check_param_schema(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         return validate_param_schema(value)
+
+    @model_validator(mode="after")
+    def check_billing(self) -> "CapabilityCreateRequest":
+        validate_billing_fields(
+            self.billing_mode.value, self.price_per_call, self.price_per_1k_input,
+            self.price_per_1k_output, self.price_per_unit, self.unit,
+        )
+        validate_executor(self.executor, self.provider_alias)
+        return self
 
 
 class CapabilityUpdateRequest(BaseModel):
@@ -61,6 +145,16 @@ class CapabilityUpdateRequest(BaseModel):
     path: str | None = Field(default=None, min_length=1, max_length=PATH_MAX_LENGTH)
     param_schema: dict[str, Any] | None = None
     price_per_call: int | None = Field(default=None, ge=0, le=PRICE_MAX_VALUE)
+    # C2：计价模式的组合约束需要与既有值合并后校验，因此在 service 层做（见 update_capability）。
+    billing_mode: BillingMode | None = None
+    price_per_1k_input: int | None = Field(default=None, ge=0, le=PRICE_MAX_VALUE)
+    price_per_1k_output: int | None = Field(default=None, ge=0, le=PRICE_MAX_VALUE)
+    price_per_unit: int | None = Field(default=None, ge=0, le=PRICE_MAX_VALUE)
+    unit: str | None = Field(default=None, max_length=UNIT_MAX_LENGTH)
+    executor: str | None = Field(default=None, max_length=32)
+    provider_alias: str | None = Field(default=None, max_length=64)
+    max_output_tokens: int | None = Field(default=None, ge=1, le=MAX_OUTPUT_TOKENS_LIMIT)
+    exposed_to_market: bool | None = None
     description: str | None = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
 
     @model_validator(mode="after")
@@ -92,7 +186,7 @@ class CapabilityStatusUpdateRequest(BaseModel):
 
 
 class CapabilityManageOut(BaseOut):
-    """运营列表出参：包含内部配置字段。"""
+    """运营列表出参：包含内部配置字段与全部计价字段。"""
 
     id: int
     category_id: int
@@ -103,6 +197,15 @@ class CapabilityManageOut(BaseOut):
     path: str
     param_schema: dict[str, Any] | None
     price_per_call: int
+    billing_mode: str = BillingMode.PER_CALL.value
+    price_per_1k_input: int = 0
+    price_per_1k_output: int = 0
+    price_per_unit: int = 0
+    unit: str = ""
+    executor: str = ""
+    provider_alias: str = ""
+    max_output_tokens: int = 1024
+    exposed_to_market: bool = True
     status: str
     description: str
     create_time: datetime
@@ -122,6 +225,15 @@ class CapabilityManageOut(BaseOut):
             path=capability.path,
             param_schema=capability.param_schema,
             price_per_call=capability.price_per_call,
+            billing_mode=_billing_mode_of(capability),
+            price_per_1k_input=capability.price_per_1k_input or 0,
+            price_per_1k_output=capability.price_per_1k_output or 0,
+            price_per_unit=capability.price_per_unit or 0,
+            unit=capability.unit or "",
+            executor=capability.executor or "",
+            provider_alias=capability.provider_alias or "",
+            max_output_tokens=capability.max_output_tokens or 1024,
+            exposed_to_market=bool(capability.exposed_to_market),
             status=capability.status,
             description=capability.description,
             create_time=capability.create_time,
@@ -130,7 +242,11 @@ class CapabilityManageOut(BaseOut):
 
 
 class CapabilityMarketOut(BaseOut):
-    """公开市场列表出参：只含可对外字段，不含 service_name / path。"""
+    """公开市场列表出参：只含可对外字段，不含 service_name / path。
+
+    `billing_mode` 与 `unit` 让前端知道"按次 / 按 token / 按张"，
+    旧的 `price_per_call` 字段保留不动（契约兼容）。
+    """
 
     id: int
     name: str
@@ -139,6 +255,8 @@ class CapabilityMarketOut(BaseOut):
     category_name: str
     description: str
     price_per_call: int
+    billing_mode: str = BillingMode.PER_CALL.value
+    unit: str = ""
     update_time: datetime
 
     @classmethod
@@ -153,14 +271,22 @@ class CapabilityMarketOut(BaseOut):
             category_name=category_name,
             description=capability.description,
             price_per_call=capability.price_per_call,
+            billing_mode=_billing_mode_of(capability),
+            unit=capability.unit or "",
             update_time=capability.update_time,
         )
 
 
 class CapabilityMarketDetailOut(CapabilityMarketOut):
-    """公开市场详情出参：在列表字段基础上增加 param_schema。"""
+    """公开市场详情出参：在列表字段基础上增加 param_schema 与完整计价明细。"""
 
     param_schema: dict[str, Any] | None = None
+    price_per_1k_input: int = 0
+    price_per_1k_output: int = 0
+    price_per_unit: int = 0
+    executor: str = ""
+    provider_alias: str = ""
+    max_output_tokens: int = 1024
 
     @classmethod
     def from_row(
@@ -174,8 +300,13 @@ class CapabilityMarketDetailOut(CapabilityMarketOut):
             category_name=category_name,
             description=capability.description,
             price_per_call=capability.price_per_call,
+            billing_mode=_billing_mode_of(capability),
+            unit=capability.unit or "",
             update_time=capability.update_time,
             param_schema=capability.param_schema,
+            price_per_1k_input=capability.price_per_1k_input,
+            price_per_1k_output=capability.price_per_1k_output,
+            price_per_unit=capability.price_per_unit,
         )
 
 
@@ -207,6 +338,16 @@ class CapabilityInternalOut(BaseModel):
     status: Literal["draft", "online", "offline"]
     param_schema: dict[str, Any]
     price_per_call: int = Field(ge=0, le=PRICE_MAX_VALUE)
+    # C2：AI 执行链按这些字段决定预检门槛与结算金额。
+    billing_mode: Literal["per_call", "per_token", "per_unit"] = "per_call"
+    price_per_1k_input: int = Field(default=0, ge=0, le=PRICE_MAX_VALUE)
+    price_per_1k_output: int = Field(default=0, ge=0, le=PRICE_MAX_VALUE)
+    price_per_unit: int = Field(default=0, ge=0, le=PRICE_MAX_VALUE)
+    unit: str = Field(default="", max_length=UNIT_MAX_LENGTH)
+    # D2/D4：执行器选择与供应商绑定
+    executor: str = Field(default="", max_length=32)
+    provider_alias: str = Field(default="", max_length=64)
+    max_output_tokens: int = Field(default=1024, ge=1, le=MAX_OUTPUT_TOKENS_LIMIT)
 
     @field_validator("param_schema")
     @classmethod
@@ -224,4 +365,12 @@ class CapabilityInternalOut(BaseModel):
             status=capability.status,
             param_schema=capability.param_schema,
             price_per_call=capability.price_per_call,
+            billing_mode=_billing_mode_of(capability),
+            price_per_1k_input=capability.price_per_1k_input or 0,
+            price_per_1k_output=capability.price_per_1k_output or 0,
+            price_per_unit=capability.price_per_unit or 0,
+            unit=capability.unit or "",
+            executor=capability.executor or "",
+            provider_alias=capability.provider_alias or "",
+            max_output_tokens=capability.max_output_tokens or 1024,
         )

@@ -9,10 +9,32 @@
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from app.core.constants import PointDirection
 from app.models import PointsAccount, PointsLog
 
 
 class PointsRepository:
+    def sum_today_call_outflow(self, db: Session, user_id: int) -> int:
+        """当日已消耗积分（只统计 biz_type='call' 的支出）。
+
+        充值/注册赠送/管理员调整都不占预算，否则"赠送"会把上限吃掉。
+        用时间区间而非 DATE(create_time)，保证能走 (user_id, is_deleted, create_time) 索引。
+        """
+
+        from datetime import datetime, time
+
+        from sqlalchemy import func, select
+
+        start = datetime.combine(datetime.now().date(), time.min)
+        statement = select(func.coalesce(func.sum(PointsLog.amount), 0)).where(
+            PointsLog.user_id == user_id,
+            PointsLog.is_deleted == 0,
+            PointsLog.direction == PointDirection.OUT.value,
+            PointsLog.biz_type == "call",
+            PointsLog.create_time >= start,
+        )
+        return int(db.scalar(statement) or 0)
+
     """`t_points_account` 与 `t_points_log` 的读写。"""
 
     # ------------------------------------------------------------ 账户
@@ -27,6 +49,19 @@ class PointsRepository:
         db.add(account)
         db.flush()
         return account
+
+    def try_credit(self, db: Session, user_id: int, amount: int) -> int:
+        """条件更新式加余额；返回影响行数（0 表示账户不存在）。"""
+
+        statement = (
+            update(PointsAccount)
+            .where(PointsAccount.user_id == user_id, PointsAccount.is_deleted == 0)
+            .values(
+                balance=PointsAccount.balance + amount,
+                version=PointsAccount.version + 1,
+            )
+        )
+        return db.execute(statement).rowcount or 0
 
     def try_deduct(self, db: Session, user_id: int, amount: int) -> int:
         """条件更新式扣分；返回影响行数（0 表示余额不足或账户不存在）。"""

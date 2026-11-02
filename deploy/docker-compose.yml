@@ -34,6 +34,8 @@ services:
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
+      # A2：4 服务 × 4 worker × (pool 5 + overflow 10) = 240，默认 151 会直接连挂。
+      - --max-connections=500
     ports:
       - "3306:3306"
     volumes:
@@ -68,6 +70,56 @@ services:
     ports:
       - "8858:8858"
     restart: unless-stopped
+
+  # ---------- G1：四个业务服务（profile=app，默认 up 不受影响） ----------
+  # 就绪探针统一走 /health/ready：每次真查库，MySQL 未就绪时容器保持 unhealthy。
+  user-service:
+    profiles: ["app"]
+    build: ../services/user-service
+    environment:
+      DB_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/user_db?charset=utf8mb4
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET_PREVIOUS: ${JWT_SECRET_PREVIOUS:-}
+      NACOS_ADDR: nacos:8848
+      UVICORN_WORKERS: "2"
+    ports: ["8081:8081"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  billing-service:
+    profiles: ["app"]
+    build: ../services/billing-service
+    environment:
+      DB_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/billing_db?charset=utf8mb4
+      NACOS_ADDR: nacos:8848
+      UVICORN_WORKERS: "2"
+    ports: ["8082:8082"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  capability-service:
+    profiles: ["app"]
+    build: ../services/capability-service
+    environment:
+      DB_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/capability_db?charset=utf8mb4
+      NACOS_ADDR: nacos:8848
+      UVICORN_WORKERS: "2"
+    ports: ["8083:8083"]
+    depends_on:
+      mysql: { condition: service_healthy }
+
+  ai-chat-service:
+    profiles: ["app"]
+    build: ../services/ai-chat-service
+    environment:
+      DB_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/ai_chat_db?charset=utf8mb4
+      NACOS_ADDR: nacos:8848
+      UVICORN_WORKERS: "2"
+      PROVIDER_MASTER_KEY_V1: ${PROVIDER_MASTER_KEY_V1:-}
+      PROVIDER_ALLOWED_HOSTS: ${PROVIDER_ALLOWED_HOSTS:-}
+    ports: ["8090:8090"]
+    depends_on:
+      mysql: { condition: service_healthy }
 
 volumes:
   mysql_data:

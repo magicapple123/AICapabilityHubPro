@@ -2,6 +2,7 @@
 
 from fastapi import Depends
 
+from app.core.audit_context import set_audit_actor
 from app.core.exceptions import BizException
 from app.core.security import UserContext, current_user
 from app.service import authorization_service
@@ -19,12 +20,17 @@ def current_user_id(user: UserContext = Depends(current_user)) -> str:
     return user.user_id
 
 
-async def require_admin(user_id: str = Depends(current_user_id)) -> str:
+async def require_admin(user: UserContext = Depends(current_user)) -> str:
     """运营写操作与运营列表的实时管理员授权。
 
     每次请求都调用 user-service 的授权接口，不使用本地白名单、JWT role 或
     前端隐藏按钮替代；依赖异常按共享契约失败关闭（4002）。
+
+    授权通过后把操作者写入审计上下文，供 service 在**同一事务**内落审计行（B1）。
     """
 
-    await authorization_service.require_admin(user_id)
-    return user_id
+    if not user.user_id:
+        raise BizException(1001, "未认证或登录已过期")
+    await authorization_service.require_admin(user.user_id)
+    set_audit_actor(user)
+    return user.user_id

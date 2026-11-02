@@ -33,6 +33,22 @@ class CallRecord(Base):
     service_name: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     unit_price: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     cost: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    # C1/C2：token 明细与计价模式。旧记录为 0/0/''/'per_call'，不回填。
+    billing_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="per_call", server_default="per_call"
+    )
+    prompt_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    completion_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    token_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unknown", server_default="unknown"
+    )
+    units: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
     call_status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=CallStatus.SUCCESS.value
     )

@@ -9,7 +9,7 @@ from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.constants import CapabilityStatus
-from app.models import Capability, CapabilityCategory
+from app.models import Capability, CapabilityCategory, OperationLog
 
 CapabilityRow = tuple[Capability, str]
 
@@ -24,6 +24,8 @@ class CapabilityRepository:
         conditions: list[object] = [
             Capability.is_deleted == 0,
             Capability.status == CapabilityStatus.ONLINE.value,
+            # E4：运营可把能力从市场隐藏，但保留 online 以继续被已授权调用方使用。
+            Capability.exposed_to_market == 1,
             CapabilityCategory.is_deleted == 0,
         ]
         if category_id is not None:
@@ -175,26 +177,52 @@ class CapabilityRepository:
         )
         return list(db.scalars(statement).all())
 
-    def create(self, db: Session, capability: Capability) -> Capability:
+    def create(
+        self, db: Session, capability: Capability, *, audit: OperationLog | None = None
+    ) -> Capability:
         db.add(capability)
+        # 先 flush 拿到自增 id，审计行才能记录真实 resource_id；
+        # 审计与业务写在同一个 commit 内，不会出现"改了没留痕"。
+        db.flush()
+        self._attach_audit(db, audit, capability.id)
         db.commit()
         db.refresh(capability)
         return capability
 
     def update_fields(
-        self, db: Session, capability: Capability, values: dict[str, object]
+        self,
+        db: Session,
+        capability: Capability,
+        values: dict[str, object],
+        *,
+        audit: OperationLog | None = None,
     ) -> Capability:
         """按字段名更新；values 应为 model_dump(exclude_unset=True) 的结果。"""
 
         for field, value in values.items():
             setattr(capability, field, value)
+        self._attach_audit(db, audit, capability.id)
         db.commit()
         db.refresh(capability)
         return capability
 
-    def soft_delete(self, db: Session, capability: Capability) -> None:
+    def soft_delete(
+        self, db: Session, capability: Capability, *, audit: OperationLog | None = None
+    ) -> None:
         capability.is_deleted = 1
+        self._attach_audit(db, audit, capability.id)
         db.commit()
+
+    @staticmethod
+    def _attach_audit(
+        db: Session, audit: OperationLog | None, resource_id: int
+    ) -> None:
+        """把审计行挂到当前事务；调用方未提供操作者时跳过（内部调用不留痕）。"""
+
+        if audit is None:
+            return
+        audit.resource_id = str(resource_id)
+        db.add(audit)
 
 
 capability_repository = CapabilityRepository()

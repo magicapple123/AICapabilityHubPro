@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS t_capability (
   path VARCHAR(255) NOT NULL COMMENT '调用路径',
   param_schema JSON NULL COMMENT '参数 Schema（JSON 对象）',
   price_per_call INT NOT NULL DEFAULT 0 COMMENT '每次调用积分单价，整型',
+  billing_mode VARCHAR(16) NOT NULL DEFAULT 'per_call' COMMENT '计价模式 per_call按次/per_token按token/per_unit按件',
+  price_per_1k_input INT NOT NULL DEFAULT 0 COMMENT '每 1000 输入 token 的积分单价',
+  price_per_1k_output INT NOT NULL DEFAULT 0 COMMENT '每 1000 输出 token 的积分单价',
+  price_per_unit INT NOT NULL DEFAULT 0 COMMENT '按件计费的单件积分单价',
+  unit VARCHAR(16) NOT NULL DEFAULT '' COMMENT '按件计价单位，如 张',
   status VARCHAR(16) NOT NULL DEFAULT 'draft' COMMENT '能力状态 draft草稿 online上架 offline下架',
   description VARCHAR(512) NOT NULL DEFAULT '' COMMENT '能力描述',
   create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -58,3 +63,24 @@ CREATE TABLE IF NOT EXISTS t_capability (
   KEY idx_capability_status_update (status, is_deleted, update_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='能力目录';
+
+-- 运营操作审计（B1）。只追加：应用层没有 update / delete 接口，
+-- repository 也没有对应方法；库层再用触发器拦住 UPDATE（见 05 增量脚本）。
+CREATE TABLE IF NOT EXISTS t_operation_log (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  operator_id VARCHAR(64) NOT NULL COMMENT '操作人 user_id',
+  operator_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '操作人名称快照',
+  resource_type VARCHAR(32) NOT NULL COMMENT '资源类型 capability/category/user/points/apikey',
+  resource_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '资源标识',
+  action VARCHAR(32) NOT NULL COMMENT '动作 create/update/status/delete/rollback',
+  before_json JSON NULL COMMENT '变更前快照（已脱敏）',
+  after_json JSON NULL COMMENT '变更后快照（已脱敏）',
+  request_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '全链路 requestId',
+  create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  is_deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除，审计不使用',
+  PRIMARY KEY (id),
+  KEY idx_operation_log_resource (resource_type, resource_id, id),
+  KEY idx_operation_log_operator (operator_id, id),
+  KEY idx_operation_log_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='运营操作审计（只追加）';
