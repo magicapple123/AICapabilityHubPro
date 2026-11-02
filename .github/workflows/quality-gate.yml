@@ -190,6 +190,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install 'pytest>=8,<9'
+      - name: Install service runtime deps for contract snapshots
+        run: |
+          python -m pip install -r services/user-service/requirements.txt             -r services/billing-service/requirements.txt             -r services/capability-service/requirements.txt             -r services/ai-chat-service/requirements.txt
       - run: python -m pytest tests/tooling -q
       - name: Validate PowerShell syntax and portable baseline guard
         shell: pwsh
