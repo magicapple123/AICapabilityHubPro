@@ -16,22 +16,52 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEPLOY_MIGRATION = REPOSITORY_ROOT / "deploy/mysql/init/03_capability_service.sql"
 
 
-def _migration_updates(path: Path) -> tuple[str, ...]:
-    sql = "\n".join(
-        line for line in path.read_text(encoding="utf-8").splitlines()
-        if not line.lstrip().startswith("--")
+def _without_comments(sql: str) -> str:
+    """Return ``sql`` without comment lines (no string literal spans a line break)."""
+
+    return "\n".join(
+        line for line in sql.splitlines() if not line.lstrip().startswith("--")
     )
+
+
+def _updates(sql: str) -> tuple[str, ...]:
+    """Return the ``UPDATE t_capability SET ...`` statements of ``sql``."""
+
     return tuple(
         statement.strip()
-        for statement in sql.split(";")
+        for statement in _without_comments(sql).split(";")
         if re.match(r"UPDATE\s+T_CAPABILITY\s+SET\b", statement.strip(), re.IGNORECASE)
     )
+
+
+def _migration_updates(path: Path) -> tuple[str, ...]:
+    return _updates(path.read_text(encoding="utf-8"))
+
+
+def _deploy_section(source: Path) -> str:
+    """Return the part of the deploy baseline copied from ``source``.
+
+    The baseline concatenates every service migration, each introduced by a
+    source marker, so a single migration can be compared exactly even when a
+    later migration updates the same table.
+    """
+
+    marker = f"-- 来源: {source.relative_to(REPOSITORY_ROOT).as_posix()}"
+    text = DEPLOY_MIGRATION.read_text(encoding="utf-8")
+    start = text.find(marker)
+    assert start >= 0, (
+        f"{DEPLOY_MIGRATION} 未同步 {marker}；"
+        "请运行 scripts/devtools/sync_mysql_baseline.py"
+    )
+    start = text.find("\n", start) + 1
+    end = text.find("-- 来源: ", start)
+    return text[start:] if end < 0 else text[start:end]
 
 
 def test_deploy_init_contains_the_service_migration() -> None:
     service_updates = _migration_updates(SERVICE_MIGRATION)
     assert len(service_updates) == 2
-    assert _migration_updates(DEPLOY_MIGRATION) == service_updates
+    assert _updates(_deploy_section(SERVICE_MIGRATION)) == service_updates
 
 
 def _decode_schema(value: object) -> dict | None:
