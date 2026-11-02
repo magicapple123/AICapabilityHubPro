@@ -168,8 +168,8 @@ jobs:
       - run: python scripts/openapi_snapshot.py --check
       # H2：类型检查（白名单模块，逐轮扩大）
       - run: |
-          pip install mypy
-          mypy --config-file mypy.ini --follow-imports=skip \n            services/ai-chat-service/app/service/image_client.py \n            services/ai-chat-service/app/core/provider_crypto.py \n            services/ai-chat-service/app/core/provider_guard.py \n            services/ai-chat-service/app/service/catalog_cache.py
+          python -m pip install 'mypy>=1.10,<2'
+          mypy --config-file mypy.ini --follow-imports=skip services/ai-chat-service/app/service/image_client.py services/ai-chat-service/app/core/provider_crypto.py services/ai-chat-service/app/core/provider_guard.py services/ai-chat-service/app/service/catalog_cache.py
       # H3：依赖漏洞 + bandit，只在高危阻断（不阻塞日常开发）
       - run: |
           pip install pip-audit bandit
