@@ -1,8 +1,15 @@
 """HTTP assertions across the real Gateway and independent service databases."""
 import json
 import secrets
+import time
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+# ai-chat-service serves the catalog from a snapshot cache with a 5 s TTL
+# (`app/service/catalog_cache.py`). The admin APIs invalidate it explicitly, but
+# this suite edits the catalog straight through SQL, so an out-of-band change is
+# only guaranteed to be visible once that documented window has elapsed.
+CATALOG_PROPAGATION_SECONDS = 6.0
 
 
 class Api:
@@ -132,16 +139,24 @@ class Checks:
         self.record("external internal paths blocked")
         return self.results
 
+    def wait_catalog_propagation(self) -> None:
+        """Wait out the catalog snapshot TTL after a direct SQL catalog change."""
+        time.sleep(CATALOG_PROPAGATION_SECONDS)
+
     def verify_catalog_changes(self, sql):
         sql("UPDATE capability_db.t_capability SET status='offline' WHERE id=1")
+        self.wait_catalog_propagation()
         self.reject_without_model(self.user, {"messages": [{"role": "user", "content": "offline"}]}, 2002)
         self.record("newly offline capability rejected before model")
         sql("UPDATE capability_db.t_capability SET status='online',price_per_call=7 WHERE id=1")
+        self.wait_catalog_propagation()
         before = self.balance(self.user)
         body, headers = self.user.ok("POST", "/api/chat/completions",
             {"messages": [{"role": "user", "content": "fresh catalog price"}]})
         self.verify_settlement(self.user, body, headers, before, 7, 7, 1)
         self.record("catalog price change is read freshly and settled at 7 points")
+        # Restore the seed price without waiting: the browser suite starts only
+        # after the Gateway exchange window, far beyond the cache TTL.
         sql("UPDATE capability_db.t_capability SET price_per_call=5 WHERE id=1")
 
     def verify_disabled_account(self, sql):
