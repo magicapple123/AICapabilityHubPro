@@ -164,6 +164,10 @@ jobs:
         run: |
           python -m pip install -r services/user-service/requirements.txt             -r services/billing-service/requirements.txt             -r services/capability-service/requirements.txt             -r services/ai-chat-service/requirements.txt
       - run: python scripts/contract_lint.py
+      # deploy/mysql/init 是服务目录 sql 脚本的副本（MySQL 首次启动时执行）。
+      # 服务新增迁移后不同步基线，新库就会缺列，真实服务要到 E2E 才炸（6 分钟）。
+      - name: Verify the MySQL baseline matches the service migrations
+        run: python scripts/devtools/sync_mysql_baseline.py --check
       # H4：OpenAPI 快照比对（预期变更请本地 --update 后随 PR 提交）
       - run: python scripts/openapi_snapshot.py --check
       # H2：类型检查（白名单模块，逐轮扩大）
