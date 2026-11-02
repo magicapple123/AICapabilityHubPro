@@ -90,12 +90,15 @@ jobs:
           container_id="$(docker ps --filter 'ancestor=mysql:8.4' --format '{{.ID}}' | head -n 1)"
           test -n "$container_id"
           shopt -s nullglob
-          sql_file="sql/01_init.sql"
-          test -f "$sql_file"
-          echo "Applying isolated table schema from $(basename "$sql_file")"
-          docker exec -i -e "MYSQL_PWD=${MYSQL_ROOT_PASSWORD}" "$container_id" \
-            mysql --protocol=tcp -uroot \
-            < "$sql_file"
+          # 按文件名顺序应用**全部**迁移（01_init + 后续增量），
+          # 只跑基线会让新表/新列缺失，用例直接报 1146。
+          files=(sql/*.sql)
+          test ${#files[@]} -gt 0
+          for sql_file in "${files[@]}"; do
+            echo "Applying $(basename "$sql_file")"
+            docker exec -i -e "MYSQL_PWD=${MYSQL_ROOT_PASSWORD}" "$container_id" \
+              mysql --protocol=tcp -uroot < "$sql_file"
+          done
       - name: Reconcile peer database (billing only)
         if: matrix.service == 'billing-service'
         shell: bash
