@@ -51,6 +51,11 @@ CREATE TABLE IF NOT EXISTS t_capability (
   path VARCHAR(255) NOT NULL COMMENT '调用路径',
   param_schema JSON NULL COMMENT '参数 Schema（JSON 对象）',
   price_per_call INT NOT NULL DEFAULT 0 COMMENT '每次调用积分单价，整型',
+  billing_mode VARCHAR(16) NOT NULL DEFAULT 'per_call' COMMENT '计价模式 per_call按次/per_token按token/per_unit按件',
+  price_per_1k_input INT NOT NULL DEFAULT 0 COMMENT '每 1000 输入 token 的积分单价',
+  price_per_1k_output INT NOT NULL DEFAULT 0 COMMENT '每 1000 输出 token 的积分单价',
+  price_per_unit INT NOT NULL DEFAULT 0 COMMENT '按件计费的单件积分单价',
+  unit VARCHAR(16) NOT NULL DEFAULT '' COMMENT '按件计价单位，如 张',
   status VARCHAR(16) NOT NULL DEFAULT 'draft' COMMENT '能力状态 draft草稿 online上架 offline下架',
   description VARCHAR(512) NOT NULL DEFAULT '' COMMENT '能力描述',
   create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -62,6 +67,28 @@ CREATE TABLE IF NOT EXISTS t_capability (
   KEY idx_capability_status_update (status, is_deleted, update_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='能力目录';
+
+-- 运营操作审计（B1）。只追加：应用层没有 update / delete 接口，
+-- repository 也没有对应方法；库层再用触发器拦住 UPDATE（见 05 增量脚本）。
+CREATE TABLE IF NOT EXISTS t_operation_log (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  operator_id VARCHAR(64) NOT NULL COMMENT '操作人 user_id',
+  operator_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '操作人名称快照',
+  resource_type VARCHAR(32) NOT NULL COMMENT '资源类型 capability/category/user/points/apikey',
+  resource_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '资源标识',
+  action VARCHAR(32) NOT NULL COMMENT '动作 create/update/status/delete/rollback',
+  before_json JSON NULL COMMENT '变更前快照（已脱敏）',
+  after_json JSON NULL COMMENT '变更后快照（已脱敏）',
+  request_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '全链路 requestId',
+  create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  is_deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除，审计不使用',
+  PRIMARY KEY (id),
+  KEY idx_operation_log_resource (resource_type, resource_id, id),
+  KEY idx_operation_log_operator (operator_id, id),
+  KEY idx_operation_log_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='运营操作审计（只追加）';
+
 
 -- 来源: services/capability-service/sql/02_seed.sql
 -- capability-service 演示数据：可重复导入，导入后回到已知状态。
@@ -150,6 +177,7 @@ ON DUPLICATE KEY UPDATE
   description = new.description,
   is_deleted = 0;
 
+
 -- 来源: services/capability-service/sql/03_align_executor_schema.sql
 -- capability-service 增量迁移：把已登记执行器的 param_schema 对齐到
 -- ai-chat-service 的受控输入约束（内联 Draft 2020-12，无任何 $ref/$id）。
@@ -230,3 +258,164 @@ WHERE code = 'long-summary'
       'required', JSON_ARRAY('text')
     )
   );
+
+
+-- 来源: services/capability-service/sql/04_add_billing_mode.sql
+-- capability-service 增量迁移（C2 双轨计费）。
+--
+-- 只增列、不改价格：旧的两个能力（chat-completions / long-summary）
+-- 自动落到 billing_mode='per_call'，price_per_call 原值不动，
+-- 因此按次计费的金额与响应字段完全不变（红线 3）。
+-- 重复执行安全：列已存在时跳过 ALTER（MySQL 不支持 ADD COLUMN IF NOT EXISTS）。
+-- 执行前请在备份上先跑一遍并确认可重复执行（红线 4）。
+USE capability_db;
+
+DROP PROCEDURE IF EXISTS add_column_if_missing;
+DELIMITER $$
+CREATE PROCEDURE add_column_if_missing(
+  IN p_table VARCHAR(64),
+  IN p_column VARCHAR(64),
+  IN p_definition TEXT
+)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = p_table
+      AND COLUMN_NAME = p_column
+  ) THEN
+    SET @ddl := CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_column, '` ', p_definition);
+    PREPARE stmt FROM @ddl;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END$$
+DELIMITER ;
+
+CALL add_column_if_missing('t_capability', 'billing_mode',
+  "VARCHAR(16) NOT NULL DEFAULT 'per_call' COMMENT '计价模式 per_call按次/per_token按token/per_unit按件' AFTER price_per_call");
+CALL add_column_if_missing('t_capability', 'price_per_1k_input',
+  "INT NOT NULL DEFAULT 0 COMMENT '每 1000 输入 token 的积分单价' AFTER billing_mode");
+CALL add_column_if_missing('t_capability', 'price_per_1k_output',
+  "INT NOT NULL DEFAULT 0 COMMENT '每 1000 输出 token 的积分单价' AFTER price_per_1k_input");
+CALL add_column_if_missing('t_capability', 'price_per_unit',
+  "INT NOT NULL DEFAULT 0 COMMENT '按件计费的单件积分单价' AFTER price_per_1k_output");
+CALL add_column_if_missing('t_capability', 'unit',
+  "VARCHAR(16) NOT NULL DEFAULT '' COMMENT '按件计价单位，如 张' AFTER price_per_unit");
+
+DROP PROCEDURE IF EXISTS add_column_if_missing;
+
+-- 迁移后自检：旧能力必须仍是 per_call 且单价非 0（应为 5 / 3）。
+SELECT id, code, billing_mode, price_per_call, price_per_1k_input, price_per_1k_output
+FROM t_capability
+WHERE code IN ('chat-completions', 'long-summary') AND is_deleted = 0;
+
+
+-- 来源: services/capability-service/sql/05_add_operation_log.sql
+-- capability-service 增量迁移（B1 运营审计）。
+--
+-- 只建新表，不动任何既有表与数据；重复执行安全。
+-- 应用层只追加：没有 update / delete 接口，repository 也不提供对应方法。
+-- user-service 的同类表在批 5（F1）以同构字段建立，四库物理隔离、不跨库查询。
+USE capability_db;
+
+CREATE TABLE IF NOT EXISTS t_operation_log (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+  operator_id VARCHAR(64) NOT NULL COMMENT '操作人 user_id（网关注入）',
+  operator_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT '操作人名称快照',
+  resource_type VARCHAR(32) NOT NULL COMMENT '资源类型 capability/category/user/points/apikey',
+  resource_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '资源标识，自增 ID 或业务编码',
+  action VARCHAR(32) NOT NULL COMMENT '动作 create/update/status/delete/rollback',
+  before_json JSON NULL COMMENT '变更前快照（已脱敏）',
+  after_json JSON NULL COMMENT '变更后快照（已脱敏）',
+  request_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '全链路 requestId',
+  create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  is_deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除，审计不使用',
+  PRIMARY KEY (id),
+  KEY idx_operation_log_resource (resource_type, resource_id, id),
+  KEY idx_operation_log_operator (operator_id, id),
+  KEY idx_operation_log_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='运营操作审计（只追加）';
+
+-- 库层兜底：即使将来有人新增了写接口，也无法 UPDATE 审计行。
+-- DELETE 保留给运维保留期清理（不是业务接口），因此不拦。
+DROP TRIGGER IF EXISTS trg_operation_log_no_update;
+DELIMITER $$
+CREATE TRIGGER trg_operation_log_no_update
+BEFORE UPDATE ON t_operation_log
+FOR EACH ROW
+BEGIN
+  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 't_operation_log is append-only: UPDATE is forbidden';
+END$$
+DELIMITER ;
+
+
+-- 来源: services/capability-service/sql/06_add_executor.sql
+-- capability-service 增量迁移（D2 执行器抽象 / D4 输出上限）。
+--
+-- 只增列并按 code 回填历史执行器，不动价格、状态与 Schema。
+-- 重复执行安全。
+USE capability_db;
+
+DROP PROCEDURE IF EXISTS add_column_if_missing;
+DELIMITER $$
+CREATE PROCEDURE add_column_if_missing(
+  IN p_table VARCHAR(64), IN p_column VARCHAR(64), IN p_definition TEXT
+)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_table AND COLUMN_NAME = p_column
+  ) THEN
+    SET @ddl := CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_column, '` ', p_definition);
+    PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+  END IF;
+END$$
+DELIMITER ;
+
+CALL add_column_if_missing('t_capability', 'executor',
+  "VARCHAR(32) NOT NULL DEFAULT '' COMMENT '执行器 chat/summary/image-generate/embedding' AFTER unit");
+CALL add_column_if_missing('t_capability', 'provider_alias',
+  "VARCHAR(64) NOT NULL DEFAULT '' COMMENT '供应商别名，跨库不建外键' AFTER executor");
+CALL add_column_if_missing('t_capability', 'max_output_tokens',
+  "INT NOT NULL DEFAULT 1024 COMMENT '单次输出 token 上限，请求取 min(请求值, 本值)' AFTER provider_alias");
+
+DROP PROCEDURE IF EXISTS add_column_if_missing;
+
+-- 历史能力回填执行器：只按已知 code 映射，不猜测其它编码。
+-- 同一 code 已是目标值时不会重复写（幂等）。
+UPDATE t_capability SET executor = 'chat'
+WHERE code = 'chat-completions' AND is_deleted = 0 AND executor = '';
+UPDATE t_capability SET executor = 'summary'
+WHERE code = 'long-summary' AND is_deleted = 0 AND executor = '';
+
+-- 迁移自检：旧两行必须已带执行器，且价格未变。
+SELECT id, code, executor, provider_alias, max_output_tokens, price_per_call
+FROM t_capability WHERE code IN ('chat-completions', 'long-summary') AND is_deleted = 0;
+
+
+-- 来源: services/capability-service/sql/07_add_exposed_to_market.sql
+-- capability-service 增量迁移（E4 模型服务视图：市场展示开关）。
+--
+-- 默认 1：历史能力继续在市场可见，行为不变。
+-- 与 status 独立：status=online 决定"能不能调"，exposed_to_market 决定"愿不愿被看见"。
+-- 重复执行安全。
+USE capability_db;
+
+SET @exists := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'capability_db'
+    AND TABLE_NAME = 't_capability'
+    AND COLUMN_NAME = 'exposed_to_market'
+);
+SET @ddl := IF(
+  @exists = 0,
+  'ALTER TABLE t_capability ADD COLUMN exposed_to_market TINYINT NOT NULL DEFAULT 1 COMMENT ''是否在市场展示 0否1是'' AFTER max_output_tokens',
+  'SELECT ''t_capability.exposed_to_market already exists'' AS skipped'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SELECT id, code, status, exposed_to_market FROM t_capability WHERE is_deleted = 0 ORDER BY id;
