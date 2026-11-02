@@ -7,6 +7,9 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# 覆盖率数据是本地 pytest --cov 的产物，曾被误提交，禁止入库
+**/.coverage
+**/.coverage.*
 
 # 环境变量与密钥
 .env

@@ -1,4 +1,8 @@
-"""Read a fresh trusted catalog snapshot before every execution, without caching."""
+"""Read the trusted catalog snapshot through a 5 s cache with explicit invalidation.
+
+A3：命中缓存就直接用；未命中才向 capability-service 取快照。改价 / 上下架由
+capability 的写操作主动调 `/internal/capability-cache/invalidate` 清缓存，
+因此"运营改价后 5 秒内生效，管理接口改动接近立即生效"。"""
 from typing import Any
 import httpx
 from pydantic import ValidationError
