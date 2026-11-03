@@ -637,6 +637,9 @@ WHERE code = 'chat-completions' AND is_deleted = 0;
 
 -- 来源: services/capability-service/sql/10_add_openai_alias.sql
 -- P2: public OpenAI-compatible model alias. Safe on existing and fresh databases.
+-- CI/容器首启都按"逐文件执行、不带默认库"的方式跑迁移，必须显式选择库；
+-- 后面的 `DATABASE()` 守卫也依赖它，否则 information_schema 查询落到 NULL 库直接 1046。
+USE capability_db;
 SET @has_openai_alias = (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 't_capability'
