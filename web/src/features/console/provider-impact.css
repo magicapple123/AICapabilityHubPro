@@ -1,4 +1,17 @@
 /* P3-b 供应商影响面：停用确认框里的能力清单 + 列表里的 draft 提示。 */
+
+/*
+ * 供应商表固定列宽（只在带修饰类的表上生效，不改全局 .data-table）：
+ * 8 列 + 全局 white-space: nowrap 会把「操作 / 连通性」挤出视口，
+ * 固定布局 + 百分比列宽 + 允许换行后不再出现横向滚动条。
+ */
+.data-table--providers { table-layout: fixed; width: 100%; white-space: normal; }
+.data-table--providers th,
+.data-table--providers td { overflow-wrap: anywhere; vertical-align: top; }
+.data-table--providers td .admin-actions,
+.data-table--providers td.admin-actions { flex-wrap: wrap; justify-content: flex-start; }
+.data-table--providers td .text-button { white-space: nowrap; }
+
 .provider-impact {
   list-style: none; margin: 8px 0 0; padding: 8px 10px; max-height: 240px; overflow: auto;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;

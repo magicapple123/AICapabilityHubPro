@@ -226,7 +226,14 @@ export function ModelServicePanel() {
         </div>
         {!providers.length ? <EmptyNote message="还没有登记供应商；可先用全局模型配置。" /> : (
           <div className="data-table-wrap">
-            <table className="data-table">
+            {/* P3-b：新增「影响面」后列数到 8，用固定布局 + 百分比列宽避免横向溢出。 */}
+            <table className="data-table data-table--providers">
+              <colgroup>
+                <col style={{ width: '14%' }} /><col style={{ width: '13%' }} />
+                <col style={{ width: '22%' }} /><col style={{ width: '11%' }} />
+                <col style={{ width: '9%' }} /><col style={{ width: '14%' }} />
+                <col style={{ width: '7%' }} /><col style={{ width: '10%' }} />
+              </colgroup>
               <thead>
                 <tr><th>名称 / 别名</th><th>协议</th><th>地址</th><th>密钥</th><th>状态</th><th>影响面</th><th>连通性</th><th>操作</th></tr>
               </thead>
