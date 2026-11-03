@@ -135,8 +135,10 @@ export async function runConsoleScenarios(
   await ordinary.goto(base + '/capabilities?q=' + encodeURIComponent(updatedName))
   const card = ordinary.locator('.capability-card').filter({ hasText: code })
   await card.waitFor()
-  await card.getByText('暂无执行器', { exact: true }).waitFor()
-  assert.equal(await card.locator('.capability-launch').isDisabled(), true)
+  // P8 冻结口径：表单显式登记 executor=chat，上架即受控可执行；
+  // 市场不得再对可执行能力显示「暂无执行器」，启动入口必须可用。
+  await card.getByText('支持调试', { exact: true }).waitFor()
+  assert.equal(await card.locator('.capability-launch').isDisabled(), false)
   await card.getByRole('button', { name: '查看' + updatedName + '详情', exact: true }).click()
   const detailDialog = ordinary.getByRole('dialog', { name: updatedName, exact: true })
   await detailDialog.getByText('必填', { exact: true }).waitFor()
@@ -145,7 +147,14 @@ export async function runConsoleScenarios(
     { anonymous: true })).body.data)
   assert.deepEqual(publicDetail.param_schema, schema)
   assert.ok(!('service_name' in publicDetail) && !('path' in publicDetail))
-  checks.push('Publishing updates the real public market and parameter preview without enabling an unknown executor')
+  // 种子里的线上能力（qa-unsupported，executor 为空、code 不在映射表）仍必须被拦截，
+  // 保证「按 executor 判定」没有把口径整体放宽；在未过滤的市场页上检查。
+  await ordinary.goto(base + '/capabilities')
+  const unsupportedCard = ordinary.locator('.capability-card').filter({ hasText: 'qa-unsupported' })
+  await unsupportedCard.waitFor()
+  await unsupportedCard.getByText('暂无执行器', { exact: true }).waitFor()
+  assert.equal(await unsupportedCard.locator('.capability-launch').isDisabled(), true)
+  checks.push('Publishing updates the real public market, enables the debuggable executor-backed card and keeps the unknown-executor card blocked')
 
   await row.getByRole('button', { name: '下架', exact: true }).click()
   const offline = await submit(page, 'PUT', `/api/capability/${capability.id}/status`, () =>
