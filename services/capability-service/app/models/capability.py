@@ -1,6 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Computed,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.constants import BillingMode, CapabilityStatus, CategoryStatus
@@ -51,6 +60,9 @@ class Capability(Base):
     )
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     code: Mapped[str] = mapped_column(String(64), nullable=False)
+    openai_alias: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, default=None
+    )
     service_name: Mapped[str] = mapped_column(String(64), nullable=False)
     path: Mapped[str] = mapped_column(String(255), nullable=False)
     param_schema: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -102,3 +114,12 @@ class Capability(Base):
         onupdate=func.current_timestamp(),
     )
     is_deleted: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
+    # D5：数据库生成列（STORED），未删除时等于 code，已删除时为 NULL。
+    # 唯一约束建在它上面，于是"同一 code 可以软删任意多次再重建"，而未删除范围内
+    # code 仍唯一（MySQL 唯一索引允许多行 NULL）。值由数据库计算，应用永不写它。
+    active_code: Mapped[str | None] = mapped_column(
+        String(64),
+        Computed("IF(is_deleted = 0, code, NULL)", persisted=True),
+        nullable=True,
+        comment="生成列：未删除时等于 code，已删除时为 NULL（D5）",
+    )

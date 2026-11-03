@@ -1,10 +1,14 @@
 from typing import Any
 
-import httpx
-
 from app.core.config import settings
 from app.core.exceptions import BizException
-from app.core.logging import get_request_id, get_user_id, get_user_name
+from app.core.http_client import get_http_client
+from app.core.logging import (
+    get_request_id,
+    get_user_id,
+    get_user_key_id,
+    get_user_name,
+)
 from app.core.nacos_client import nacos_register
 
 
@@ -35,22 +39,29 @@ async def call_internal(
         "X-User-Id": get_user_id(),
         "X-User-Name": get_user_name(),
     }
+    # P6：Key 身份继续往下传，账单才能落到具体某把 Key。
+    # 必须用 `x-user-` 前缀：网关会剥离外部伪造的同名头，换别的名字等于新开一个伪造面。
+    key_id = get_user_key_id()
+    if key_id:
+        forwarded_headers["X-User-Key-Id"] = key_id
     if headers:
         forwarded_headers.update(headers)
 
     try:
-        async with httpx.AsyncClient(
-            timeout=timeout or settings.internal_call_timeout
-        ) as client:
-            response = await client.request(
-                method=method,
-                url=f"{base_url}{path}",
-                json=json,
-                params=params,
-                headers=forwarded_headers,
-            )
-            response.raise_for_status()
-            body = response.json()
+        # 复用进程级连接池：每次新建 client 在 Windows 下要多付 200–450 ms 的握手，
+        # 而一次 chat 调用要打 3–4 跳（压测报告 5.2 / 7.3）。
+        client = await get_http_client()
+        response = await client.request(
+            method=method,
+            url=f"{base_url}{path}",
+            json=json,
+            params=params,
+            headers=forwarded_headers,
+            # 超时按调用点语义逐请求传，不用 client 上的兜底值。
+            timeout=timeout or settings.internal_call_timeout,
+        )
+        response.raise_for_status()
+        body = response.json()
     except Exception as exc:
         # httpx 的 InvalidURL 并非 HTTPError，故在 HTTP 边界统一转换普通异常。
         raise BizException(4002, "下游服务暂不可用") from exc

@@ -18,6 +18,14 @@ export interface ChatCompletionPayload {
   temperature?: number
 }
 
+export type BillingMode = 'per_call' | 'per_token' | 'per_unit'
+
+/** D3：文生图产物；`revised_prompt` 是上游改写后的提示词（部分供应商不返回）。 */
+export interface GeneratedImage {
+  url: string
+  revised_prompt?: string
+}
+
 export interface ChatCompletionData {
   capability_id: number
   capability_code: string
@@ -33,10 +41,26 @@ export interface ChatCompletionData {
   model: string
   choices: Array<{
     index: number
-    message: { role: string; content: string }
+    message: { role: string; content: string; tool_calls?: unknown[] }
     finish_reason: string
+    /** D3：OpenAI 风格的图片产物（与顶层 images 内容一致）。 */
+    images?: GeneratedImage[]
   }>
   usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  /** C2：顶层 token 明细，收据可直接展示"输入/输出/合计"。 */
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  /** C1：上游真值 / Mock 估算 / 上游未返回。 */
+  usage_source: 'upstream' | 'mock' | 'missing'
+  /** C2：本次调用采用的计价模式与对应单价。 */
+  billing_mode: BillingMode
+  price_per_1k_input: number
+  price_per_1k_output: number
+  price_per_unit: number
+  unit: string
+  /** D3：文生图结果；文本能力为空数组。 */
+  images?: GeneratedImage[]
   session_id: number
   message_id: number
   mock: boolean

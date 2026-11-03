@@ -1,9 +1,15 @@
 """H3 安全扫描：依赖漏洞 + 代码静态检查。
 
 策略（与需求清单一致：**不阻塞开发，只有高危阻断**）：
-- `pip-audit` 扫 requirements.lock.txt，只看有 CVE 的包；
+- `pip-audit` 扫 requirements.lock.txt，只看有修复版本（fix_versions 非空）的漏洞；
 - `bandit` 扫 app/，只把 HIGH 视为失败，MEDIUM/LOW 只报告；
-- 退出码：0 全绿 / 1 有 HIGH 或高危漏洞 / 2 工具缺失（CI 里应视为配置问题）。
+- **工具缺失不再算通过**：工具没装 => 该服务 passed=false，reason="tooling_missing"，
+  总结果把 "tooling_missing" 与 "vulnerabilities" 分开统计，两者都让退出码非 0。
+
+退出码：
+- 0 全绿（四个服务都有工具、且无阻断项）
+- 1 有高危漏洞 / HIGH bandit 问题
+- 2 有服务缺少扫描工具（门禁配置问题，CI 必须失败）
 
 用法：
     python scripts/security_scan.py --service capability-service
@@ -39,8 +45,13 @@ def _run(args: list[str], cwd: Path) -> tuple[int, str]:
     return result.returncode, (result.stdout or "") + (result.stderr or "")
 
 
+def _missing_tool(output: str, module: str) -> bool:
+    """工具没装时 Python 会输出 `No module named <module>`；不要把它当成"没问题"。"""
+    return "No module named" in output and module in output
+
+
 def audit_dependencies(service: str) -> dict:
-    """依赖漏洞：只把"有修复版本的漏洞"计为阻断项。"""
+    """依赖漏洞：只把"有修复版本"的漏洞计为阻断项。"""
 
     service_dir = ROOT / "services" / service
     lock = service_dir / "requirements.lock.txt"
@@ -49,8 +60,14 @@ def audit_dependencies(service: str) -> dict:
         [str(_python(service)), "-m", "pip_audit", "-r", str(target), "-f", "json"],
         service_dir,
     )
-    if "No module named pip_audit" in output:
-        return {"tool": "pip-audit", "available": False, "vulnerabilities": []}
+    if _missing_tool(output, "pip_audit"):
+        return {
+            "tool": "pip-audit",
+            "available": False,
+            "reason": "tooling_missing",
+            "target": target.name,
+            "vulnerabilities": [],
+        }
     try:
         payload = json.loads(output[output.index("{"):]) if "{" in output else {}
     except json.JSONDecodeError:
@@ -65,19 +82,35 @@ def audit_dependencies(service: str) -> dict:
                 "fix_versions": item.get("fix_versions", []),
                 "blocking": bool(item.get("fix_versions")),
             })
-    return {"tool": "pip-audit", "available": True, "exit_code": code, "vulnerabilities": vulns}
+    return {
+        "tool": "pip-audit",
+        "available": True,
+        "target": target.name,
+        "exit_code": code,
+        "vulnerabilities": vulns,
+    }
 
 
 def scan_code(service: str) -> dict:
     service_dir = ROOT / "services" / service
     if not (service_dir / "app").exists():
-        return {"tool": "bandit", "available": False, "issues": []}
+        return {
+            "tool": "bandit",
+            "available": False,
+            "reason": "no_app_directory",
+            "issues": [],
+        }
     code, output = _run(
         [str(_python(service)), "-m", "bandit", "-r", "app", "-f", "json", "-q"],
         service_dir,
     )
-    if "No module named bandit" in output:
-        return {"tool": "bandit", "available": False, "issues": []}
+    if _missing_tool(output, "bandit"):
+        return {
+            "tool": "bandit",
+            "available": False,
+            "reason": "tooling_missing",
+            "issues": [],
+        }
     try:
         payload = json.loads(output[output.index("{"):]) if "{" in output else {}
     except json.JSONDecodeError:
@@ -98,11 +131,30 @@ def scan_code(service: str) -> dict:
 def scan(service: str) -> dict:
     deps = audit_dependencies(service)
     code = scan_code(service)
+
+    missing = [
+        tool["tool"]
+        for tool in (deps, code)
+        if not tool.get("available") and tool.get("reason") == "tooling_missing"
+    ]
     blocking_vulns = [v for v in deps.get("vulnerabilities", []) if v["blocking"]]
     high_issues = [i for i in code.get("issues", []) if i["severity"] == "HIGH"]
+
+    if missing:
+        passed = False
+        reason = "tooling_missing"
+    elif blocking_vulns or high_issues:
+        passed = False
+        reason = "blocking_findings"
+    else:
+        passed = True
+        reason = "ok"
+
     return {
         "service": service,
-        "passed": not blocking_vulns and not high_issues,
+        "passed": passed,
+        "reason": reason,
+        "tools_missing": missing,
         "blocking": {
             "vulnerabilities": len(blocking_vulns),
             "high_bandit_issues": len(high_issues),
@@ -112,7 +164,7 @@ def scan(service: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="安全扫描（高危阻断）")
+    parser = argparse.ArgumentParser(description="安全扫描（工具缺失与高危漏洞均阻断）")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--service", choices=SERVICES)
     group.add_argument("--all", action="store_true")
@@ -120,10 +172,32 @@ def main(argv: list[str] | None = None) -> int:
 
     targets = SERVICES if args.all else (args.service,)
     results = [scan(name) for name in targets]
+
+    tooling_missing = [item["service"] for item in results if item["reason"] == "tooling_missing"]
+    vulnerable = [item["service"] for item in results if item["reason"] == "blocking_findings"]
+    blocking_vulns = sum(item["blocking"]["vulnerabilities"] for item in results)
+    high_issues = sum(item["blocking"]["high_bandit_issues"] for item in results)
+
     summary = {
-        "passed": all(item["passed"] for item in results),
+        "passed": not tooling_missing and not vulnerable,
+        "totals": {
+            "services": len(results),
+            "tooling_ready": len(results) - len(tooling_missing),
+            "tooling_missing": len(tooling_missing),
+            "blocking_vulnerabilities": blocking_vulns,
+            "high_bandit_issues": high_issues,
+        },
+        "tooling_missing_services": tooling_missing,
+        "vulnerable_services": vulnerable,
         "services": [
-            {k: item[k] for k in ("service", "passed", "blocking")} for item in results
+            {
+                "service": item["service"],
+                "passed": item["passed"],
+                "reason": item["reason"],
+                "tools_missing": item["tools_missing"],
+                "blocking": item["blocking"],
+            }
+            for item in results
         ],
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
@@ -133,6 +207,8 @@ def main(argv: list[str] | None = None) -> int:
     (out_dir / "latest.json").write_text(
         json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    if tooling_missing:
+        return 2
     return 0 if summary["passed"] else 1
 
 

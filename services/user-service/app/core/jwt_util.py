@@ -49,8 +49,14 @@ def create_token(
     role: str = "user",
     ttl_seconds: int | None = None,
     expires_at: datetime | None = None,
+    api_key_id: int | None = None,
 ) -> tuple[str, datetime]:
-    """签发访问令牌；返回 (token, 过期时间 UTC)。"""
+    """签发访问令牌；返回 (token, 过期时间 UTC)。
+
+    `api_key_id` 只由 `/apikeys/exchange` 传入，写成 `key_id` claim：
+    网关据此注入 `X-User-Key-Id`，账单才能归因到具体某把 Key（P6）。
+    普通登录令牌不带这个 claim，行为与旧版完全一致。
+    """
 
     if role not in {"user", "admin"}:
         raise BizException(4003, "系统内部错误")
@@ -68,16 +74,21 @@ def create_token(
         expire_at = min(expire_at, expires_at.astimezone(timezone.utc))
     if expire_at <= issued_at:
         raise BizException(4003, "系统内部错误")
+    claims: dict = {
+        "iss": settings.jwt_issuer,
+        "sub": str(user_id),
+        "username": username,
+        "role": role,
+        "jti": uuid4().hex,
+        "iat": issued_at,
+        "exp": expire_at,
+    }
+    if api_key_id is not None:
+        if type(api_key_id) is not int or api_key_id <= 0:
+            raise BizException(4003, "系统内部错误")
+        claims["key_id"] = api_key_id
     token = jwt.encode(
-        {
-            "iss": settings.jwt_issuer,
-            "sub": str(user_id),
-            "username": username,
-            "role": role,
-            "jti": uuid4().hex,
-            "iat": issued_at,
-            "exp": expire_at,
-        },
+        claims,
         _signing_key(),
         algorithm=JWT_ALGORITHM,
         # F2：header 带 kid，轮换期能看出 Token 由哪把密钥签名（网关按 kid 尝试验签）。

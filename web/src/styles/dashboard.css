@@ -117,3 +117,75 @@
 .text-button:hover { text-decoration: underline; }
 .admin-actions { display: flex; gap: 10px; }
 .inline-form input { height: 30px; padding: 0 8px; font-size: 11px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-input); }
+
+/* 供应商编辑弹窗（模型服务页） */
+.modal-mask {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(18, 22, 31, .38); backdrop-filter: blur(2px);
+}
+.modal-card {
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px);
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-panel); box-shadow: var(--shadow-lift);
+}
+.modal-head, .modal-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 14px 18px;
+}
+.modal-head { border-bottom: 1px solid var(--border); }
+.modal-head h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--ink); }
+.modal-foot { border-top: 1px solid var(--border); justify-content: flex-end; }
+.modal-body {
+  padding: 16px 18px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > span { font-size: 11px; color: var(--ink-dim); }
+.field input, .field select {
+  height: 34px; padding: 0 10px; font-size: 12px;
+  color: var(--ink); background: var(--surface-sunken);
+  border: 1px solid var(--border); border-radius: var(--r-input);
+}
+.field input:focus, .field select:focus { outline: 2px solid var(--accent-soft); outline-offset: -1px; }
+.form-error { margin: 0; font-size: 11px; color: var(--danger); }
+.primary-button {
+  height: 32px; padding: 0 14px; font-size: 12px;
+  color: #fff; background: var(--accent);
+  border: 1px solid var(--accent); border-radius: var(--r-input); cursor: pointer;
+}
+.primary-button:disabled { opacity: .55; cursor: not-allowed; }
+.icon-button { display: inline-flex; padding: 4px; color: var(--ink-dim); background: none; border: 0; cursor: pointer; }
+
+/* ---------- P5「用户与用量」 ---------- */
+.usage-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0 16px 12px; }
+.usage-toolbar .segmented button { font-size: 11px; }
+.record-entrypoint { color: var(--ink-3); font-size: 10.5px; white-space: nowrap; }
+/* 趋势压到 120–140px，避免把用户表挤出首屏（默认折叠，状态记 localStorage）。 */
+.user-usage-trend .usage-chart svg { height: 132px; }
+.row-clickable { cursor: pointer; }
+.row-clickable:hover { background: var(--surface-3); }
+.user-budget { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+
+/* ---------- P7 调分弹窗 ---------- */
+.points-form { display: flex; flex-direction: column; gap: 16px; }
+.points-field { display: flex; flex-direction: column; gap: 6px; }
+.points-label { font-size: 11px; font-weight: 500; color: var(--ink-2); }
+.points-form-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--ink-2); }
+.points-form-row strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.points-quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.points-quick .button-secondary { min-height: 26px; height: 26px; padding: 0 9px; font-size: 11px; }
+.points-after { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.points-after.is-negative { color: var(--bad); }
+.points-error { font-size: 11px; color: var(--bad); line-height: 1.6; }
+.points-hint { font-size: 10.5px; color: var(--ink-3); line-height: 1.6; }
+.points-note { font-size: 10.5px; color: var(--ink-3); line-height: 1.7; }
+.points-modal-foot { display: flex; justify-content: flex-end; gap: 8px; }
+.button-primary.is-danger { background: var(--bad); border-color: var(--bad); }
+.button-primary.is-danger:hover:not(:disabled) { background: var(--bad); border-color: var(--bad); filter: brightness(.94); }
+
+/* 窄屏弹窗按 92vw 收敛，1440 / 375 两档都不出现横向滚动。 */
+@media (max-width: 767px) {
+  .ant-modal { max-width: 92vw; }
+}

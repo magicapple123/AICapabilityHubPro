@@ -139,6 +139,13 @@ prompt_tokens 当前按传入有效消息字符数估算，completion_tokens 沿
 | `usage.total_tokens` | int | 两者之和，可与上游控制台逐项对上 |
 | `usage_source` | string | `upstream` / `mock` / `missing`，调用方可据此判断能否用于核算 |
 | `billing_mode` | string | 本次调用采用的计价模式 |
+| `prompt_tokens` / `completion_tokens` / `total_tokens` | int | 顶层 token 明细（与 `usage` 一致），收据可直接展示“输入 X / 输出 Y / 合计 Z” |
+| `price_per_1k_input` / `price_per_1k_output` | int | `per_token` 模式的登记单价（积分/1k tokens） |
+| `price_per_unit` / `unit` | int / string | `per_unit` 模式的单价与计量单位（如 `张`） |
+| `images` | array | D3 文生图产物 `[{url, revised_prompt}]`；文本能力为空数组，`choices[0].images` 为同内容副本 |
+
+> C2 收据口径：前端按 `billing_mode` 选择展示“按次 / 按 token / 按件”与对应单价；
+> `usage_source='missing'` 时必须明确标注“上游未返回用量”，不得用 0 冒充真实消耗。
 
 旧字段（`price_per_call`、`cost`、`record_id`、`billing_status`、`call_status` 等）保持不变。
 
@@ -189,8 +196,15 @@ api_key_mask / default_model / timeout_ms / extra_json / status / last_test_ok_a
 （逗号分隔，支持 `*.example.com`，为空则全拒）；解析后拒绝 `10/8`、`172.16/12`、`192.168/16`、
 `127/8`、`169.254/16`、`0.0.0.0/8`、`100.64/10`、`::1`、`fc00::/7`、`fe80::/10`；不跟随重定向。
 
-> 已知限制：校验与建连之间仍有极短 TOCTOU 窗口；完全消除需要把连接钉在已校验 IP 上
-> （自定义 SNI + 证书校验），本轮未做，已列入后续建议。
+**IP 钉扎（P15，已实现）**：`validate_url()` 返回的 `SafeTarget.ip` 就是本次解析并已校验的地址；
+`resolve_runtime()` 把它随 `ProviderRuntime.target` 传入调用链，模型调用、流式调用与连通性探测
+都用 `SafeTarget.connect_url()` 按该 IP 建连，`Host` 头与 TLS SNI 仍是原域名
+（httpx `extensions={"sni_hostname": ...}`，证书照常按域名校验）。**校验与建连之间不再重新解析，
+DNS 重绑定没有窗口**。
+
+> 残余边界（与代码一致）：① 文生图执行器（`image_client`）仍按域名建连，防护退化为"解析校验"，
+> 存在极小的 TOCTOU 窗口；② 只钉住解析结果里的第一个地址，多 IP/CDN 场景不做故障转移；
+> ③ 未绑定供应商时走全局 `MODEL_BASE_URL`，属部署期配置，不做钉扎。
 
 内部详情 `GET /internal/provider/{alias}` 只返回 `{alias, protocol, status, default_model}`，
 供 capability 在保存阶段做执行器绑定校验。
@@ -223,3 +237,44 @@ api_key_mask / default_model / timeout_ms / extra_json / status / last_test_ok_a
 
 **只对超时与 5xx 重试一次**（退避 300ms），4xx 不重试。重试发生在计费之前，
 一次调用**只产生一条账单、一次扣分**，仍挂同一 `requestId`。
+
+### P11 上游模型选择（2026-11-03）
+
+平台 `/api/chat/completions` 的显式 `model` 优先于绑定供应商的 `default_model`；只有未绑定供应商时才回退全局 `MODEL_NAME`。绑定供应商但两者均为空时返回 `4002`，明确提示补默认模型，不静默发送全局名称。`/v1` 的 `model` 是平台能力别名，只用于解析能力，绝不作为上游模型名。相同规则适用于 chat、summary 与流式；图片仍由图片供应商配置决定。供应商编辑页在默认模型为空时给出调用限制提示。
+
+### P1 供应商状态与错误码（2026-11-03）
+
+`2008` 只表示执行器未实现，原文案保留。`2009` 表示绑定供应商不存在、未启用或被停用；运行期点名alias，OpenAI/Responses兼容层映射为HTTP503、type=api_error、code=platform_2009。保存绑定时仅接受enabled供应商，draft/disabled返回2001并提示先测试启用，状态缺失按4002失败关闭。供应商变更不改变一次调用一条账单、失败不扣分的口径。无新增表字段或接口。
+
+### P6 Key 归因透传（2026-11-03）
+
+- 新增可信头 `X-User-Key-Id`（`x-user-` 前缀，网关会先剥离所有外部同名头再写入；下游无条件信任）。`UserContext` 增 `api_key_id: int|null` 与 `entrypoint: str`。非法/缺失时 `api_key_id=None`，不阻断请求。
+- 入口标记：`/api/**` 带 Key 身份 → `platform_api`，不带 → `web`；`/v1/**` → `openai_compat`。
+- 服务间调用（`call_internal`）向上游透传 `X-User-Key-Id`；账单上报 `api_key_id` / `entrypoint` 到 billing。缺值时不发送该头，billing 落 `NULL` / 空串。
+- 一次调用仍只有一条账单、一次扣分；归因字段不参与幂等比较。
+
+### P12 Responses 兼容（2026-11-03）
+
+`store` 只在值为 `true` 时拒绝（`4001`）；`store:false` 放行。`reasoning` / `background` 改为接受并忽略，响应体增 `platform_warnings: string[]` 说明被忽略的字段，不整单失败。Responses 扁平 `tools[{type:"function",name,description,parameters}]` 在执行前翻译为 chat 嵌套结构，上游 `function_call` 反向映射为 Responses `output` 项。SSE 顺序冻结为：`response.created` → `response.output_item.added` → `response.content_part.added` → `response.output_text.delta`* → `response.output_text.done` → `response.output_item.done` → `response.completed` → `[DONE]`。`instructions` 属系统提示，不计入 `input` 消息的 12000 字符上限。不支持的 `input` 条目类型与内置工具仍 `4001`。
+
+### P15 出站 IP 钉扎（2026-11-03）
+
+`SafeTarget` 增 `host_header` / `connect_url()`，`provider_guard.pinned_request_parts()` 统一产出
+「IP URL + `Host` 头 + `sni_hostname`」。生产路径三条都走它：`model_client.complete`、
+`stream_service.stream_upstream`、`provider_service.test_provider`。`ProviderRuntime` 增可选字段
+`target: SafeTarget | null`（无新表/新接口）。文生图仍按域名建连，已在 §10.1 的"残余边界"注明。
+
+### P16 熔断与整体超时预算（2026-11-03）
+
+- 新增 `app/core/provider_breaker.py`：按供应商 alias 的最简熔断，连续 N 次 5xx/超时/连接错
+  → 冷却 M 秒内直接 `BizException(5005)`，冷却后放行一个半开探测；429/401/402/403 不计入。
+- 新增 `app/core/deadline.py`：入口 `Deadline.start()` 算总预算（`REQUEST_BUDGET_SECONDS`，默认 60s），
+  模型单次尝试超时取 `min(供应商配置, 剩余预算)`，预算耗尽不再发起新尝试。
+- 配置项（环境变量，均有默认值，不引入新的 Nacos 依赖）：
+  `REQUEST_BUDGET_SECONDS=60`、`PROVIDER_BREAKER_ENABLED=true`、
+  `PROVIDER_BREAKER_FAILURE_THRESHOLD=5`、`PROVIDER_COOLDOWN_SECONDS=30`。
+- `/metrics` 新增 `provider_breaker_state{provider}`（0=closed 1=half_open 2=open）、
+  `provider_breaker_trips_total{provider}`、`provider_breaker_rejected_total{provider}`。
+- 计费语义不变：熔断拒绝走既有失败路径（`failed` 占位消息、不产生账单、不扣分）。
+- 已知限制：熔断状态在**进程内**，多 worker 下各自计数（真实阈值≈worker 数×配置值），
+  与 A4 令牌桶同一局限；跨 worker 共享需 Redis，不在本轮范围。

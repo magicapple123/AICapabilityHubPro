@@ -13,11 +13,15 @@ class ChatMessage(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     role: Literal["system", "user", "assistant", "tool"]
-    content: str = Field(min_length=1, max_length=12000)
+    # 纯工具调用的 assistant 消息 content 为空（OpenAI 允许 null），由校验器放行。
+    content: str = Field(default="", max_length=12000)
     # 仅 `role="tool"` 使用：对应上一轮 assistant 的 tool_call id。
     tool_call_id: str | None = Field(default=None, max_length=64)
     # 可选的名字（OpenAI 的 name 字段），工具结果回灌时常用。
     name: str | None = Field(default=None, max_length=64)
+    # E2：assistant 回灌时必须带上一轮模型返回的 tool_calls，否则上游无法把
+    # `role="tool"` 的结果和调用对上（实测会返回 400）。
+    tool_calls: list[dict[str, Any]] | None = Field(default=None, max_length=64)
 
     @model_validator(mode="after")
     def tool_fields_consistent(self):
@@ -25,6 +29,10 @@ class ChatMessage(BaseModel):
             raise ValueError("tool 角色的消息必须带 tool_call_id")
         if self.role != "tool" and self.tool_call_id:
             raise ValueError("只有 tool 角色可以带 tool_call_id")
+        if self.tool_calls is not None and self.role != "assistant":
+            raise ValueError("只有 assistant 消息可以带 tool_calls")
+        if not self.content.strip() and not (self.role == "assistant" and self.tool_calls):
+            raise ValueError("消息内容不能为空")
         return self
 
 

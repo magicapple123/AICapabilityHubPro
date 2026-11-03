@@ -1,6 +1,8 @@
 import importlib
 import logging
+import os
 import random
+import socket
 import threading
 from typing import Any, Protocol
 
@@ -54,10 +56,33 @@ class NacosRegister:
                     )
         return self._client
 
+    def _advertise_host(self) -> str:
+        """返回其它容器真的能连上的地址。
+
+        容器里 `service_host` 默认是 127.0.0.1，注册上去等于告诉别人"连你自己"，
+        网关/兄弟服务按这个地址调用必然 4002（G2 整栈联调实测）。优先级：
+        显式配置 > SERVICE_REGISTER_IP > 容器自身 IP > 回退 127.0.0.1（本地开发）。
+        """
+
+        host = settings.service_host
+        if host not in ("127.0.0.1", "localhost", "0.0.0.0"):
+            return host
+        override = os.getenv("SERVICE_REGISTER_IP", "").strip()
+        if override:
+            return override
+        # 本地多进程开发：127.0.0.1 就是对的，别改成局域网 IP（换网卡/断网会连带注册失效）。
+        if not os.path.exists("/.dockerenv"):
+            return host
+        try:
+            resolved = socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return host
+        return resolved if resolved and not resolved.startswith("127.") else host
+
     def _register(self) -> None:
         self._get_client().add_naming_instance(
             settings.service_name,
-            settings.service_host,
+            self._advertise_host(),
             settings.service_port,
             cluster_name=settings.nacos_cluster,
             group_name=settings.nacos_group,
@@ -68,7 +93,7 @@ class NacosRegister:
         logger.info(
             "已注册到 Nacos service={} address={}:{}",
             settings.service_name,
-            settings.service_host,
+            self._advertise_host(),
             settings.service_port,
         )
 
@@ -80,7 +105,7 @@ class NacosRegister:
                 else:
                     self._get_client().send_heartbeat(
                         settings.service_name,
-                        settings.service_host,
+                        self._advertise_host(),
                         settings.service_port,
                         cluster_name=settings.nacos_cluster,
                         group_name=settings.nacos_group,

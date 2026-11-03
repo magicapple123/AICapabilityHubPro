@@ -22,10 +22,17 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import ACCESS_KEY_PREFIX, SECRET_KEY_PREFIX, ApiKeyStatus
 from app.core.exceptions import BizException
+from app.core.security import UserContext
 from app.models import ApiKey, User
 from app.repository import ApiKeyRepository, UserRepository
 from app.repository import api_key_repository, user_repository
 from app.schemas import ApiKeyCreateRequest
+from app.service import audit_service
+from app.service.audit_service import (
+    ACTION_CREATE,
+    ACTION_DISABLE,
+    RESOURCE_APIKEY,
+)
 from app.service.user_service import require_available_user
 
 # 生成随机凭据时的重试上限；正常情况一次成功。
@@ -46,6 +53,14 @@ def _hash_secret(secret_key: str) -> str:
     return hashlib.sha256(secret_key.encode("utf-8")).hexdigest()
 
 
+def _mask_access_key(access_key: str) -> str:
+    """审计里只留可辨认前缀与末 4 位；access_key 不是密钥，但仍不做全量留存。"""
+
+    if len(access_key) <= 10:
+        return "***"
+    return f"{access_key[:6]}****{access_key[-4:]}"
+
+
 class ApiKeyService:
     """API Key 的创建、查询与禁用。"""
 
@@ -58,12 +73,15 @@ class ApiKeyService:
         self.users = users or user_repository
 
     def create(
-        self, db: Session, user_id: int, payload: ApiKeyCreateRequest
+        self, db: Session, user_id: int, payload: ApiKeyCreateRequest,
+        actor: UserContext | None = None,
     ) -> tuple[ApiKey, str]:
         """创建 Key；返回 (实体, 完整 secret_key)。完整密钥不落库。
 
         被禁用账号不允许再签发新凭据：网关只认 Token，禁用后旧 Token 在有效期内
         仍可通过网关，因此这里必须自行校验账号状态（返回 1005）。
+        传入 `actor` 时写一条审计（P6）：只记名称、掩码与有效期，
+        **绝不记录 secret 或 hash**。
         """
 
         self._require_available_user(db, user_id)
@@ -80,7 +98,23 @@ class ApiKeyService:
             expire_time=payload.expire_time,
         )
         try:
+            # flush 先拿到主键，审计才能把 resource_id 指向这把 Key。
             self.api_keys.add(db, api_key)
+            if actor is not None:
+                audit_service.stage(
+                    db, actor=actor, resource_type=RESOURCE_APIKEY,
+                    resource_id=api_key.id, action=ACTION_CREATE,
+                    before=None,
+                    after={
+                        "name": api_key.name,
+                        "access_key": _mask_access_key(api_key.access_key),
+                        "status": api_key.status,
+                        "expire_time": (
+                            api_key.expire_time.strftime("%Y-%m-%d %H:%M:%S")
+                            if api_key.expire_time else None
+                        ),
+                    },
+                )
             db.commit()
         except IntegrityError as exc:
             db.rollback()
@@ -110,7 +144,10 @@ class ApiKeyService:
         if ttl < 1:
             raise BizException(1003, "API Key 凭证无效")
         token, expire_at = create_token(
-            owner.id, owner.username, role=owner.role, ttl_seconds=ttl, expires_at=expiry
+            owner.id, owner.username, role=owner.role, ttl_seconds=ttl,
+            expires_at=expiry,
+            # `getattr` 只为兼容测试里的轻量替身；真实实体一定有主键。
+            api_key_id=getattr(key, "id", None),
         )
         return {"token": token, "token_type": "Bearer", "expire_at": expire_at,
                 "expires_in": ttl, "user_id": owner.id, "username": owner.username, "role": owner.role}
@@ -146,12 +183,16 @@ class ApiKeyService:
         self._require_available_user(db, user_id)
         return self.api_keys.list_by_user(db, user_id)
 
-    def disable(self, db: Session, user_id: int, api_key_id: int) -> ApiKey:
+    def disable(
+        self, db: Session, user_id: int, api_key_id: int,
+        actor: UserContext | None = None,
+    ) -> ApiKey:
         """禁用 Key；重复禁用幂等返回当前状态。
 
         他人 Key 与不存在的 Key 都返回 1006，不暴露资源是否存在。
         被禁用账号一律 1005：禁用 Key 属账号内操作，与其它接口保持同一放行规则，
         不做特例（吊销动作由运营在账号层面处理）。
+        传入 `actor` 时写一条审计（P6）；重复禁用的幂等路径不重复留痕。
         """
 
         self._require_available_user(db, user_id)
@@ -161,6 +202,17 @@ class ApiKeyService:
         if api_key.status == ApiKeyStatus.DISABLED.value:
             return api_key
 
+        if actor is not None:
+            audit_service.stage(
+                db, actor=actor, resource_type=RESOURCE_APIKEY,
+                resource_id=api_key.id, action=ACTION_DISABLE,
+                before={"status": api_key.status},
+                after={
+                    "status": ApiKeyStatus.DISABLED.value,
+                    "name": api_key.name,
+                    "access_key": _mask_access_key(api_key.access_key),
+                },
+            )
         self.api_keys.update_fields(db, api_key, {"status": ApiKeyStatus.DISABLED.value})
         db.commit()
         db.refresh(api_key)

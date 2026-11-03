@@ -1,0 +1,12 @@
+/* P3-b 供应商影响面：停用确认框里的能力清单 + 列表里的 draft 提示。 */
+.provider-impact {
+  list-style: none; margin: 8px 0 0; padding: 8px 10px; max-height: 240px; overflow: auto;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  font-size: 12px; line-height: 1.7;
+}
+.provider-impact li { display: flex; gap: 6px; flex-wrap: wrap; }
+.provider-impact strong { font-weight: 600; }
+.provider-draft-hint {
+  margin-top: 3px; font-size: 11px; color: var(--warn);
+  background: var(--warn-bg); border-radius: 4px; padding: 1px 5px; display: inline-block;
+}

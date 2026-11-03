@@ -20,10 +20,11 @@ from app.core.exceptions import BizException
 from app.core.security import UserContext
 from app.core.service_call import call_internal
 from app.models import PointsLog, User
-from app.repository import points_repository, user_repository
+from app.repository import api_key_repository, points_repository, user_repository
 from app.service import audit_service
 from app.service.audit_service import (
     ACTION_ADJUST_POINTS,
+    ACTION_BUDGET,
     ACTION_STATUS,
     RESOURCE_POINTS,
     RESOURCE_USER,
@@ -75,7 +76,23 @@ class AdminService:
             "today_used": points_repository.sum_today_call_outflow(db, user_id),
             "create_time": user.create_time.strftime("%Y-%m-%d %H:%M:%S"),
             "usage": usage,
+            "api_keys": self._api_keys_of(db, user_id),
         }
+
+    @staticmethod
+    def _api_keys_of(db: Session, user_id: int) -> list[dict]:
+        """该用户的 Key 元数据；**不含 secret / secret_hash**，只看得到 access_key。"""
+
+        return [
+            {
+                "id": key.id,
+                "name": key.name,
+                "access_key": key.access_key,
+                "status": key.status,
+                "create_time": key.create_time.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            for key in api_key_repository.list_by_user(db, user_id)
+        ]
 
     async def _usage_of(self, user_id: int) -> dict | None:
         """复用 billing 的统计口径；对端不可用时返回 None，不影响详情其它字段。"""
@@ -111,6 +128,38 @@ class AdminService:
         # user_repository 只 flush；这里统一提交，审计行与状态变更同事务落库。
         db.commit()
         return {"id": user.id, "status": user.status}
+
+    def set_budget(
+        self, db: Session, actor: UserContext, user_id: int, daily_points_limit: int
+    ) -> dict:
+        """设置日预算（P10）；`0` 表示不限，语义与列表/抽屉文案保持一致。
+
+        即时生效：`points_service` 每次调用都读库里的 `daily_points_limit`，
+        没有缓存需要失效，也不需要通知 ai-chat。
+        """
+
+        if type(daily_points_limit) is not int:
+            raise BizException(2001, "日预算必须是整数")
+        if daily_points_limit < 0 or daily_points_limit > MAX_ADJUST_AMOUNT:
+            raise BizException(2001, f"日预算需在 0–{MAX_ADJUST_AMOUNT} 之间，0 表示不限")
+        user = user_repository.find_by_id(db, user_id)
+        if user is None:
+            raise BizException(1005, "用户不存在")
+        before = {"daily_points_limit": user.daily_points_limit}
+        if user.daily_points_limit == daily_points_limit:
+            # 值没变也要写一条审计吗？不写：审计的价值是"变了什么"，
+            # 重复提交同值只会给对账添噪声。
+            return {"id": user.id, "daily_points_limit": user.daily_points_limit}
+        audit_service.stage(
+            db, actor=actor, resource_type=RESOURCE_USER, resource_id=user_id,
+            action=ACTION_BUDGET, before=before,
+            after={"daily_points_limit": daily_points_limit},
+        )
+        user_repository.update_fields(
+            db, user, {"daily_points_limit": daily_points_limit}
+        )
+        db.commit()
+        return {"id": user.id, "daily_points_limit": user.daily_points_limit}
 
     def adjust_points(
         self, db: Session, actor: UserContext, user_id: int, amount: int, reason: str

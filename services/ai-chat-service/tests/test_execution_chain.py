@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 from app.core.config import ModelRuntimeSettings, settings
 from app.core.exceptions import BizException
-from app.core.constants import DEGRADED_REPLY
+from app.core.constants import DEGRADED_REPLY, FAILED_REPLY
 from app.schemas.capability import CapabilityDefinition
 from app.service.model_client import ModelReply
 from tests.conftest import USER_HEADERS
@@ -89,6 +89,49 @@ def test_approved_execution_uses_catalog_price_identity_and_request_id(client, c
     assert history["data"]["total"] == 2
 
 
+def test_bound_provider_uses_default_model_instead_of_global(client, monkeypatch, chain):
+    from types import SimpleNamespace
+
+    observed = {}
+    async def catalog(_capability_id):
+        return definition(1, provider_alias="qa-qwen", executor="chat")
+
+    def resolve_provider(_db, alias, *, model=None):
+        observed["alias"] = alias
+        observed["requested_model"] = model
+        return SimpleNamespace(
+            alias=alias, model=model or "qwen-plus", protocol="openai-chat",
+            base_url="https://provider.test/v1", timeout=10.0,
+        )
+
+    async def execute(execution, *, provider, **_kwargs):
+        observed["prepared_model"] = execution.requested_model
+        observed["resolved_model"] = provider.model
+        return ModelReply(
+            content="ok", call_status="success", model_name=provider.model,
+            usage_source="missing",
+        )
+
+    monkeypatch.setattr(settings, "model_name", "global-deepseek-model")
+    monkeypatch.setattr(module.capability_client, "fetch", catalog)
+    monkeypatch.setattr(module.provider_service, "resolve_runtime", resolve_provider)
+    monkeypatch.setattr(module, "execute_prepared", execute)
+
+    response = client.post("/api/chat/completions", headers=USER_HEADERS, json={
+        "capability_id": 1,
+        "input": {"messages": [{"role": "user", "content": "provider default check"}]},
+    }).json()
+
+    assert response["code"] == 0
+    assert observed == {
+        "alias": "qa-qwen",
+        "requested_model": None,
+        "prepared_model": None,
+        "resolved_model": "qwen-plus",
+    }
+    assert response["data"]["model"] == "qwen-plus"
+
+
 def test_billing_failure_keeps_user_turn_and_marks_failure(client, monkeypatch, chain):
     """A1 语义变更：用户消息已在前一个事务提交，账单失败只回滚助手消息。
 
@@ -111,6 +154,11 @@ def test_billing_failure_keeps_user_turn_and_marks_failure(client, monkeypatch, 
     assert [item["role"] for item in messages["list"]] == ["user", "assistant"]
     assert messages["list"][1]["call_status"] == "failed"
     assert messages["list"][1]["error_code"] == 4002
+    # 事务边界再拆分之后（助手消息先 commit → 再上报账单），落地点从
+    # "回滚 + 补写占位"变成"原地把已提交的那条改成 failed"：条数仍是 2，
+    # 内容被替换成 FAILED_REPLY，绝不能出现 user + success + failed 三条。
+    assert messages["list"][1]["content"] == FAILED_REPLY
+    assert messages["list"][1]["token_count"] == 0
 
 
 def test_inconsistent_billing_receipt_is_not_reported_as_success(client, monkeypatch, chain):
@@ -300,3 +348,47 @@ def test_connection_is_not_held_across_the_model_call(client, monkeypatch):
     assert body["code"] == 0
     assert observed == [False]
 
+
+
+def test_billing_report_runs_after_the_assistant_message_is_committed(client, chain, monkeypatch):
+    """本轮拆事务的直接验收点：账单上报时不占连接，且助手消息已经提交。
+
+    两个探针，缺一不可：
+
+    1. `engine.pool.checkedout() == 0`——旧实现把「写助手消息」和「上报账单」
+       放在同一个事务里，上报那 40 ms 全程占着池里一条连接；2 worker × 20 并发
+       就是这样把 `5+10` 的池打穿、billing 500 → chat 4002 的。
+    2. 另开一个会话能读到那条 assistant 消息——证明它是 commit 之后再去上报，
+       而不是"失败回滚后补写的占位"。两条一起看才排除"其实没提交"。
+    """
+
+    from sqlalchemy import func, select
+
+    from app.db.session import SessionLocal, engine
+    from app.models.chat import ChatMessage
+
+    previous = module.call_internal
+    probes: dict[str, object] = {}
+
+    async def spy(service, method, path, **kwargs):
+        if path == "/internal/billing/record":
+            probes["checkedout"] = engine.pool.checkedout()
+            probe = SessionLocal()
+            try:
+                probes["assistant_rows"] = probe.scalar(
+                    select(func.count(ChatMessage.id)).where(
+                        ChatMessage.user_id == USER_HEADERS["X-User-Id"],
+                        ChatMessage.role == "assistant",
+                    )
+                )
+            finally:
+                probe.close()
+        return await previous(service, method, path, **kwargs)
+
+    monkeypatch.setattr(module, "call_internal", spy)
+    body = client.post("/api/chat/completions", headers=USER_HEADERS,
+                       json={"messages": [{"role": "user", "content": "boundary"}]}).json()
+
+    assert body["code"] == 0, body
+    assert probes["checkedout"] == 0
+    assert probes["assistant_rows"] == 1

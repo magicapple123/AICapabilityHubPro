@@ -37,6 +37,16 @@ settings.jwt_secret = TEST_JWT_SECRET
 settings.jwt_issuer = "ai-capability-hub"
 
 
+@pytest.fixture(autouse=True)
+def isolated_login_windows(monkeypatch):
+    """Process-local security state must not leak between independent test cases."""
+    from importlib import import_module
+    from app.service.login_protection import LoginProtection
+
+    module = import_module("app.service.user_service")
+    monkeypatch.setattr(module, "login_protection", LoginProtection())
+
+
 def _check_database() -> tuple[bool, str]:
     """探测数据库与业务表是否就绪；返回 (是否可用, 不可用原因)。"""
 

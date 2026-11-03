@@ -122,6 +122,8 @@ class QaCatalog:
         price: int = 7,
         param_schema: dict | None = None,
         omit_schema: bool = False,
+        executor: str | None = None,
+        openai_alias: str | None = None,
     ) -> dict:
         payload: dict = {
             "category_id": category_id,
@@ -136,6 +138,10 @@ class QaCatalog:
             payload["param_schema"] = (
                 DEFAULT_PARAM_SCHEMA if param_schema is None else param_schema
             )
+        if executor is not None:
+            payload["executor"] = executor
+        if openai_alias is not None:
+            payload["openai_alias"] = openai_alias
         return self.client.post(
             "/api/capability", headers=USER_HEADERS, json=payload
         ).json()
@@ -211,6 +217,12 @@ class QaCatalog:
     def internal_detail(self, capability_id: int, *, headers: dict | None = None) -> dict:
         return self.client.get(
             f"/internal/capability/{capability_id}",
+            headers=USER_HEADERS if headers is None else headers,
+        ).json()
+
+    def internal_openai_models(self, *, headers: dict | None = None) -> dict:
+        return self.client.get(
+            "/internal/capability/openai-models",
             headers=USER_HEADERS if headers is None else headers,
         ).json()
 

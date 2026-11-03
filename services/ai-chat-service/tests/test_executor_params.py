@@ -1,7 +1,10 @@
 """D2 执行器抽象 / D4 参数白名单与容错。"""
 
 import pytest
+from types import SimpleNamespace
+import asyncio
 
+from app.core.config import settings
 from app.core.constants import ModelErrorCode
 from app.core.exceptions import BizException
 from app.schemas.capability import CapabilityDefinition
@@ -12,6 +15,8 @@ from importlib import import_module
 mc = import_module("app.service.model_client")
 from app.service.capability_adapters import (
     EXECUTORS,
+    resolve_upstream_model,
+    execute_prepared,
     effective_max_tokens,
     prepare_execution,
     resolve_executor,
@@ -67,6 +72,76 @@ def test_chat_executor_is_selected_by_field_and_keeps_code():
     cap = definition(executor="chat", code="my-own-code")
     prepared = prepare_execution(cap, request())
     assert prepared.executor == "chat" and prepared.code == "my-own-code"
+
+
+@pytest.mark.parametrize("executor,payload", [
+    ("chat", {"messages": [{"role": "user", "content": "hi"}]}),
+    ("summary", {"text": "team notes", "max_length": 50}),
+])
+def test_prepare_keeps_model_optional_instead_of_filling_global_default(executor, payload, monkeypatch):
+    monkeypatch.setattr(settings, "model_name", "global-default-model")
+    prepared = prepare_execution(definition(executor=executor), request(payload))
+
+    assert prepared.request.model is None
+    assert prepared.requested_model is None
+    assert resolve_upstream_model(prepared, provider=None) == "global-default-model"
+
+
+def test_explicit_request_model_is_preserved_and_wins_over_provider_default():
+    prepared = prepare_execution(definition(), request(model="caller-selected-model"))
+
+    assert prepared.requested_model == "caller-selected-model"
+    assert prepared.request.model == "caller-selected-model"
+    assert resolve_upstream_model(
+        prepared, provider=type("Provider", (), {"model": "provider-default-model"})()
+    ) == "caller-selected-model"
+
+
+def test_bound_provider_without_any_model_fails_closed():
+    prepared = prepare_execution(definition(), request())
+
+    with pytest.raises(BizException) as error:
+        resolve_upstream_model(prepared, provider=type("Provider", (), {"model": ""})())
+
+    assert error.value.code == 4002
+    assert "默认模型" in error.value.message
+
+
+def test_execute_uses_provider_model_without_falling_back_to_global(monkeypatch):
+    monkeypatch.setattr(settings, "model_name", "global-default-model")
+    prepared = prepare_execution(definition(), request())
+    seen = {}
+
+    class ModelClient:
+        async def complete(self, messages, **kwargs):
+            seen.update(kwargs)
+            return mc.ModelReply(
+                content="answer", call_status="success", model_name=kwargs["model"],
+                usage_source="missing",
+            )
+
+    reply = asyncio.run(execute_prepared(
+        prepared,
+        runtime=type("Runtime", (), {"use_mock": False})(),
+        model_client=ModelClient(),
+        provider=SimpleNamespace(
+            alias="qwen-provider", model="qwen-plus", base_url="https://provider.test/v1",
+            protocol="openai-chat", timeout=10.0, api_key="synthetic-test-key",
+        ),
+        definition=definition(),
+    ))
+
+    assert seen["model"] == "qwen-plus"
+    assert reply.model_name == "qwen-plus"
+
+
+def test_unbound_execution_uses_explicit_model_then_global_default(monkeypatch):
+    monkeypatch.setattr(settings, "model_name", "global-default-model")
+    implicit = prepare_execution(definition(), request())
+    explicit = prepare_execution(definition(), request(model="caller-model"))
+
+    assert resolve_upstream_model(implicit, None) == "global-default-model"
+    assert resolve_upstream_model(explicit, None) == "caller-model"
 
 
 # ---------------------------------------------------------------- D4 参数白名单
@@ -149,7 +224,7 @@ class _FakeClient:
     async def __aexit__(self, *exc):
         return False
 
-    async def post(self, url, json=None, headers=None):
+    async def post(self, url, json=None, headers=None, **kwargs):
         index = min(_FakeClient.calls, len(_FakeClient.script) - 1)
         _FakeClient.calls += 1
         result = _FakeClient.script[index]
@@ -162,7 +237,13 @@ class _FakeClient:
 def fake_http(monkeypatch):
     _FakeClient.calls = 0
     _FakeClient.script = []
-    monkeypatch.setattr(mc.httpx, "AsyncClient", _FakeClient)
+
+    # 连接复用后不再有 `async with httpx.AsyncClient(...)`，
+    # 替身从"打客户端构造器"改成"打共享客户端的取用函数"。
+    async def get_client():
+        return _FakeClient()
+
+    monkeypatch.setattr(mc, "get_http_client", get_client)
     # 退避时间在测试里置 0，避免无谓等待
     monkeypatch.setattr(mc, "RETRY_BACKOFF_SECONDS", 0)
     return _FakeClient

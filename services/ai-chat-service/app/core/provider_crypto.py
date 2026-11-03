@@ -26,6 +26,11 @@ class ProviderKeyError(RuntimeError):
 def _master_key() -> bytes:
     raw = os.environ.get("PROVIDER_MASTER_KEY_V1", "").strip()
     if not raw:
+        # 与白名单同一处缺陷：只读 os.environ 会漏掉 .env（已修）
+        from app.core.config import settings
+
+        raw = (getattr(settings, "provider_master_key_v1", "") or "").strip()
+    if not raw:
         raise ProviderKeyError("PROVIDER_MASTER_KEY_V1 is not configured")
     try:
         key = base64.b64decode(raw)

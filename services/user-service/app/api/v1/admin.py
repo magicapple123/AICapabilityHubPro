@@ -1,7 +1,7 @@
 """F1 运营后台用户管理接口，挂载前缀 `/api/user/admin`。
 
 管理员判定在**本服务内**完成（读自己的库，不绕远端）：
-`role='admin'` 且 `status='normal'` 才放行，否则 2007。
+账号不可用返回1005；正常账号仅 `role='admin'` 放行，其余2007。
 之所以不像 capability 那样调远端授权：user-service 就是授权数据的持有方，
 自调用只会多一次网络跳转和一个自依赖故障点。
 """
@@ -20,21 +20,25 @@ from app.core.security import UserContext, current_user
 from app.db.session import get_db
 from app.schemas import PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX, build_page_data
 from app.schemas.admin import AdminUserOut, AuditLogOut
-from app.repository import user_repository
 from app.service.audit_service import audit_service
 from app.service.admin_service import admin_service
+from app.service.user_service import require_available_user
 
 router = APIRouter()
 
 ADMIN_ONLY_MESSAGE = "无运营权限，仅管理员可执行该操作"
 AUDIT_PAGE_SIZE_DEFAULT = 20
+# P5「用户与用量」合并页要一次拿到全量用户，再与 billing 的消耗聚合按 user_id join。
+# 这是**仅管理端列表**的放宽（普通分页仍按契约上限 100），边界是 2000 用户；
+# 超过该量级必须改成 billing 主导分页 + user-service 批量补资料（契约 A2 路径）。
+ADMIN_USER_PAGE_SIZE_MAX = 2000
 
 
 def _require_admin(user: UserContext, db: Session) -> UserContext:
     if not user.user_id or not str(user.user_id).isdigit():
         raise BizException(1001, "未认证或登录已过期")
-    row = user_repository.find_by_id(db, int(user.user_id))
-    if row is None or row.status != "normal" or row.role != "admin":
+    row = require_available_user(db, int(user.user_id))
+    if row.role != "admin":
         raise BizException(2007, ADMIN_ONLY_MESSAGE)
     return user
 
@@ -50,16 +54,25 @@ class AdminPointsRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=200)
 
 
+class AdminBudgetRequest(BaseModel):
+    """P10：日预算。`0` 表示不限，与列表里"不限"的展示口径一致。"""
+
+    model_config = ConfigDict(extra="forbid")
+    daily_points_limit: int = Field(ge=0, le=1_000_000)
+
+
 @router.get("/users", response_model=Result)
 async def list_users(
     keyword: str | None = Query(default=None, max_length=64),
     status: str | None = Query(default=None, pattern="^(normal|disabled)$"),
     page: int = Query(default=1, ge=1, le=10000),
-    page_size: int = Query(default=PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
+    page_size: int = Query(
+        default=PAGE_SIZE_DEFAULT, ge=1, le=ADMIN_USER_PAGE_SIZE_MAX
+    ),
     user: UserContext = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> Result:
-    """用户列表（含余额与日预算）；支持用户名/昵称模糊搜索与状态筛选。"""
+    """用户列表（含余额与日预算）；支持 ID/用户名/昵称搜索与状态筛选。"""
 
     _require_admin(user, db)
     items, total = admin_service.list_users(
@@ -135,6 +148,22 @@ async def adjust_points(
     _require_admin(user, db)
     data = admin_service.adjust_points(
         db, user, user_id, payload.amount, payload.reason
+    )
+    return Result.ok(data, request_id=get_request_id())
+
+
+@router.put("/users/{user_id}/budget", response_model=Result)
+async def set_user_budget(
+    user_id: int,
+    payload: AdminBudgetRequest,
+    user: UserContext = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> Result:
+    """设置日预算（P10）：0 = 不限；变更写审计（`resource_type=user, action=budget`）。"""
+
+    _require_admin(user, db)
+    data = admin_service.set_budget(
+        db, user, user_id, payload.daily_points_limit
     )
     return Result.ok(data, request_id=get_request_id())
 

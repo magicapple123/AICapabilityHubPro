@@ -9,10 +9,12 @@ from app.api.v1 import (
     internal_router,
     manage_router,
     market_router,
+    models_router,
     ping_router,
 )
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
+from app.core.http_client import close_http_client
 from app.core.logging import configure_logging, get_request_id, register_request_logging
 from app.core.nacos_client import nacos_register
 from app.core.observability import install_observability
@@ -28,6 +30,8 @@ async def lifespan(_: FastAPI):
     # 只有应用启动时才连接 Nacos；导入模块不会联网。
     nacos_register.start()
     yield
+    # 先放掉共享 HTTP 连接池，再停注册中心：退出时不再有内部调用需要连接。
+    await close_http_client()
     nacos_register.stop()
 
 
@@ -46,6 +50,8 @@ app.include_router(
     market_router, prefix="/api/capability/market", tags=["capability-market"]
 )
 app.include_router(manage_router, prefix="/api/capability", tags=["capability-manage"])
+# P3：登录用户可读的对外模型名清单（设置页「使用方法」抽屉用），字面量路径先注册。
+app.include_router(models_router, prefix="/api/capability", tags=["capability-models"])
 # 审计是只读接口；注册在含路径参数的能力写路由之前，避免被 /{capability_id} 抢占。
 app.include_router(audit_router, prefix="/api/capability", tags=["capability-audit"])
 app.include_router(

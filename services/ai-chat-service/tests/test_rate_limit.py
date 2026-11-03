@@ -21,7 +21,16 @@ def test_burst_then_reject():
         limiter.acquire("u1")
     with pytest.raises(BizException) as error:
         limiter.acquire("u1")
-    assert error.value.code == 2009
+    # A4 需求与平台错误码总表一致：限流用 4001（不是 2009，2xxx 属参数/目录类）
+    assert error.value.code == 4001
+    assert error.value.code == module.RATE_LIMIT_CODE
+    assert "稍后再试" in error.value.message
+
+
+def test_rate_limit_code_matches_platform_table():
+    """4001 = 平台错误码总表里的"限流"，与网关 Sentinel 同一口径。"""
+
+    assert module.RATE_LIMIT_CODE == 4001
 
 
 def test_tokens_refill_over_time(monkeypatch):

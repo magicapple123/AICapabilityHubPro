@@ -35,13 +35,17 @@ CREATE TABLE IF NOT EXISTS t_call_record (
   call_status VARCHAR(16) NOT NULL DEFAULT 'success' COMMENT '调用状态 success成功 degraded降级 failed失败',
   duration_ms INT NOT NULL DEFAULT 0 COMMENT '调用耗时（毫秒）',
   model_name VARCHAR(128) NOT NULL DEFAULT '' COMMENT '模型名，Mock 模式为请求中的 model',
+  images JSON NULL COMMENT '图片产物列表 [{url, revised_prompt}]，仅文生图有值（D3）',
+  api_key_id BIGINT NULL COMMENT '调用使用的 API Key ID（P6），历史行为 NULL',
+  entrypoint VARCHAR(16) NOT NULL DEFAULT '' COMMENT '入口 web/platform_api/openai_compat，历史行为空串（P6）',
   create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   is_deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除 0否1是',
   PRIMARY KEY (id),
   UNIQUE KEY uk_call_record_request (request_id, is_deleted),
   KEY idx_call_record_user_time (user_id, is_deleted, create_time),
-  KEY idx_call_record_service_time (service_name, is_deleted, create_time)
+  KEY idx_call_record_service_time (service_name, is_deleted, create_time),
+  KEY idx_call_record_api_key_time (api_key_id, is_deleted, create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='调用明细';
 

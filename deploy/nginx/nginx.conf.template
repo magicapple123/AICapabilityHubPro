@@ -1,5 +1,6 @@
 # Nginx 生产入口：托管 React 静态文件，并把 API 转发给 Spring Cloud Gateway。
-# ${NGINX_GATEWAY_UPSTREAM} 由 Compose 环境变量注入，默认指向宿主机网关。
+# ${NGINX_GATEWAY_UPSTREAM} 由 Compose 环境变量注入：容器化部署默认 gateway:8080（compose 服务名），
+# 只有「网关跑在宿主机」的混合调试场景才覆盖成 host.docker.internal:8080。
 
 map $http_upgrade $connection_upgrade {
     default upgrade;

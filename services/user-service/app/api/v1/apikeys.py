@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.deps import current_user_id
 from app.core.logging import get_request_id
 from app.core.result import Result
+from app.core.security import UserContext, current_user
 from app.db.session import get_db
 from app.schemas.apikey import ApiKeyExchangeRequest
 from app.schemas import (
@@ -41,12 +42,15 @@ async def create_api_key(
     payload: ApiKeyCreateRequest,
     response: Response,
     user_id: int = Depends(current_user_id),
+    actor: UserContext = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> Result:
     """创建 Key；`secret_key` 仅本次返回，请提示用户立即保存。"""
 
     response.headers["Cache-Control"] = "no-store"
-    api_key, secret_key = api_key_service.create(db, user_id, payload)
+    api_key, secret_key = api_key_service.create(
+        db, user_id, payload, actor=actor
+    )
     return Result.ok(
         ApiKeyCreatedOut(
             id=api_key.id,
@@ -66,11 +70,12 @@ async def create_api_key(
 async def disable_api_key(
     api_key_id: int,
     user_id: int = Depends(current_user_id),
+    actor: UserContext = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> Result:
     """禁用指定 Key；重复禁用幂等，他人 Key 与不存在的 Key 一律返回 1006。"""
 
-    api_key = api_key_service.disable(db, user_id, api_key_id)
+    api_key = api_key_service.disable(db, user_id, api_key_id, actor=actor)
     return Result.ok(
         ApiKeyStatusOut(id=api_key.id, update_time=api_key.update_time).model_dump(),
         request_id=get_request_id(),

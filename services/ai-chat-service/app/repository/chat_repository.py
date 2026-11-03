@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.constants import DEFAULT_SESSION_TITLE, CallStatus
@@ -104,6 +104,39 @@ class ChatRepository:
         session.update_time = now
         if title is not None and title:
             session.title = title or DEFAULT_SESSION_TITLE
+        db.flush()
+
+    def mark_message_failed(
+        self,
+        db: Session,
+        *,
+        message_id: int,
+        user_id: str,
+        content: str,
+        error_code: int,
+    ) -> None:
+        """把一条已提交的助手消息原地改成失败态。
+
+        用 Core `UPDATE` 而不是"加载对象再改属性"：这条消息在**另一个已提交的
+        事务**里写过，加载回来会多一次 SELECT（多借一次连接）；这里只需要按
+        主键覆盖 4 个列。
+        """
+
+        db.execute(
+            update(ChatMessage)
+            .where(
+                ChatMessage.id == message_id,
+                ChatMessage.user_id == user_id,
+                ChatMessage.is_deleted == 0,
+            )
+            .values(
+                content=content,
+                call_status=CallStatus.FAILED.value,
+                token_count=0,
+                error_code=error_code,
+            )
+            .execution_options(synchronize_session=False)
+        )
         db.flush()
 
 

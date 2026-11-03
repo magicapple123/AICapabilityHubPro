@@ -1,0 +1,14 @@
+# 仓库级 tooling 测试（tests/tooling）的显式依赖。
+#
+# 为什么单独声明：这批用例测的是 scripts/ 下的运维脚本，脚本自身会 import
+# sqlalchemy（例如 scripts/devtools/seed_demo_data.py 走 create_engine 建连接）。
+# 之前依赖"顺手从某个服务的 requirements 里带上"，系统 Python 直接跑时就会
+# ModuleNotFoundError: No module named 'sqlalchemy'，收集阶段即失败。
+#
+# 安装（在仓库根目录、用跑 pytest 的那个解释器）：
+#     python -m pip install -r tests/requirements-tooling.txt
+#
+# 版本约束与服务侧保持一致，避免 tooling 与运行期用到不兼容的 SQLAlchemy 大版本。
+pytest>=8.0,<9.0
+SQLAlchemy>=2.0,<3.0
+PyMySQL>=1.1,<2.0

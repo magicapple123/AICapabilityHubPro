@@ -65,7 +65,10 @@ def stream_env(monkeypatch):
     monkeypatch.setattr(module.capability_client, "fetch", catalog)
 
     def install(frames, *, abort=False):
-        async def fake_stream(*, base_url, api_key, payload, timeout, outcome, on_frame=None):
+        async def fake_stream(
+            *, base_url, api_key, payload, timeout, outcome, on_frame=None,
+            target=None, breaker_key=None,
+        ):
             for text_chunk in frames:
                 outcome.frames += 1
                 outcome.content += text_chunk
@@ -161,6 +164,35 @@ def test_outcome_call_status_reflects_abort():
     assert outcome.call_status == CallStatus.SUCCESS.value
     outcome.error_code = 5005
     assert outcome.call_status == CallStatus.FAILED.value
+
+
+@pytest.mark.parametrize("bound,expected", [(False, "global-stream-model"), (True, "provider-stream-model")])
+def test_stream_resolves_provider_default_before_global(stream_env, monkeypatch, bound, expected):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(module.settings, "model_name", "global-stream-model")
+    seen = {}
+
+    async def catalog(capability_id):
+        return _definition(provider_alias="qa-stream-provider" if bound else "")
+
+    def resolve(db, alias, *, model):
+        assert model is None
+        return SimpleNamespace(model="provider-stream-model", base_url="https://provider.test/v1",
+                               api_key="synthetic-key", timeout=1.0)
+
+    async def fake_stream(*, payload, outcome, **kwargs):
+        seen.update(payload)
+        outcome.content = "ok"
+        outcome.model_name = payload["model"]
+        outcome.finished = True
+        yield 'data: {"choices":[{"delta":{"content":"ok"}}]}'
+
+    monkeypatch.setattr(module.capability_client, "fetch", catalog)
+    monkeypatch.setattr(module.provider_service, "resolve_runtime", resolve)
+    monkeypatch.setattr(module, "stream_upstream", fake_stream)
+    assert len(_run_stream()) == 1
+    assert seen["model"] == expected
 
 
 def test_parse_sse_helper_is_used_by_stream_module():

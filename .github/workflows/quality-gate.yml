@@ -170,19 +170,36 @@ jobs:
         run: python scripts/devtools/sync_mysql_baseline.py --check
       # H4：OpenAPI 快照比对（预期变更请本地 --update 后随 PR 提交）
       - run: python scripts/openapi_snapshot.py --check
-      # H2：类型检查（白名单模块，逐轮扩大）
-      - run: |
+      # H2：类型检查（白名单模块，逐轮扩大）。口径以仓库根 mypy.ini 为准，
+      # 本地与 CI 必须完全一致：同样的 5 个模块、同样的 --follow-imports=skip。
+      # audit_service 在 user/capability 两个服务里同名，必须进各自目录跑，否则 mypy 报重名模块。
+      - name: Type check (mypy whitelist)
+        shell: bash
+        run: |
+          set -euo pipefail
           python -m pip install 'mypy>=1.10,<2'
-          mypy --config-file mypy.ini --follow-imports=skip services/ai-chat-service/app/service/image_client.py services/ai-chat-service/app/core/provider_crypto.py services/ai-chat-service/app/core/provider_guard.py services/ai-chat-service/app/service/catalog_cache.py
-      # H3：依赖漏洞 + bandit，只在高危阻断（不阻塞日常开发）
-      - run: |
-          pip install pip-audit bandit
+          mypy --config-file mypy.ini --follow-imports=skip \
+            services/ai-chat-service/app/service/image_client.py \
+            services/ai-chat-service/app/core/provider_crypto.py \
+            services/ai-chat-service/app/core/provider_guard.py \
+            services/ai-chat-service/app/service/catalog_cache.py
+          ( cd services/user-service && mypy --config-file ../../mypy.ini --follow-imports=skip app/service/audit_service.py )
+          ( cd services/capability-service && mypy --config-file ../../mypy.ini --follow-imports=skip app/service/audit_service.py )
+      # H3：依赖漏洞 + bandit。工具缺失（exit 2）与高危漏洞（exit 1）都必须让 CI 失败。
+      - name: Security scan (tooling required, HIGH blocks)
+        shell: bash
+        run: |
+          python -m pip install pip-audit bandit
           python scripts/security_scan.py --all
       - run: docker compose -f deploy/docker-compose.yml config --quiet
       - run: python -m pip install 'pytest>=8,<9'
       - name: Install service runtime deps for contract snapshots
         run: |
           python -m pip install -r services/user-service/requirements.txt             -r services/billing-service/requirements.txt             -r services/capability-service/requirements.txt             -r services/ai-chat-service/requirements.txt
+      # tooling 用例测的是 scripts/，脚本模块级会 import sqlalchemy 等第三方包，
+      # 必须显式声明并安装，不能靠"某个服务的 requirements 顺带带上"。
+      - name: Install tooling test dependencies
+        run: python -m pip install -r tests/requirements-tooling.txt
       - run: python -m pytest tests/tooling -q
 
   tooling-windows:
@@ -197,6 +214,10 @@ jobs:
       - name: Install service runtime deps for contract snapshots
         run: |
           python -m pip install -r services/user-service/requirements.txt             -r services/billing-service/requirements.txt             -r services/capability-service/requirements.txt             -r services/ai-chat-service/requirements.txt
+      # tooling 用例测的是 scripts/，脚本模块级会 import sqlalchemy 等第三方包，
+      # 必须显式声明并安装，不能靠"某个服务的 requirements 顺带带上"。
+      - name: Install tooling test dependencies
+        run: python -m pip install -r tests/requirements-tooling.txt
       - run: python -m pytest tests/tooling -q
       - name: Validate PowerShell syntax and portable baseline guard
         shell: pwsh

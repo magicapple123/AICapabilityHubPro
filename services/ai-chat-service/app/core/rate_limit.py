@@ -8,7 +8,11 @@
   真实速率 ≈ 配置值 × worker 数。这是有意的近似——要精确全局限流需要 Redis，
   当前规模引入外部依赖不值当，已在此注明。
 - **令牌桶而非固定窗口**：允许短时突发（burst），避免"整点一到全部拒绝"。
-- 拒绝码用 `2009`（与执行器缺失的 2008 区分），并带 `Retry-After` 语义的提示文案。
+- 拒绝码用 `4001`（平台错误码总表里的"限流"，与网关 Sentinel 限流同一口径）。
+  早期实现用过 `2009`，但 2xxx 属于目录/参数类，客户端会误判为业务参数错误；
+  A4 需求也明确"超限 4001"，故已纠正（见 `docs/api-contract/pro-shared.md` 错误码总表）。
+- 响应体是标准 Result（HTTP 200 + `code=4001`），消息里带"稍后再试"的指引；
+  网关对外仍按 429 语义翻译（见 `openai_compat.py` 的 `4001 → 429`）。
 """
 
 import time
@@ -18,7 +22,8 @@ from app.core.config import settings
 from app.core.exceptions import BizException
 from app.core.observability import RATE_LIMITED
 
-RATE_LIMIT_CODE = 2009
+#: 平台错误码总表：4001 = 触发限流（客户端应退避重试，不应视为参数错误）。
+RATE_LIMIT_CODE = 4001
 RATE_LIMIT_MESSAGE = "请求过于频繁，请稍后再试"
 
 
@@ -49,7 +54,7 @@ class UserRateLimiter:
             self._buckets.pop(key, None)
 
     def acquire(self, user_id: str, cost: float = 1.0) -> None:
-        """消耗一个令牌；不足则抛 2009。`cost` 预留给按 token 计费的场景。"""
+        """消耗一个令牌；不足则抛 4001。`cost` 预留给按 token 计费的场景。"""
 
         if not settings.rate_limit_enabled:
             return

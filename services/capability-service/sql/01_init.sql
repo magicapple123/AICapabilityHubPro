@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS t_capability (
   category_id BIGINT NOT NULL COMMENT '所属分类 ID',
   name VARCHAR(64) NOT NULL COMMENT '能力名称',
   code VARCHAR(64) NOT NULL COMMENT '能力编码，小写字母/数字/连字符',
+  openai_alias VARCHAR(64) NULL COMMENT 'OpenAI 兼容层公开模型名，在线 chat 能力唯一',
   service_name VARCHAR(64) NOT NULL COMMENT '承载该能力的服务名',
   path VARCHAR(255) NOT NULL COMMENT '调用路径',
   param_schema JSON NULL COMMENT '参数 Schema（JSON 对象）',
@@ -57,8 +58,17 @@ CREATE TABLE IF NOT EXISTS t_capability (
   create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   is_deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除 0否1是',
+  -- D5：生成列。未删除时等于 code，已删除时为 NULL。
+  -- NULL 不参与唯一去重，因此"同一 code 可以软删任意多次、再重建"，
+  -- 而未删除范围内 code 仍然唯一。详见 08_add_active_code.sql。
+  active_code VARCHAR(64)
+    GENERATED ALWAYS AS (IF(is_deleted = 0, code, NULL)) STORED
+    COMMENT '生成列：未删除时等于 code，已删除时为 NULL（D5）',
   PRIMARY KEY (id),
-  UNIQUE KEY uk_capability_code (code, is_deleted),
+  UNIQUE KEY uk_capability_openai_alias (openai_alias),
+  UNIQUE KEY uk_capability_active_code (active_code),
+  -- 唯一性已交给 active_code，这里只用于 exists_code() 的 `code = ? AND is_deleted = 0` 查重路径。
+  KEY idx_capability_code (code, is_deleted),
   KEY idx_capability_category_status (category_id, is_deleted, status),
   KEY idx_capability_status_update (status, is_deleted, update_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

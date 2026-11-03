@@ -31,6 +31,17 @@ from pydantic import BaseModel, Field, model_validator
 from app.core.constants import DEFAULT_CAPABILITY_ID, BillingMode, CallStatus
 
 
+class BillingImage(BaseModel):
+    """图片产物（D3）。
+
+    `url` 是上游返回的可访问地址；`revised_prompt` 是部分供应商（如百炼）
+    返回的改写后提示词，没有时为空串。只保留这两个字段，不存二进制。
+    """
+
+    url: str = Field(min_length=1, max_length=2048)
+    revised_prompt: str = Field(default="", max_length=2000)
+
+
 class BillingRecordRequest(BaseModel):
     """上报一次能力调用。`request_id` 是幂等键，重复上报只计一次费。"""
 
@@ -55,6 +66,15 @@ class BillingRecordRequest(BaseModel):
     price_per_1k_input: int | None = Field(default=None, ge=0, le=1_000_000)
     price_per_1k_output: int | None = Field(default=None, ge=0, le=1_000_000)
     price_per_unit: int | None = Field(default=None, ge=0, le=1_000_000)
+    # ---- D3 扩展：文生图产物。
+    # 只接受 {url, revised_prompt} 形状，最多 4 张（与 ImageInput.n 的上限一致），
+    # URL 长度上限 2048，避免被当作任意大对象写入明细表。
+    images: list[BillingImage] = Field(default_factory=list, max_length=4)
+    # ---- P6 扩展：Key 归因与入口。旧调用方不带这两个字段，落库为 NULL/空串。
+    # `api_key_id` 只接受正整数：None 表示"没有 Key 身份"（网页调试台 / 历史数据），
+    # 不能把 0 当"未知 Key"写库，否则按 Key 聚合会多出一个假 Key。
+    api_key_id: int | None = Field(default=None, ge=1)
+    entrypoint: str = Field(default="", max_length=16)
 
     @model_validator(mode="after")
     def validate_price(self):
@@ -128,3 +148,5 @@ class BillingRecordOut(BaseModel):
     completion_tokens: int = 0
     token_source: str = ""
     units: int = 1
+    # D3：回显图片产物，调用方据此核对"记录里存的图"和"当次返回的图"一致。
+    images: list[BillingImage] = Field(default_factory=list)

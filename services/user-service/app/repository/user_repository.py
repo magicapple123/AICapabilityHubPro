@@ -56,7 +56,12 @@ class UserRepository:
         conditions: list[object] = [User.is_deleted == 0]
         if keyword:
             like = f"%{keyword}%"
-            conditions.append(or_(User.username.like(like), User.nickname.like(like)))
+            # P5：排行里只有"用户 #663"，运营要能直接按 ID 搜到人；
+            # 纯数字关键字同时匹配 ID 与用户名/昵称，不牺牲原有模糊搜索。
+            matches = [User.username.like(like), User.nickname.like(like)]
+            if keyword.isdigit():
+                matches.append(User.id == int(keyword))
+            conditions.append(or_(*matches))
         if status:
             conditions.append(User.status == status)
         total = db.scalar(select(func.count(User.id)).where(*conditions)) or 0

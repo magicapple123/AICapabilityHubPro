@@ -64,7 +64,22 @@ public class JwtService {
         if (!role.equals("user") && !role.equals("admin")) {
             throw new IllegalArgumentException("JWT 角色声明无效");
         }
-        return new JwtIdentity(userId, userName, role);
+        return new JwtIdentity(userId, userName, role, apiKeyIdOf(claims));
+    }
+
+    /**
+     * 解析 {@code key_id} claim（API Key 换来的令牌才有）。
+     *
+     * <p>这不是鉴权依据，只是记账归因：值非法或缺失时返回 {@code null}，
+     * 与「普通登录令牌」等价，不因为一个附加 claim 把请求拒掉。
+     */
+    private String apiKeyIdOf(Claims claims) {
+        Object raw = claims.get("key_id");
+        if (raw == null) {
+            return null;
+        }
+        String text = String.valueOf(raw).trim();
+        return text.matches("[1-9][0-9]{0,18}") ? text : null;
     }
 
     private Claims parseWith(String token, SecretKey signingKey) {

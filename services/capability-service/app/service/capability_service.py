@@ -16,9 +16,13 @@ from app.core.service_call import call_internal
 from app.core.config import settings
 from app.core.exceptions import BizException
 from app.core.schema_validation import validate_param_schema
-from app.models import Capability, CapabilityCategory
+from app.models import Capability, CapabilityCategory, OperationLog
 from app.repository import CapabilityRepository, CategoryRepository
 from app.repository import capability_repository, category_repository
+from app.repository.capability_repository import (
+    DuplicateCapabilityCodeError,
+    DuplicateCapabilityOpenAIAliasError,
+)
 from app.schemas import (
     CapabilityCreateRequest,
     CapabilityInternalOut,
@@ -95,6 +99,20 @@ class CapabilityService:
             )
             raise BizException(4002, "能力目录配置不完整或价格无效") from exc
 
+    def list_openai_models(self, db: Session) -> list[dict[str, int | str | None]]:
+        return [
+            {"id": capability_id, "openai_alias": alias}
+            for capability_id, alias in self.capabilities.list_openai_models(db)
+        ]
+
+    def list_published_models(self, db: Session) -> list[dict[str, str | int]]:
+        """对外模型名清单（P3 设置页"可用模型"），需要登录，不暴露内部执行参数。"""
+
+        return [
+            {"alias": alias, "capability_id": capability_id, "name": name}
+            for alias, capability_id, name in self.capabilities.list_published_models(db)
+        ]
+
     def list_market_categories(self, db: Session) -> list[CapabilityCategory]:
         """只返回确实存在已上架能力的分类，供市场筛选栏使用。"""
 
@@ -126,6 +144,10 @@ class CapabilityService:
         self._require_category(db, payload.category_id)
         if self.capabilities.exists_code(db, payload.code):
             raise BizException(2006, "能力编码已存在")
+        if payload.openai_alias and self.capabilities.exists_openai_alias(
+            db, payload.openai_alias
+        ):
+            raise BizException(2006, "对外模型名已被使用")
         if payload.status is CapabilityStatus.ONLINE:
             self._ensure_online_schema(payload.param_schema)
 
@@ -133,6 +155,7 @@ class CapabilityService:
             category_id=payload.category_id,
             name=payload.name,
             code=payload.code,
+            openai_alias=payload.openai_alias,
             service_name=payload.service_name,
             path=payload.path,
             param_schema=payload.param_schema,
@@ -158,9 +181,44 @@ class CapabilityService:
             before=None,
             after=snapshot(entity, CAPABILITY_AUDIT_FIELDS),
         )
-        created = self.capabilities.create(db, entity, audit=audit)
+        created = self._create_or_duplicate(db, entity, audit)
         logger.info("能力已登记 capability_id={} code={}", created.id, created.code)
         return created
+
+    def _create_or_duplicate(
+        self, db: Session, entity: Capability, audit: OperationLog | None
+    ) -> Capability:
+        """插入并把数据库唯一键冲突（1062）翻译成业务码 2006。
+
+        预检 `exists_code()` 挡不住并发：两个请求可能同时通过预检，
+        最终由 `uk_capability_active_code` 决定谁赢。这里保证失败方拿到 2006，
+        而不是 500。
+        """
+
+        try:
+            return self.capabilities.create(db, entity, audit=audit)
+        except DuplicateCapabilityCodeError as exc:
+            raise BizException(2006, "能力编码已存在") from exc
+        except DuplicateCapabilityOpenAIAliasError as exc:
+            raise BizException(2006, "对外模型名已被使用") from exc
+
+    def _update_or_duplicate(
+        self,
+        db: Session,
+        capability: Capability,
+        values: dict[str, object],
+        audit: OperationLog | None,
+    ) -> Capability:
+        """更新并把数据库唯一键冲突（1062）翻译成业务码 2006（同 create 的理由）。"""
+
+        try:
+            return self.capabilities.update_fields(
+                db, capability, values, audit=audit
+            )
+        except DuplicateCapabilityCodeError as exc:
+            raise BizException(2006, "能力编码已存在") from exc
+        except DuplicateCapabilityOpenAIAliasError as exc:
+            raise BizException(2006, "对外模型名已被使用") from exc
 
     def update_capability(
         self, db: Session, capability_id: int, payload: CapabilityUpdateRequest
@@ -174,6 +232,10 @@ class CapabilityService:
             db, values["code"], exclude_id=capability_id
         ):
             raise BizException(2006, "能力编码已存在")
+        if values.get("openai_alias") and self.capabilities.exists_openai_alias(
+            db, values["openai_alias"], exclude_id=capability_id
+        ):
+            raise BizException(2006, "对外模型名已被使用")
         if (
             capability.status == CapabilityStatus.ONLINE.value
             and "param_schema" in values
@@ -197,7 +259,7 @@ class CapabilityService:
             before=before,
             after=after,
         )
-        return self.capabilities.update_fields(db, capability, values, audit=audit)
+        return self._update_or_duplicate(db, capability, values, audit)
 
     @staticmethod
     def _validate_effective_executor(capability: Capability, values: dict) -> None:
@@ -238,7 +300,7 @@ class CapabilityService:
             before=before,
             after=values,
         )
-        return self.capabilities.update_fields(db, capability, values, audit=audit)
+        return self._update_or_duplicate(db, capability, values, audit)
 
     async def invalidate_catalog(self, capability_id: int | None = None) -> None:
         """A3：通知 ai-chat 失效目录缓存。**尽力而为**——失败只影响新鲜度（TTL 兜底）。
@@ -287,6 +349,14 @@ class CapabilityService:
 
         if not isinstance(data, dict) or not isinstance(data.get("protocol"), str):
             raise BizException(4002, "供应商校验响应格式错误")
+        status = data.get("status")
+        if not isinstance(status, str):
+            raise BizException(4002, "供应商校验响应缺少状态")
+        if status != "enabled":
+            raise BizException(
+                2001,
+                f"供应商 {provider_alias} 当前状态为 {status}，请先在模型服务中测试并启用",
+            )
         allowed = EXECUTOR_PROTOCOLS.get(executor, set())
         if data["protocol"] not in allowed:
             raise BizException(
@@ -347,7 +417,7 @@ class CapabilityService:
     def delete_capability(self, db: Session, capability_id: int) -> None:
         capability = self.require_capability(db, capability_id)
         # 契约第 3 节：online 能力先下架再软删除，避免市场侧残留不可用的已删除条目。
-        values: dict[str, object] = {"is_deleted": 1}
+        values: dict[str, object] = {"is_deleted": 1, "openai_alias": None}
         if capability.status == CapabilityStatus.ONLINE.value:
             values["status"] = CapabilityStatus.OFFLINE.value
         audit = build_entry(

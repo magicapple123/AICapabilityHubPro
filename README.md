@@ -163,7 +163,7 @@ python scripts/start_leader_dev.py web
 
 以执行时的目录单价为准。结果可查看实际费用、账单编号、状态、耗时和 requestId，并到调用记录/积分页面核对。已有组件不要重复启动；前台进程用 Ctrl+C 结束。
 
-完整演示顺序见 [组长功能演示与交接](docs/组长功能演示与交接.md)。Nginx 部署、默认端口配置和故障排查见 [上手与联调](docs/上手与联调.md)及 [Web 说明](web/README.md)。
+完整演示顺序见 [组长功能演示与交接](docs/组长功能演示与交接.md)。Linux Docker/Compose 首次部署见 [部署手册](deploy/README.md)；开发态 Nginx、默认端口配置和故障排查见 [上手与联调](docs/上手与联调.md)及 [Web 说明](web/README.md)。
 
 ## 验证与交付证据
 
@@ -263,3 +263,7 @@ services/billing-service/.venv/Scripts/python.exe scripts/reconcile_billing.py \
 - Pro 目前支持受控聊天与文本摘要（含 OpenAI 兼容的真流式 SSE）；不包含工具调用、`/v1/responses`、视觉/语音执行、真实支付或外部供应商可用性保证。
 - 账单与流水对账是独立运维脚本（服务层禁止跨库）；供应商地址校验与建连之间仍有极短 TOCTOU 窗口，完全消除需把连接钉在已校验 IP 上。
 - 组长业务无需新增数据库列；其他成员的数据结构升级须提供保留旧数据的增量迁移。
+
+### P11 上游模型选择（2026-11-03）
+
+平台 `/api/chat/completions` 的显式 `model` 优先于绑定供应商的 `default_model`；只有未绑定供应商时才回退全局 `MODEL_NAME`。绑定供应商但两者均为空时返回 `4002`，明确提示补默认模型，不静默发送全局名称。`/v1` 的 `model` 是平台能力别名，只用于解析能力，绝不作为上游模型名。相同规则适用于 chat、summary 与流式；图片仍由图片供应商配置决定。供应商编辑页在默认模型为空时给出调用限制提示。

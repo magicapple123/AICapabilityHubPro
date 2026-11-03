@@ -16,12 +16,36 @@ from app.service.catalog_cache import catalog_cache
 
 
 @pytest.fixture(autouse=True)
+def active_session_user_boundary(monkeypatch):
+    """Session tests isolate user transport; lifecycle tests assert refusal/shape."""
+    from app.api.v1 import sessions
+
+    async def active_user(service, method, path, **kwargs):
+        assert path == "/internal/user/check"
+        assert kwargs["params"]["points_cost"] == 0
+        return {"user_id": int(kwargs["params"]["user_id"]), "status": "normal"}
+
+    monkeypatch.setattr(sessions, "call_internal", active_user)
+
+
+@pytest.fixture(autouse=True)
 def _disable_rate_limit(monkeypatch):
-    """A4：其余用例不测限流，默认关闭，避免多请求用例误触 2009。"""
+    """A4：其余用例不测限流，默认关闭，避免多请求用例误触 4001。"""
 
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "rate_limit_enabled", False)
+
+
+@pytest.fixture(autouse=True)
+def _reset_provider_breaker():
+    """P16：熔断状态是进程内单例，用例之间必须清空，否则会互相污染。"""
+
+    from app.core.provider_breaker import provider_breaker
+
+    provider_breaker.reset()
+    yield
+    provider_breaker.reset()
 
 
 @pytest.fixture(autouse=True)

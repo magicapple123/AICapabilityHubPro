@@ -10,6 +10,7 @@ from app.api.v1.categories import router as categories_router
 from app.api.v1.internal import router as internal_router
 from app.api.v1.manage import router as manage_router
 from app.api.v1.market import router as market_router
+from app.api.v1.models import router as models_router
 from app.api.v1.ping import router as ping_router
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "internal_router",
     "manage_router",
     "market_router",
+    "models_router",
     "ping_router",
 ]

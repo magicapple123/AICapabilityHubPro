@@ -7,11 +7,13 @@
 `fake_user_service` 内存桩替代，数据库不可用时整组自动跳过。
 """
 
+import importlib
 from datetime import date, timedelta
 
 import pytest
 
 from app.core.exceptions import BizException
+from app.db.session import engine
 from tests.conftest import (
     DB_REASON,
     DB_READY,
@@ -169,6 +171,66 @@ def test_failure_does_not_block_retry_with_same_request_id(
     assert count_records(request_id) == 1
 
 
+# ------------------------------------------------ 事务边界：扣分期间不持有连接
+
+
+def test_deduct_runs_after_the_record_is_committed_and_connection_released(
+    qa: QaBilling, fake_user_service, monkeypatch
+) -> None:
+    """记账的可验证形式：调扣分的那一刻，池里没有本请求占着的连接。
+
+    这是本轮拆事务的直接验收点。旧实现把 insert 与扣分放在同一个事务里，
+    扣分这 20 ms 全程占着一条连接；2 worker × 20 并发时 `5+10` 的池被打穿，
+    billing 直接 500（chat 折算成 4002）。探针取 `engine.pool.checkedout()`：
+    只要事务没提交，这里必然 ≥1。
+    """
+
+    billing_module = importlib.import_module("app.service.billing_service")
+    observed: list[int] = []
+    handle = fake_user_service.handle
+
+    async def spy(service_name: str, method: str, path: str, **kwargs):
+        if path.endswith("/points/deduct"):
+            # 先记池占用，再进桩：桩本身不再碰数据库。
+            observed.append(engine.pool.checkedout())
+        return handle(service_name, method, path, kwargs)
+
+    monkeypatch.setattr(billing_module, "call_internal", spy)
+
+    body = qa.record(points=5)
+
+    assert body["code"] == 0
+    assert observed == [0]
+
+
+def test_compensation_delete_failure_keeps_residue_for_reconciliation(
+    qa: QaBilling, fake_user_service, monkeypatch
+) -> None:
+    """补偿删除本身失败时，原始错误照常返回，残留明细留给对账脚本。
+
+    这是拆事务换吞吐的已知代价：事务 1 已提交、扣分失败、补偿删除又失败，
+    库里会留一条“有账单、无同 requestId 积分流水”的差异。这里把行为钉死，
+    保证它不会静默变成“扣了钱没账单”或抛错覆盖掉原始业务码。
+    """
+
+    billing_module = importlib.import_module("app.service.billing_service")
+    repository = billing_module.billing_service.records
+
+    def boom(db, record_id):  # noqa: ANN001 - 桩只需要签名对
+        raise RuntimeError("database is gone")
+
+    monkeypatch.setattr(repository, "discard", boom)
+    fake_user_service.error = BizException(3001, "积分不足")
+    request_id = qa.next_request_id()
+
+    body = qa.record(points=5, request_id=request_id)
+
+    assert body["code"] == 3001
+    # 残留一条明细：由 scripts/reconcile_billing.py 的 billing_without_log 检出。
+    assert count_records(request_id) == 1
+    assert count_usage(qa.user_id, TODAY) == 0
+
+
 # ---------------------------------------------------------------- 明细查询
 
 
@@ -266,20 +328,25 @@ def test_overview_aggregates_across_users(qa: QaBilling, fake_user_service, api)
 
     全局统计天然会受库里其它数据影响（例如 `02_seed.sql` 的演示数据），
     因此这里断言**增量**而不是绝对值；排行只断言排序不变式与两名测试用户的存在。
+
+    排行榜只返回前 10 名，而验收库里还会积累真实演示调用的用户（每次 5 分）。
+    若测试用户只花 5/7 分，跑过几次其它验收脚本后就会被挤出前 10 —— 这不是产品
+    回归，却会把门禁拖红。这里用 600/700 分让测试用户稳定进榜，断言强度不变：
+    仍然逐项校验两名用户在榜上的**精确消耗**与降序不变式。
     """
 
     window = {"start_date": TODAY.isoformat(), "end_date": TODAY.isoformat()}
     before = qa.overview(**window)["data"]["summary"]
 
-    qa.record(points=5)
+    qa.record(points=600)
     other = QaBilling(api, index=1)
-    other.record(points=7)
+    other.record(points=700)
 
     data = qa.overview(**window)["data"]
     after = data["summary"]
 
     assert after["call_count"] - before["call_count"] == 2
-    assert after["total_cost"] - before["total_cost"] == 12
+    assert after["total_cost"] - before["total_cost"] == 1300
     assert after["user_count"] - before["user_count"] == 2
     assert after["success_count"] - before["success_count"] == 2
 
@@ -287,8 +354,8 @@ def test_overview_aggregates_across_users(qa: QaBilling, fake_user_service, api)
     assert costs == sorted(costs, reverse=True)
 
     ranked = {item["user_id"]: item for item in data["top_users"]}
-    assert ranked[other.user_id]["total_cost"] == 7
-    assert ranked[qa.user_id]["total_cost"] == 5
+    assert ranked[other.user_id]["total_cost"] == 700
+    assert ranked[qa.user_id]["total_cost"] == 600
 
 
 # ---------------------------------------------------------------- 禁用账号统一拦截

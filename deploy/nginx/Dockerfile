@@ -12,7 +12,7 @@ COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 ARG NPM_REGISTRY=https://registry.npmjs.org
 RUN pnpm config set registry "${NPM_REGISTRY}" \
     && pnpm config set network-concurrency 4 \
-    && pnpm config set fetch-retries 5 \
+    && pnpm config set fetch-retries 10 \
     && pnpm config set fetch-timeout 300000 \
     && pnpm install --frozen-lockfile
 

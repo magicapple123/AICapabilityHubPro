@@ -39,13 +39,17 @@ CREATE TABLE IF NOT EXISTS t_call_record (
   call_status VARCHAR(16) NOT NULL DEFAULT 'success' COMMENT '调用状态 success成功 degraded降级 failed失败',
   duration_ms INT NOT NULL DEFAULT 0 COMMENT '调用耗时（毫秒）',
   model_name VARCHAR(128) NOT NULL DEFAULT '' COMMENT '模型名，Mock 模式为请求中的 model',
+  images JSON NULL COMMENT '图片产物列表 [{url, revised_prompt}]，仅文生图有值（D3）',
+  api_key_id BIGINT NULL COMMENT '调用使用的 API Key ID（P6），历史行为 NULL',
+  entrypoint VARCHAR(16) NOT NULL DEFAULT '' COMMENT '入口 web/platform_api/openai_compat，历史行为空串（P6）',
   create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   is_deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除 0否1是',
   PRIMARY KEY (id),
   UNIQUE KEY uk_call_record_request (request_id, is_deleted),
   KEY idx_call_record_user_time (user_id, is_deleted, create_time),
-  KEY idx_call_record_service_time (service_name, is_deleted, create_time)
+  KEY idx_call_record_service_time (service_name, is_deleted, create_time),
+  KEY idx_call_record_api_key_time (api_key_id, is_deleted, create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='调用明细';
 
@@ -160,3 +164,101 @@ DROP PROCEDURE IF EXISTS add_column_if_missing;
 ALTER TABLE t_call_record
   MODIFY COLUMN token_source VARCHAR(16) NOT NULL DEFAULT 'unknown'
   COMMENT 'token 来源 upstream/mock/missing/unknown';
+
+
+-- 来源: services/billing-service/sql/04_add_images.sql
+-- billing-service 增量迁移（D3 文生图：调用记录带图片产物）。
+--
+-- 为什么要在 billing 侧存：需求 D3 要求"调用记录可预览图片"，
+-- 而 ai-chat 只把收据回给当次请求方，历史调用要在 billing 的明细里能看到图。
+--
+-- 只增列，不动任何既有列；旧记录该列为 NULL，语义是"没有图片产物"，
+-- 与"有图片产物但列表为空"通过 JSON 类型区分（本服务写入时值为数组）。
+-- 重复执行安全（MySQL 不支持 ADD COLUMN IF NOT EXISTS，用 information_schema 判断）。
+
+USE billing_db;
+
+SET @exists := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'billing_db'
+    AND TABLE_NAME = 't_call_record'
+    AND COLUMN_NAME = 'images'
+);
+SET @ddl := IF(
+  @exists = 0,
+  'ALTER TABLE t_call_record ADD COLUMN images JSON NULL COMMENT ''图片产物列表 [{url, revised_prompt}]，仅文生图有值'' AFTER model_name',
+  'SELECT ''t_call_record.images already exists'' AS skipped'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 迁移自检：列已存在，且历史行全部为 NULL（不伪造数据）。
+SELECT COUNT(*) AS total_rows,
+       SUM(images IS NULL) AS rows_without_images
+FROM t_call_record;
+
+
+-- 来源: services/billing-service/sql/05_add_api_key_attribution.sql
+-- billing-service 增量迁移（P6：调用记录的 API Key 归因与入口标记）。
+--
+-- 为什么要加这两列：Key 泄露时管理员只能"停号"，无法回答"这把 Key 调过什么"；
+-- 网页调试台与接口调用在记录上也不可区分。两列都只加元数据，不存任何密钥材料。
+--
+-- 兼容性：
+-- - `api_key_id` 可空，历史行保持 NULL（语义是"未知"），前端显示 "—" 且不参与按 Key 统计；
+-- - `entrypoint` 默认空串，含义与 NULL 相同，避免把旧行伪造成 `web`。
+-- 重复执行安全（MySQL 不支持 ADD COLUMN IF NOT EXISTS，用 information_schema 判断）。
+
+USE billing_db;
+
+SET @has_key := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'billing_db'
+    AND TABLE_NAME = 't_call_record'
+    AND COLUMN_NAME = 'api_key_id'
+);
+SET @ddl := IF(
+  @has_key = 0,
+  'ALTER TABLE t_call_record ADD COLUMN api_key_id BIGINT NULL COMMENT ''调用使用的 API Key ID（P6），历史行为 NULL'' AFTER images',
+  'SELECT ''t_call_record.api_key_id already exists'' AS skipped'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_entry := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'billing_db'
+    AND TABLE_NAME = 't_call_record'
+    AND COLUMN_NAME = 'entrypoint'
+);
+SET @ddl := IF(
+  @has_entry = 0,
+  'ALTER TABLE t_call_record ADD COLUMN entrypoint VARCHAR(16) NOT NULL DEFAULT '''' COMMENT ''入口：web / platform_api / openai_compat，历史行为空串（P6）'' AFTER api_key_id',
+  'SELECT ''t_call_record.entrypoint already exists'' AS skipped'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_index := (
+  SELECT COUNT(*) FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = 'billing_db'
+    AND TABLE_NAME = 't_call_record'
+    AND INDEX_NAME = 'idx_call_record_api_key_time'
+);
+SET @ddl := IF(
+  @has_index = 0,
+  'ALTER TABLE t_call_record ADD KEY idx_call_record_api_key_time (api_key_id, is_deleted, create_time)',
+  'SELECT ''idx_call_record_api_key_time already exists'' AS skipped'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 迁移自检：两列已存在，且历史行的 Key 归因仍为空（不伪造数据）。
+SELECT COUNT(*) AS total_rows,
+       SUM(api_key_id IS NULL) AS rows_without_key,
+       SUM(entrypoint = '') AS rows_without_entrypoint
+FROM t_call_record;

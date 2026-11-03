@@ -15,17 +15,30 @@ token 口径（C1）：
 - 错误码细分：`5003` 上游限流(429) / `5004` 鉴权欠费(401/402/403) / `5005` 上游故障(5xx)；
 - **只对超时与 5xx 重试一次**（退避 300ms），4xx 不重试；
 - 重试发生在"取到结果之前"，计费在调用返回之后，因此**一次调用只会产生一条账单**。
+
+出站安全与故障隔离（P15/P16）：
+- `target` 为 `provider_service.resolve_runtime()` 刚校验出的 `SafeTarget` 时，按**已校验 IP
+  建连**，Host 头与 TLS SNI 仍是原域名（DNS 重绑定窗口因此消失）；
+- `breaker_key`（供应商 alias）参与进程内熔断：打开时 `guard()` 直接抛 `BizException(5005)`，
+  不再打上游；5xx/超时/连接错累加失败，成功清零（详见 `app.core.provider_breaker`）；
+- `deadline` 是入口算出的整体预算，单次尝试超时取 `min(配置, 剩余预算)`，预算耗尽不再发起
+  新尝试——避免"30s × 2"把整条链路拖到用户不可接受。
 """
 
 import asyncio
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 from loguru import logger
 
 from app.core.config import ModelRuntimeSettings, settings
 from app.core.constants import CallStatus, DEGRADED_REPLY, ModelErrorCode, TokenSource
+from app.core.deadline import Deadline
+from app.core.http_client import get_http_client
+from app.core.provider_breaker import provider_breaker
+from app.core.provider_guard import SafeTarget, pinned_request_parts
 
 # 重试退避（秒）；只用于超时与 5xx。
 RETRY_BACKOFF_SECONDS = 0.3
@@ -127,6 +140,10 @@ class ModelClient:
         timeout: float | None = None,
         params: dict | None = None,
         max_tokens: int | None = None,
+        protocol: str | None = None,
+        target: SafeTarget | None = None,
+        breaker_key: str | None = None,
+        deadline: Deadline | None = None,
     ) -> ModelReply:
         """`base_url/api_key/timeout` 优先于 `runtime`（provider 覆盖全局配置）。"""
 
@@ -135,15 +152,28 @@ class ModelClient:
         )
         resolved_key = api_key or (runtime.model_api_key if runtime else settings.model_api_key)
         resolved_timeout = timeout or settings.model_timeout
-        url = f"{resolved_base.rstrip('/')}/chat/completions"
+        # 供应商协议决定端点：默认 openai-chat（/chat/completions），
+        # openai-responses 走 /responses —— 有些上游只暴露 Responses API。
+        use_responses = (protocol or "openai-chat") == "openai-responses"
+        endpoint = "responses" if use_responses else "chat/completions"
+        url = f"{resolved_base.rstrip('/')}/{endpoint}"
 
-        payload: dict = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens or settings.model_max_tokens,
-            "stream": False,
-        }
+        if use_responses:
+            payload: dict = {
+                "model": model,
+                "input": messages,
+                "temperature": temperature,
+                "max_output_tokens": max_tokens or settings.model_max_tokens,
+                "stream": False,
+            }
+        else:
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens or settings.model_max_tokens,
+                "stream": False,
+            }
         # D4：白名单参数透传；未列入白名单的字段在入口就被 2001 拒绝，这里只做转发。
         for key, value in (params or {}).items():
             if value is not None:
@@ -153,46 +183,133 @@ class ModelClient:
             "Authorization": f"Bearer {resolved_key}",
             "Content-Type": "application/json",
         }
+        extensions: dict[str, Any] | None = None
+        if target is not None:
+            # P15：按已校验 IP 建连，Host 头与 TLS SNI 仍用原域名（证书照常校验）。
+            url, pinned_headers, extensions = pinned_request_parts(target, f"/{endpoint}")
+            headers.update(pinned_headers)
+
+        # P16：熔断打开时在毫秒级失败，不再打上游、不做退避重试。
+        provider_breaker.guard(breaker_key)
 
         last_error = ModelErrorCode.BAD_RESPONSE
         for attempt in (1, 2):
+            if deadline is not None and deadline.exhausted():
+                logger.warning("模型调用超出整体预算 model={} attempt={}", model, attempt)
+                return self._degraded(model, ModelErrorCode.TIMEOUT)
+            # 单次尝试超时不越过整体预算；配置值仍是上限。
+            attempt_timeout = deadline.clamp(resolved_timeout) if deadline else resolved_timeout
             try:
-                async with httpx.AsyncClient(
-                    timeout=resolved_timeout, follow_redirects=False
-                ) as client:
-                    response = await client.post(url, json=payload, headers=headers)
+                # 复用进程级连接池；上游超时按供应商配置逐请求传。
+                client = await get_http_client()
+                response = await client.post(
+                    url, json=payload, headers=headers, timeout=attempt_timeout,
+                    extensions=extensions, follow_redirects=False,
+                )
                 if response.status_code >= 400:
                     code = _error_code_for_status(response.status_code)
                     logger.warning(
                         "模型返回错误 model={} status={} code={}",
                         model, response.status_code, int(code),
                     )
-                    if attempt == 1 and _retryable(response.status_code):
+                    if (
+                        attempt == 1
+                        and _retryable(response.status_code)
+                        and self._can_retry(deadline)
+                    ):
                         await asyncio.sleep(RETRY_BACKOFF_SECONDS)
                         last_error = code
                         continue
+                    provider_breaker.record_failure(breaker_key, int(code))
                     return self._degraded(model, code)
                 body = response.json()
-                return self._parse(body, fallback_model=model)
+                reply = (
+                    self._parse_responses(body, fallback_model=model)
+                    if use_responses else self._parse(body, fallback_model=model)
+                )
+                self._note_breaker(breaker_key, reply)
+                return reply
             except httpx.TimeoutException:
                 # 只记录类型与模型名，不打印请求体或 Key（指南 5.7）。
                 logger.warning("模型调用超时 model={} attempt={}", model, attempt)
                 last_error = ModelErrorCode.TIMEOUT
-                if attempt == 1:
+                if attempt == 1 and self._can_retry(deadline):
                     await asyncio.sleep(RETRY_BACKOFF_SECONDS)
                     continue
+                provider_breaker.record_failure(breaker_key, int(ModelErrorCode.TIMEOUT))
                 return self._degraded(model, ModelErrorCode.TIMEOUT)
             except Exception as exc:
                 logger.warning(
                     "模型调用失败 model={} type={} attempt={}", model, type(exc).__name__, attempt
                 )
                 last_error = ModelErrorCode.BAD_RESPONSE
-                if attempt == 1:
+                if attempt == 1 and self._can_retry(deadline):
                     await asyncio.sleep(RETRY_BACKOFF_SECONDS)
                     continue
+                provider_breaker.record_failure(breaker_key, int(ModelErrorCode.BAD_RESPONSE))
                 return self._degraded(model, ModelErrorCode.BAD_RESPONSE)
 
         return self._degraded(model, last_error)
+
+    @staticmethod
+    def _can_retry(deadline: Deadline | None) -> bool:
+        """预算不足时不再重试：宁可一次失败，也不要让总耗时翻倍。"""
+
+        if deadline is None:
+            return True
+        return not deadline.exhausted() and deadline.remaining() >= RETRY_BACKOFF_SECONDS
+
+    @staticmethod
+    def _note_breaker(breaker_key: str | None, reply: ModelReply) -> None:
+        """按结果更新熔断计数：成功清零，可解析失败视为上游故障。"""
+
+        if reply.degraded:
+            provider_breaker.record_failure(breaker_key, reply.error_code)
+        else:
+            provider_breaker.record_success(breaker_key)
+
+    @staticmethod
+    def _parse_responses(body: object, *, fallback_model: str) -> ModelReply:
+        """解析 Responses API 形状。
+
+        优先 `output_text`，否则遍历 `output[].content[].text`（type=output_text）。
+        两者都拿不到时按 BAD_RESPONSE 降级，绝不编造内容。
+        """
+
+        if not isinstance(body, dict):
+            return ModelClient._degraded(fallback_model, ModelErrorCode.BAD_RESPONSE)
+
+        content = body.get("output_text")
+        if not isinstance(content, str) or not content.strip():
+            parts: list[str] = []
+            for item in body.get("output") or []:
+                if not isinstance(item, dict):
+                    continue
+                for chunk in item.get("content") or []:
+                    if isinstance(chunk, dict) and chunk.get("type") == "output_text":
+                        piece = chunk.get("text")
+                        if isinstance(piece, str):
+                            parts.append(piece)
+            content = "".join(parts)
+
+        if not isinstance(content, str) or not content.strip():
+            return ModelClient._degraded(fallback_model, ModelErrorCode.BAD_RESPONSE)
+
+        usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
+        # Responses 的用量字段叫 input_tokens/output_tokens（不是 prompt/completion），
+        # 且可能缺省；只接受非负整数，其余一律记 0（C1：不猜用量）。
+        def _count(name: str) -> int:
+            value = usage.get(name)
+            return value if isinstance(value, int) and value >= 0 else 0
+
+        return ModelReply(
+            content=content,
+            call_status=CallStatus.SUCCESS.value,
+            model_name=str(body.get("model") or fallback_model),
+            finish_reason=str(body.get("status") or "stop"),
+            prompt_tokens=_count("input_tokens"),
+            completion_tokens=_count("output_tokens"),
+        )
 
     @staticmethod
     def _parse(body: object, *, fallback_model: str) -> ModelReply:

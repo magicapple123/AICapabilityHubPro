@@ -87,5 +87,36 @@ class UsageRepository:
             for row in db.execute(statement).all()
         ]
 
+    def sum_by_user(
+        self, db: Session, *, start_date: date, end_date: date
+    ) -> list[tuple[int, int, int, date | None]]:
+        """全量用户聚合（P5）：(user_id, call_count, total_cost, 最近用量日期)。
+
+        数据源是 `t_usage_daily`：它按 `(stat_date, user_id, capability_id)` 累加，
+        一张表就能给出"这个人近 N 天调了多少次、花了多少"，不需要扫明细表。
+        `last_stat_date` 只能到天粒度——聚合表本来就只有天，不伪造分钟精度。
+        """
+
+        statement = (
+            select(
+                UsageDaily.user_id,
+                func.coalesce(func.sum(UsageDaily.call_count), 0),
+                func.coalesce(func.sum(UsageDaily.total_cost), 0),
+                func.max(UsageDaily.stat_date),
+            )
+            .where(
+                UsageDaily.is_deleted == 0,
+                UsageDaily.stat_date >= start_date,
+                UsageDaily.stat_date <= end_date,
+            )
+            .group_by(UsageDaily.user_id)
+            .order_by(func.coalesce(func.sum(UsageDaily.total_cost), 0).desc(),
+                      UsageDaily.user_id)
+        )
+        return [
+            (int(row[0]), int(row[1] or 0), int(row[2] or 0), row[3])
+            for row in db.execute(statement).all()
+        ]
+
 
 usage_repository = UsageRepository()

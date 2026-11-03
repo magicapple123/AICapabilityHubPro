@@ -76,6 +76,8 @@ export async function runConsoleScenarios(
   await editor.getByLabel('能力编码').fill(code)
   await editor.getByLabel('所属分类').selectOption(String(category.id))
   await editor.getByLabel('每次调用积分').fill('6')
+  // P9：服务名/调用路径已折叠进「高级 / 兼容字段」并默认收起，断言口径不变。
+  await editor.locator('summary').first().click()
   await editor.getByLabel('服务名').fill('ai-chat-service')
   await editor.getByLabel('调用路径').fill('/completions')
   const schemaInput = editor.getByLabel('输入 Schema')

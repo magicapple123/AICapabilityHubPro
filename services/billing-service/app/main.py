@@ -2,9 +2,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api.v1 import internal_router, ping_router, records_router
+from app.api.v1 import admin_router, internal_router, ping_router, records_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
+from app.core.http_client import close_http_client
 from app.core.logging import configure_logging, get_request_id, register_request_logging
 from app.core.nacos_client import nacos_register
 from app.core.observability import install_observability
@@ -20,6 +21,8 @@ async def lifespan(_: FastAPI):
     # 只有应用启动时才连接 Nacos；导入模块不会联网。
     nacos_register.start()
     yield
+    # 先放掉共享 HTTP 连接池，再停注册中心：退出时不再有内部调用需要连接。
+    await close_http_client()
     nacos_register.stop()
 
 
@@ -33,6 +36,8 @@ install_observability(app, engine, settings.service_name)
 app.include_router(internal_router, prefix="/internal/billing", tags=["billing-internal"])
 app.include_router(ping_router, prefix="/api/billing", tags=["billing"])
 app.include_router(records_router, prefix="/api/billing", tags=["billing-query"])
+# F1：管理端跨用户查询（管理员实时授权，普通用户 2007）
+app.include_router(admin_router, prefix="/api/billing/admin", tags=["billing-admin"])
 
 
 @app.get("/health", response_model=Result)

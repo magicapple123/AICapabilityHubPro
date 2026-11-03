@@ -330,6 +330,33 @@
         ]
       }
     },
+    "/api/capability/models": {
+      "get": {
+        "operationId": "list_published_models_api_capability_models_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
     "/api/capability/ping": {
       "get": {
         "operationId": "ping_api_capability_ping_get",
@@ -490,6 +517,33 @@
         "requestBody": false,
         "responses": [
           "200"
+        ]
+      }
+    },
+    "/internal/capability/openai-models": {
+      "get": {
+        "operationId": "get_internal_openai_models_internal_capability_openai_models_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
         ]
       }
     },

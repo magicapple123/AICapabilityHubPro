@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-PROTOCOLS = ("openai-chat", "openai-image", "openai-embedding", "dashscope-image", "custom-http")
+PROTOCOLS = ("openai-chat", "openai-image", "openai-embedding", "dashscope-image", "openai-responses", "custom-http")
 ALIAS_PATTERN = r"^[a-z0-9][a-z0-9-]*$"
 
 
@@ -19,7 +19,7 @@ class ProviderCreateRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=64)
     alias: str = Field(min_length=1, max_length=64, pattern=ALIAS_PATTERN)
-    protocol: Literal["openai-chat", "openai-image", "openai-embedding", "dashscope-image", "custom-http"]
+    protocol: Literal["openai-chat", "openai-image", "openai-embedding", "dashscope-image", "openai-responses", "custom-http"]
     base_url: str = Field(min_length=1, max_length=512)
     api_key: str = Field(min_length=1, max_length=512)
     default_model: str = Field(default="", max_length=128)

@@ -10,6 +10,10 @@ export interface MarketCapability {
   category_name: string
   description: string
   price_per_call: number
+  billing_mode?: BillingMode
+  unit?: string
+  /** 详情接口（/capability/market/{id}）返回；列表出参不含，旧数据也可能为空。 */
+  executor?: string
   update_time: string
 }
 
@@ -84,6 +88,7 @@ export interface CapabilityManageItem {
   category_name: string
   name: string
   code: string
+  openai_alias?: string | null
   service_name: string
   path: string
   param_schema: Record<string, unknown> | null
@@ -118,29 +123,28 @@ export interface CategoryUpdatePayload {
   status?: CategoryStatus
 }
 
-export interface CapabilityCreatePayload {
+export type BillingMode = 'per_call' | 'per_token' | 'per_unit'
+
+/**
+ * 能力可写字段全集（P8）。
+ *
+ * 创建与更新共用这一份定义，避免两侧字段各自生长再次分叉：
+ * - 创建：`CapabilityCreatePayload` = 本集合 + 可选 `status`；
+ * - 编辑：`CapabilityUpdatePayload` = 本集合的部分字段，状态变更必须走
+ *   `updateCapabilityStatus`，因此不接收 `status`。
+ */
+export interface CapabilityWritableFields {
   category_id: number
   name: string
   code: string
+  openai_alias?: string | null
   service_name: string
   path: string
   param_schema?: Record<string, unknown> | null
-  price_per_call?: number
-  status?: CapabilityStatus
   description?: string
-}
-
-/** 编辑能力；状态变更必须走 updateCapabilityStatus。 */
-export interface CapabilityUpdatePayload {
-  category_id?: number
-  name?: string
-  code?: string
-  service_name?: string
-  path?: string
-  param_schema?: Record<string, unknown> | null
-  price_per_call?: number
   // C2 / D2 / D4 / E4：计价模式、执行器、输出上限与市场展示开关
-  billing_mode?: 'per_call' | 'per_token' | 'per_unit'
+  billing_mode?: BillingMode
+  price_per_call?: number
   price_per_1k_input?: number
   price_per_1k_output?: number
   price_per_unit?: number
@@ -149,8 +153,12 @@ export interface CapabilityUpdatePayload {
   provider_alias?: string
   max_output_tokens?: number
   exposed_to_market?: boolean
-  description?: string
 }
+
+export type CapabilityCreatePayload = CapabilityWritableFields & { status?: CapabilityStatus }
+
+/** 编辑能力；字段与创建同源，状态变更必须走 updateCapabilityStatus。 */
+export type CapabilityUpdatePayload = Partial<CapabilityWritableFields>
 
 export interface CategoryQuery {
   status?: CategoryStatus
@@ -200,4 +208,15 @@ export const updateCapabilityStatus = (capabilityId: number, status: CapabilityS
     method: 'PUT',
     url: `/capability/${capabilityId}/status`,
     data: { status },
+  })
+
+/**
+ * D5：按审计 id 回滚到该次变更之前。
+ * 只回填审计 `before_json` 的白名单字段，回滚本身也会写一条新审计。
+ */
+export const rollbackCapability = (capabilityId: number, auditId: number) =>
+  request<CapabilityManageItem>({
+    method: 'POST',
+    url: `/capability/${capabilityId}/rollback`,
+    data: { audit_id: auditId },
   })

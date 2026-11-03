@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { EmptyNote, ErrorNote, Pager } from '@/components/ui'
 import { CapabilityCard } from '@/features/market/CapabilityCard'
 import { CapabilityDetail } from '@/features/market/CapabilityDetail'
+import { isExecutorSupported, resolveExecutor } from '@/features/capabilities/executorResolver'
 import { fetchExecutors } from '@/features/chat/api'
 import { useAsyncResource } from '@/hooks/useAsyncResource'
 
@@ -44,6 +45,9 @@ export function CapabilitiesPage() {
     setParams(next)
   }
   const reset = () => { setInput(''); setParams({}) }
+  // P8：市场卡片与详情的可执行性同一口径；目录未就绪时按"未支持"渲染，避免误报可调试。
+  const isSupported = (capability: MarketCapability) =>
+    isExecutorSupported(executors.data, resolveExecutor(capability))
   return <section className="page">
     <PageHeader title="能力市场" description="选择已上架能力，查看参数和单价后开始调试。"
       actions={<button className="button-secondary" onClick={() => { market.reload(); executors.reload(); categories.reload() }} disabled={market.loading}><RefreshCw size={14} />刷新目录</button>} />
@@ -63,9 +67,9 @@ export function CapabilitiesPage() {
       !market.data?.list.length ? <div className="panel"><EmptyNote message="没有找到符合条件的能力。试试其他关键词，或清除筛选条件。"
         action={<button className="button-secondary" onClick={reset}>清除全部筛选</button>} /></div> :
       <div className={'market-grid' + (view === 'list' ? ' market-list' : '')}>{market.data.list.map((item) => <CapabilityCard key={item.id} item={item} pending={executors.loading}
-        supported={!!executors.data?.codes.includes(item.code)} onDetail={() => setDetail(item)} />)}</div>}
+        supported={isSupported(item)} onDetail={() => setDetail(item)} />)}</div>}
     {market.data && market.data.total > SIZE && <div className="mt-5"><Pager page={page} pageSize={SIZE} total={market.data.total} onChange={(value) => { const next = new URLSearchParams(params); next.set('page', String(value)); setParams(next) }} /></div>}
     <p className="market-footnote"><span />仅展示已上架能力。暂未接入执行器的能力会明确标注。</p>
-    {detail && <CapabilityDetail key={detail.id} item={detail} supported={!!executors.data?.codes.includes(detail.code)} onClose={() => setDetail(null)} />}
+    {detail && <CapabilityDetail key={detail.id} item={detail} supported={isSupported(detail)} onClose={() => setDetail(null)} />}
   </section>
 }

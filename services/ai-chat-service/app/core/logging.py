@@ -13,6 +13,7 @@ from app.core.config import settings
 _request_id_context: ContextVar[str] = ContextVar("request_id", default="")
 _user_id_context: ContextVar[str] = ContextVar("user_id", default="anonymous")
 _user_name_context: ContextVar[str] = ContextVar("user_name", default="")
+_user_key_id_context: ContextVar[str] = ContextVar("user_key_id", default="")
 
 
 def get_request_id() -> str:
@@ -26,27 +27,42 @@ def get_user_name() -> str:
     return _user_name_context.get()
 
 
+def get_user_key_id() -> str:
+    """当前请求的 API Key ID（字符串形式）；没有 Key 身份时为空串。"""
+
+    return _user_key_id_context.get()
+
+
 @contextmanager
-def use_identity(user_id: str, user_name: str = ""):
+def use_identity(user_id: str, user_name: str = "", api_key_id: int | None = None):
     """在非网关入口（例如 OpenAI 兼容层）显式声明调用者身份。
 
     服务间调用通过上下文变量透传 `X-User-Id`，网关正常请求由中间件写入；
     兼容层的身份来自 API Key，需要在调用业务逻辑前补上同样的上下文。
+    `api_key_id` 同步写入 Key 上下文，账单才能记录"哪把 Key"（P6）。
     """
 
     user_token = _user_id_context.set(user_id or "anonymous")
     name_token = _user_name_context.set(user_name)
+    key_token = _user_key_id_context.set(str(api_key_id) if api_key_id is not None else "")
     try:
         yield
     finally:
         _user_id_context.reset(user_token)
         _user_name_context.reset(name_token)
+        _user_key_id_context.reset(key_token)
 
 
-def _reset_context(request_token: Token[str], user_token: Token[str], user_name_token: Token[str]) -> None:
+def _reset_context(
+    request_token: Token[str],
+    user_token: Token[str],
+    user_name_token: Token[str],
+    key_token: Token[str],
+) -> None:
     _request_id_context.reset(request_token)
     _user_id_context.reset(user_token)
     _user_name_context.reset(user_name_token)
+    _user_key_id_context.reset(key_token)
 
 
 def configure_logging() -> None:
@@ -86,6 +102,10 @@ def register_request_logging(app: FastAPI) -> None:
         request_token = _request_id_context.set(request_id)
         user_token = _user_id_context.set(user_id)
         user_name_token = _user_name_context.set(user_name)
+        # 网关会把外部伪造的 x-user-* 全部剥离后再写入，这里可以直接采信。
+        key_token = _user_key_id_context.set(
+            request.headers.get("X-User-Key-Id") or ""
+        )
         started_at = time.perf_counter()
         try:
             with logger.contextualize(
@@ -106,4 +126,4 @@ def register_request_logging(app: FastAPI) -> None:
                 response.headers["X-Request-Id"] = request_id
                 return response
         finally:
-            _reset_context(request_token, user_token, user_name_token)
+            _reset_context(request_token, user_token, user_name_token, key_token)

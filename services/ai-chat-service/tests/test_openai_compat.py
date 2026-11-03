@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.api.v1 import openai_compat
 from app.db.session import get_db
 from app.main import app
+from app.service.catalog_cache import OpenAIModelCatalog
 
 HEADERS = {"Authorization": "Bearer sk_test-only-secret-value"}
 
@@ -18,7 +19,7 @@ class _FakeChatService:
 
     async def complete(self, db, request, user):
         self.calls.append({"capability_id": request.capability_id, "input": request.input,
-                           "user_id": user.user_id})
+                           "user_id": user.user_id, "model": request.model})
         return {
             "id": "chatcmpl-test",
             "object": "chat.completion",
@@ -50,8 +51,12 @@ def compat(monkeypatch):
         return {"user_id": 1, "username": "demo", "role": "user", "key_id": 1,
                 "access_key": "ak_test"}
 
+    async def fake_openai_model_catalog():
+        return OpenAIModelCatalog({"deepseek-flash": 1}, frozenset({1}))
+
     monkeypatch.setattr(openai_compat, "chat_service", fake)
     monkeypatch.setattr(openai_compat, "call_internal", fake_verify)
+    monkeypatch.setattr(openai_compat.capability_client, "openai_model_catalog", fake_openai_model_catalog)
     monkeypatch.setattr(openai_compat, "expected_internal_token", lambda: "token")
     app.dependency_overrides[get_db] = lambda: None
     try:
@@ -140,6 +145,61 @@ def test_models_endpoint_lists_mapped_aliases(compat) -> None:
     assert "deepseek-flash" in ids
 
 
+def test_dynamic_model_alias_routes_to_capability(compat, monkeypatch) -> None:
+    fake, client = compat
+
+    async def dynamic_models():
+        return OpenAIModelCatalog({"qa-live-model": 42}, frozenset({42}))
+
+    monkeypatch.setattr(openai_compat.capability_client, "openai_model_catalog", dynamic_models)
+    response = client.post("/v1/chat/completions", headers=HEADERS, json={
+        "model": "qa-live-model",
+        "messages": [{"role": "user", "content": "hi"}],
+    })
+
+    assert response.status_code == 200
+    assert fake.calls[0]["capability_id"] == 42
+    assert fake.calls[0]["model"] is None
+
+
+def test_configured_model_alias_overrides_dynamic_directory(compat, monkeypatch) -> None:
+    fake, client = compat
+
+    async def dynamic_models():
+        return OpenAIModelCatalog(
+            {"qa-live-model": 42, "qa-second-model": 7}, frozenset({42, 7})
+        )
+
+    monkeypatch.setattr(openai_compat.capability_client, "openai_model_catalog", dynamic_models)
+    monkeypatch.setattr(openai_compat.settings, "openai_compat_model_map", "qa-live-model=7")
+
+    response = client.post("/v1/chat/completions", headers=HEADERS, json={
+        "model": "qa-live-model",
+        "messages": [{"role": "user", "content": "hi"}],
+    })
+
+    assert response.status_code == 200
+    assert fake.calls[0]["capability_id"] == 7
+
+
+def test_legacy_config_alias_remains_available_for_active_chat(compat, monkeypatch) -> None:
+    fake, client = compat
+
+    async def legacy_catalog():
+        return OpenAIModelCatalog({}, frozenset({1}))
+
+    monkeypatch.setattr(openai_compat.capability_client, "openai_model_catalog", legacy_catalog)
+    monkeypatch.setattr(openai_compat.settings, "openai_compat_model_map", "deepseek-flash=1")
+
+    response = client.post("/v1/chat/completions", headers=HEADERS, json={
+        "model": "deepseek-flash",
+        "messages": [{"role": "user", "content": "hi"}],
+    })
+
+    assert response.status_code == 200
+    assert fake.calls[0]["capability_id"] == 1
+
+
 def test_internal_token_missing_fails_closed(compat, monkeypatch) -> None:
     _, client = compat
     monkeypatch.setattr(openai_compat, "expected_internal_token", lambda: "")
@@ -147,3 +207,18 @@ def test_internal_token_missing_fails_closed(compat, monkeypatch) -> None:
                            json={"model": "deepseek-flash", "messages": [{"role": "user", "content": "hi"}]})
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "platform_4003"
+
+
+def test_static_override_cannot_route_offline_or_non_chat_target(compat, monkeypatch):
+    fake, client = compat
+
+    async def directory():
+        return OpenAIModelCatalog({}, frozenset({1}))
+
+    monkeypatch.setattr(openai_compat.capability_client, "openai_model_catalog", directory)
+    monkeypatch.setattr(openai_compat.settings, "openai_compat_model_map", "hidden-model=42")
+    response = client.post("/v1/chat/completions", headers=HEADERS,
+                           json={"model": "hidden-model", "messages": [{"role": "user", "content": "hi"}]})
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "platform_2002"
+    assert fake.calls == []

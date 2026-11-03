@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS t_capability (
   category_id BIGINT NOT NULL COMMENT '所属分类 ID',
   name VARCHAR(64) NOT NULL COMMENT '能力名称',
   code VARCHAR(64) NOT NULL COMMENT '能力编码，小写字母/数字/连字符',
+  openai_alias VARCHAR(64) NULL COMMENT 'OpenAI 兼容层公开模型名，在线 chat 能力唯一',
   service_name VARCHAR(64) NOT NULL COMMENT '承载该能力的服务名',
   path VARCHAR(255) NOT NULL COMMENT '调用路径',
   param_schema JSON NULL COMMENT '参数 Schema（JSON 对象）',
@@ -61,8 +62,17 @@ CREATE TABLE IF NOT EXISTS t_capability (
   create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   is_deleted TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除 0否1是',
+  -- D5：生成列。未删除时等于 code，已删除时为 NULL。
+  -- NULL 不参与唯一去重，因此"同一 code 可以软删任意多次、再重建"，
+  -- 而未删除范围内 code 仍然唯一。详见 08_add_active_code.sql。
+  active_code VARCHAR(64)
+    GENERATED ALWAYS AS (IF(is_deleted = 0, code, NULL)) STORED
+    COMMENT '生成列：未删除时等于 code，已删除时为 NULL（D5）',
   PRIMARY KEY (id),
-  UNIQUE KEY uk_capability_code (code, is_deleted),
+  UNIQUE KEY uk_capability_openai_alias (openai_alias),
+  UNIQUE KEY uk_capability_active_code (active_code),
+  -- 唯一性已交给 active_code，这里只用于 exists_code() 的 `code = ? AND is_deleted = 0` 查重路径。
+  KEY idx_capability_code (code, is_deleted),
   KEY idx_capability_category_status (category_id, is_deleted, status),
   KEY idx_capability_status_update (status, is_deleted, update_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -126,15 +136,29 @@ VALUES
             'properties', JSON_OBJECT(
               'role', JSON_OBJECT(
                 'type', 'string',
-                'enum', JSON_ARRAY('system', 'user', 'assistant')
+                'enum', JSON_ARRAY('system', 'user', 'assistant', 'tool')
               ),
-              'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 12000)
+              'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 12000),
+              'tool_call_id', JSON_OBJECT('type', 'string', 'maxLength', 64),
+              'name', JSON_OBJECT('type', 'string', 'maxLength', 64),
+              'tool_calls', JSON_OBJECT(
+                'type', 'array',
+                'maxItems', 64,
+                'items', JSON_OBJECT('type', 'object')
+              )
             ),
-            'required', JSON_ARRAY('role', 'content'),
+            'required', JSON_ARRAY('role'),
             'additionalProperties', CAST('false' AS JSON)
           )
         ),
-        'temperature', JSON_OBJECT('type', 'number', 'minimum', 0, 'maximum', 2)
+        'temperature', JSON_OBJECT('type', 'number', 'minimum', 0, 'maximum', 2),
+        'tools', JSON_OBJECT(
+          'type', 'array',
+          'maxItems', 64,
+          'items', JSON_OBJECT('type', 'object')
+        ),
+        'tool_choice', JSON_OBJECT('type', JSON_ARRAY('string', 'object')),
+        'parallel_tool_calls', JSON_OBJECT('type', 'boolean')
       ),
       'required', JSON_ARRAY('messages'),
       'additionalProperties', CAST('false' AS JSON)
@@ -419,3 +443,229 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 SELECT id, code, status, exposed_to_market FROM t_capability WHERE is_deleted = 0 ORDER BY id;
+
+
+-- 来源: services/capability-service/sql/08_add_active_code.sql
+-- capability-service 增量迁移（D5 软删 code 复用）。
+--
+-- 问题（文档描述的原始 bug）
+-- ==========================
+-- 旧约束是 `UNIQUE KEY uk_capability_code (code, is_deleted)`，语义是
+-- "同一 code 最多 1 条未删除 + 最多 1 条已删除"。于是：
+--   建 code=x → 删 code=x（1 条已删除，占满 is_deleted=1 位）
+--   → 再建 code=x → 再删 code=x → 撞 uk_capability_code（1062）。
+-- 也就是"同一个编码只能被软删一次"，运营反复上下架同名能力就会失败。
+--
+-- 修法
+-- ====
+-- 用一个**生成列**把"只有当行未删除时才存在"的编码物化出来：
+--   active_code = IF(is_deleted = 0, code, NULL)
+-- NULL 在 MySQL 唯一索引里不参与去重（多行 NULL 允许共存），所以：
+--   * 未删除行：同一 code 仍最多 1 条 —— 原来的业务约束不变；
+--   * 已删除行：active_code 一律为 NULL —— 想软删多少次都行。
+--
+-- 索引取舍
+-- ========
+-- 旧 `uk_capability_code (code, is_deleted)` **改名为非唯一** `idx_capability_code (code, is_deleted)`，
+-- 而不是直接删除。原因：仓储层的 `exists_code()` 与编辑查重走的是
+-- `WHERE code = ? AND is_deleted = 0`，唯一性不再由它保证，但这个索引仍然是
+-- 该查询的最优访问路径；直接删掉会让查重退化成全表扫描。
+-- 唯一性改由 `uk_capability_active_code (active_code)` 承担。
+--
+-- 选 STORED 而不是 VIRTUAL：索引在两种形态下都可建，但 STORED 让
+-- `SHOW CREATE TABLE` / 运维排查时能直接 `SELECT active_code` 看到判定结果，
+-- 且不依赖每次读取时计算；本表是目录表（写少读多、行数很小），代价可忽略。
+--
+-- 重复执行安全。
+
+USE capability_db;
+
+-- ---------------------------------------------------------------- 1. 生成列
+
+DROP PROCEDURE IF EXISTS add_active_code_column;
+DELIMITER $$
+CREATE PROCEDURE add_active_code_column()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 't_capability'
+      AND COLUMN_NAME = 'active_code'
+  ) THEN
+    ALTER TABLE t_capability
+      ADD COLUMN active_code VARCHAR(64)
+        GENERATED ALWAYS AS (IF(is_deleted = 0, code, NULL)) STORED
+        COMMENT '生成列：未删除时等于 code，已删除时为 NULL，用于唯一约束（D5）';
+  END IF;
+END$$
+DELIMITER ;
+
+CALL add_active_code_column();
+DROP PROCEDURE IF EXISTS add_active_code_column;
+
+-- ---------------------------------------------------------------- 2. 新唯一索引
+
+DROP PROCEDURE IF EXISTS add_active_code_unique;
+DELIMITER $$
+CREATE PROCEDURE add_active_code_unique()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 't_capability'
+      AND INDEX_NAME = 'uk_capability_active_code'
+  ) THEN
+    ALTER TABLE t_capability
+      ADD UNIQUE KEY uk_capability_active_code (active_code);
+  END IF;
+END$$
+DELIMITER ;
+
+CALL add_active_code_unique();
+DROP PROCEDURE IF EXISTS add_active_code_unique;
+
+-- ------------------------------------------------- 3. 旧唯一索引降级为非唯一
+
+DROP PROCEDURE IF EXISTS relax_legacy_code_unique;
+DELIMITER $$
+CREATE PROCEDURE relax_legacy_code_unique()
+BEGIN
+  -- 旧唯一索引存在时先删（不删的话它仍然拦着第二次软删）。
+  IF EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 't_capability'
+      AND INDEX_NAME = 'uk_capability_code'
+      AND NON_UNIQUE = 0
+  ) THEN
+    ALTER TABLE t_capability DROP INDEX uk_capability_code;
+  END IF;
+
+  -- 补回非唯一索引，保住 exists_code() 的访问路径。
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 't_capability'
+      AND INDEX_NAME = 'idx_capability_code'
+  ) THEN
+    ALTER TABLE t_capability ADD KEY idx_capability_code (code, is_deleted);
+  END IF;
+END$$
+DELIMITER ;
+
+CALL relax_legacy_code_unique();
+DROP PROCEDURE IF EXISTS relax_legacy_code_unique;
+
+-- 迁移自检：生成列必须与 is_deleted 一致，且未删除范围内 code 不再重复。
+SELECT id, code, is_deleted, active_code FROM t_capability ORDER BY id;
+SELECT code, COUNT(*) AS active_rows
+FROM t_capability WHERE is_deleted = 0 GROUP BY code HAVING COUNT(*) > 1;
+
+
+-- 来源: services/capability-service/sql/09_allow_tools_in_chat_schema.sql
+-- capability-service 增量迁移（E2 工具调用：让 chat 能力的 Schema 接受 tools）。
+--
+-- 问题
+-- ====
+-- 旧 Schema 是"纯聊天"约束：messages.role 只允许 system/user/assistant，
+-- 且对象 `additionalProperties: false`，任何工具相关字段（tools / tool_choice /
+-- parallel_tool_calls / role=tool / tool_call_id / name）都会被判 2001。
+-- 结果：E2 在代码层支持了工具透传，但演示能力本身调不通 —— 实测
+-- `POST /api/chat/completions` 带 tools 直接返回 2001。
+--
+-- 修法
+-- ====
+-- 只放宽 chat-completions 这一条能力的 Schema（summary 等能力保持原样）：
+--   1. role 枚举增加 `tool`；
+--   2. 消息对象允许 `tool_call_id` / `name`（工具回灌用，仍禁止其他未知字段）；
+--   3. 顶层允许 `tools` / `tool_choice` / `parallel_tool_calls`。
+-- 三个字段都是**可选**的，不传时的行为与旧版完全一致。
+--
+-- 重复执行安全：整段是幂等 UPDATE，不依赖当前值。
+
+USE capability_db;
+
+UPDATE t_capability
+SET param_schema = JSON_OBJECT(
+  'type', 'object',
+  'properties', JSON_OBJECT(
+    'messages', JSON_OBJECT(
+      'type', 'array',
+      'minItems', 1,
+      'maxItems', 40,
+      'items', JSON_OBJECT(
+        'type', 'object',
+        'properties', JSON_OBJECT(
+          'role', JSON_OBJECT(
+            'type', 'string',
+            'enum', JSON_ARRAY('system', 'user', 'assistant', 'tool')
+          ),
+          'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 12000),
+          'tool_call_id', JSON_OBJECT('type', 'string', 'maxLength', 64),
+          'name', JSON_OBJECT('type', 'string', 'maxLength', 64),
+          'tool_calls', JSON_OBJECT(
+            'type', 'array',
+            'maxItems', 64,
+            'items', JSON_OBJECT('type', 'object')
+          )
+        ),
+        'required', JSON_ARRAY('role'),
+        'additionalProperties', CAST('false' AS JSON)
+      )
+    ),
+    'temperature', JSON_OBJECT('type', 'number', 'minimum', 0, 'maximum', 2),
+    'tools', JSON_OBJECT(
+      'type', 'array',
+      'maxItems', 64,
+      'items', JSON_OBJECT('type', 'object')
+    ),
+    'tool_choice', JSON_OBJECT('type', JSON_ARRAY('string', 'object')),
+    'parallel_tool_calls', JSON_OBJECT('type', 'boolean')
+  ),
+  'required', JSON_ARRAY('messages'),
+  'additionalProperties', CAST('false' AS JSON)
+)
+WHERE code = 'chat-completions' AND is_deleted = 0;
+
+-- 自检：三条约束都在，tools 为可选属性。
+SELECT id, code,
+       JSON_EXTRACT(param_schema, '$.properties.tools') IS NOT NULL AS has_tools,
+       JSON_SEARCH(param_schema, 'one', 'tool') IS NOT NULL AS role_allows_tool
+FROM t_capability
+WHERE code = 'chat-completions' AND is_deleted = 0;
+
+
+-- 来源: services/capability-service/sql/10_add_openai_alias.sql
+-- P2: public OpenAI-compatible model alias. Safe on existing and fresh databases.
+SET @has_openai_alias = (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 't_capability'
+    AND COLUMN_NAME = 'openai_alias'
+);
+SET @ddl = IF(
+  @has_openai_alias = 0,
+  'ALTER TABLE t_capability ADD COLUMN openai_alias VARCHAR(64) NULL COMMENT ''OpenAI 兼容层公开模型名，在线 chat 能力唯一'' AFTER code',
+  'SELECT ''t_capability.openai_alias already exists'' AS skipped'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_openai_alias_index = (
+  SELECT COUNT(*) FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 't_capability'
+    AND INDEX_NAME = 'uk_capability_openai_alias'
+);
+SET @ddl = IF(
+  @has_openai_alias_index = 0,
+  'ALTER TABLE t_capability ADD UNIQUE KEY uk_capability_openai_alias (openai_alias)',
+  'SELECT ''uk_capability_openai_alias already exists'' AS skipped'
+);
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_TYPE
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 't_capability'
+  AND COLUMN_NAME = 'openai_alias';

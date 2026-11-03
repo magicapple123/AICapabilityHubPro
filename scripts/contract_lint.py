@@ -19,6 +19,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_DIR = ROOT / "docs" / "api-contract"
 SERVICE_DIR = ROOT / "services"
+SHARED_EXECUTION_ERROR_CODES = {2008: "执行器未实现", 2009: "供应商不可用"}
+
+#: 模板文件里不该出现的东西：OpenAI 风格长 Key、32 字节以上 base64、常见明文口令。
+SECRET_LIKE = re.compile(
+    r"(?:sk-[A-Za-z0-9]{20,})|(?:[A-Za-z0-9+/]{43,}={0,2})|(?:password[ \t]*=[ \t]*(?!change-me|changeme|<)[^\s#]{8,})",
+    re.IGNORECASE,
+)
 
 
 def check_contracts(errors: list[str]) -> None:
@@ -41,6 +48,10 @@ def check_contracts(errors: list[str]) -> None:
                 errors.append(f"{path.name} does not mention Result field {marker}")
         if "/internal/" not in content:
             errors.append(f"{path.name} does not document an internal boundary")
+        if path.name in expected:
+            for code in SHARED_EXECUTION_ERROR_CODES:
+                if str(code) not in content:
+                    errors.append(f"{path.name} does not document shared execution code {code}")
 
 
 def check_env_templates(errors: list[str]) -> None:
@@ -98,7 +109,12 @@ def check_secret_hygiene(errors: list[str]) -> None:
     for value in set(result.stdout.decode("utf-8").split("\0")) - {""}:
         path = Path(value)
         name = path.name.lower()
-        if name == ".env.example":
+        # `.env.example` 与 `.env.template` 都是**模板**（需求 G1 点名要后者）：
+        # 放行这两个文件名，但下面仍会扫描内容，真实密钥写进模板照样报错。
+        if name in {".env.example", ".env.template"}:
+            content = path.read_text(encoding="utf-8", errors="replace")
+            if SECRET_LIKE.search(content):
+                errors.append(f"secret-like value inside template: {value}")
             continue
         sensitive = name == ".env" or name.startswith(".env.") or name.endswith((
             ".pem", ".key", "credentials.json", "token.txt"

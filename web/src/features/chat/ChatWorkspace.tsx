@@ -1,6 +1,7 @@
 import { Coins, FlaskConical, Info } from 'lucide-react'
 import { useState } from 'react'
 import { ErrorNote, Loading } from '@/components/ui'
+import { isExecutorSupported, resolveExecutor } from '@/features/capabilities/executorResolver'
 import { ConversationPanel } from './ConversationPanel'
 import { useCapabilityCatalog } from './useCapabilityCatalog'
 import { objectValue } from './schemaInput'
@@ -9,7 +10,8 @@ export function ChatWorkspace() {
   const catalog = useCapabilityCatalog()
   const [busy, setBusy] = useState(false)
   const detail = catalog.detail
-  const executable = !!detail && !!catalog.executors?.codes.includes(detail.code)
+  // P8：可执行性以 executor 为准（executor 为空时按旧 code 回退），不再用 codes。
+  const executable = !!detail && isExecutorSupported(catalog.executors, resolveExecutor(detail))
     && objectValue(detail.param_schema) && detail.param_schema.type === 'object'
   return <div className="chat-workspace">
     <div className="chat-workspace-toolbar"><span className="workspace-tool-icon"><FlaskConical size={20} /></span>

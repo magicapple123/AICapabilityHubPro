@@ -133,3 +133,21 @@ class ConversationStore:
         )
         chat_repository.touch_session(db, session, now=datetime.now())
         return message
+
+    def _mark_failed_message(
+        self, db: Session, message_id: int, user_id: str, error_code: int
+    ) -> None:
+        """把**已提交**的助手消息原地改成 `failed`（账单阶段失败的落地方式）。
+
+        事务边界拆开之后，助手消息先 commit 再去上报账单：账单失败时那条消息
+        已经落库且主键已返回，唯一正确的收敛方式是原地改写，而不是再插一条
+        占位（会让同一轮对话出现两个 assistant）。
+        """
+
+        chat_repository.mark_message_failed(
+            db,
+            message_id=message_id,
+            user_id=user_id,
+            content=FAILED_REPLY,
+            error_code=error_code,
+        )

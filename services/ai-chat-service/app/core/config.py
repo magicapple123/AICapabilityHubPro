@@ -47,9 +47,20 @@ class Settings(BaseSettings):
     # 模型地址 / Key / USE_MOCK 由 Nacos 热更新（三个字段，见 README）；
     # 下面的对话参数走环境变量，属于部署期配置，不参与热更新。
     # A4：按用户限流；每 worker 一份桶，真实速率 ≈ qps × worker 数
+    # D1：供应商地址白名单；之前只从 os.environ 读，.env 里的值不生效（已修）
+    provider_allowed_hosts: str = ""
+    # D1：供应商密钥的主密钥（base64 的 32 字节）；与白名单同样支持 .env
+    provider_master_key_v1: str = ""
     rate_limit_enabled: bool = True
     rate_limit_qps: float = 5.0
     rate_limit_burst: int = 10
+    # P16：一次调用的整体超时预算（入口算 deadline，向下只传"还剩多少"）。
+    # 4 跳串联（目录 → 校验 → 模型 → 账单）最坏情况不得超过它。
+    request_budget_seconds: float = Field(default=60.0, gt=0)
+    # P16：按供应商 alias 的进程内熔断；状态不跨 worker（见 provider_breaker 文档）。
+    provider_breaker_enabled: bool = True
+    provider_breaker_failure_threshold: int = Field(default=5, ge=1, le=100)
+    provider_cooldown_seconds: float = Field(default=30.0, ge=1)
     model_timeout: float = Field(default=30.0, gt=0)
     model_max_tokens: int = Field(default=1024, ge=1, le=32768)
     default_system_prompt: str = "你是一个严谨的中文 AI 助手，回答尽量简洁。"

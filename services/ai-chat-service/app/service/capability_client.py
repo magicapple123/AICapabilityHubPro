@@ -3,20 +3,76 @@
 A3：命中缓存就直接用；未命中才向 capability-service 取快照。改价 / 上下架由
 capability 的写操作主动调 `/internal/capability-cache/invalidate` 清缓存，
 因此"运营改价后 5 秒内生效，管理接口改动接近立即生效"。"""
+import asyncio
+import re
 from typing import Any
-import httpx
+
 from pydantic import ValidationError
 from app.core.capability_config import capability_settings
 from app.core.config import settings
 from app.core.exceptions import BizException
+from app.core.http_client import get_http_client
 from app.core.logging import get_request_id
 from app.core.nacos_client import nacos_register
+from app.core.observability import CATALOG_CACHE_EVENTS
 from app.core.service_call import call_internal
 from app.schemas.capability import CapabilityDefinition
-from app.service.catalog_cache import catalog_cache
+from app.service.catalog_cache import OpenAIModelCatalog, catalog_cache
 
 
 class CapabilityClient:
+    def __init__(self) -> None:
+        self._openai_models_lock = asyncio.Lock()
+
+    async def openai_model_catalog(self) -> OpenAIModelCatalog:
+        """Get cached aliases and their currently callable chat capability targets."""
+
+        cached = catalog_cache.get_openai_models()
+        if cached is not None:
+            return cached
+        async with self._openai_models_lock:
+            cached = catalog_cache.get_openai_models()
+            if cached is not None:
+                return cached
+            CATALOG_CACHE_EVENTS.labels(
+                service="ai-chat-service", result="models-fetch"
+            ).inc()
+            try:
+                payload = await call_internal(
+                    capability_settings.capability_service_name,
+                    "GET",
+                    "/internal/capability/openai-models",
+                )
+            except BizException as error:
+                raise BizException(4002, "OpenAI 模型目录暂不可用") from error
+            except Exception as error:
+                raise BizException(4002, "OpenAI 模型目录响应异常") from error
+        if not isinstance(payload, list):
+            raise BizException(4002, "OpenAI 模型目录响应格式错误")
+
+        mapping: dict[str, int] = {}
+        capability_ids: set[int] = set()
+        for row in payload:
+            if not isinstance(row, dict):
+                raise BizException(4002, "OpenAI 模型目录响应格式错误")
+            capability_id = row.get("id")
+            alias = row.get("openai_alias")
+            if type(capability_id) is not int or capability_id < 1:
+                raise BizException(4002, "OpenAI 模型目录响应格式错误")
+            capability_ids.add(capability_id)
+            if alias is None:
+                continue
+            if (
+                not isinstance(alias, str)
+                or re.fullmatch(r"^[a-z][a-z0-9._-]{1,63}$", alias) is None
+                or alias in mapping
+            ):
+                raise BizException(4002, "OpenAI 模型目录响应格式错误")
+            mapping[alias] = capability_id
+        catalog = OpenAIModelCatalog(mapping, frozenset(capability_ids))
+        catalog_cache.put_openai_models(catalog)
+        return catalog
+
     async def fetch(self, capability_id: int) -> CapabilityDefinition:
         """A3：先查 5 秒缓存；未命中再取快照。失效通知由 capability 写操作触发。"""
 
@@ -68,15 +124,16 @@ class CapabilityClient:
         """Opt-in compatibility with the existing published-only market API."""
         try:
             base = nacos_register.discover_one(capability_settings.capability_service_name)
-            async with httpx.AsyncClient(timeout=settings.internal_call_timeout) as client:
-                response = await client.get(
-                    f"{base}/api/capability/market/{capability_id}",
-                    headers={"X-Request-Id": get_request_id()},
-                )
-                response.raise_for_status()
-                if len(response.content) > 65536:
-                    raise ValueError("Oversized catalog response")
-                body = response.json()
+            client = await get_http_client()
+            response = await client.get(
+                f"{base}/api/capability/market/{capability_id}",
+                headers={"X-Request-Id": get_request_id()},
+                timeout=settings.internal_call_timeout,
+            )
+            response.raise_for_status()
+            if len(response.content) > 65536:
+                raise ValueError("Oversized catalog response")
+            body = response.json()
         except Exception as error:
             raise BizException(4002, "能力目录暂不可用") from error
         if not isinstance(body, dict) or type(body.get("code")) is not int:

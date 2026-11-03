@@ -88,9 +88,12 @@ export function useConversation(detail: MarketDetail, onBusy: (busy: boolean) =>
       const data = await completeChat({ capability_id: detail.id, input,
         session_id: detail.code === 'chat-completions' ? sessionId ?? undefined : undefined })
       if (!active.current) return
+      // D3：图片既可能在顶层（平台统一读取路径），也在 choices[0].images（OpenAI 风格）。
+      const images = data.images?.length ? data.images : data.choices[0]?.images
       setBubbles([...before, userBubble, {
         key: `assistant-${data.message_id}`, role: 'assistant', context: true,
-        content: data.choices[0]?.message.content ?? '服务未返回内容。',
+        content: data.choices[0]?.message.content ?? (images?.length ? '图片已生成。' : '服务未返回内容。'),
+        images: images?.length ? images : undefined,
         meta: `${data.degraded ? '降级 · ' : data.mock ? '本地模拟 · ' : ''}${data.duration_ms} ms · ${data.cost} 积分`,
       }])
       setSessionId(data.session_id)

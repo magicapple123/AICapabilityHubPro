@@ -11,12 +11,22 @@ services:
         NPM_REGISTRY: "${NPM_REGISTRY:-https://registry.npmjs.org}"
     container_name: aihub-pro-nginx
     environment:
-      NGINX_GATEWAY_UPSTREAM: "${NGINX_GATEWAY_UPSTREAM:-host.docker.internal:8080}"
+      # 默认指向 compose 网络里的 gateway 容器；只有「网关跑在宿主机」的混合调试场景
+      # 才需要显式覆盖成 host.docker.internal:8080（此时 extra_hosts 才派上用场）。
+      NGINX_GATEWAY_UPSTREAM: "${NGINX_GATEWAY_UPSTREAM:-gateway:8080}"
       NGINX_ENVSUBST_VARS: "NGINX_GATEWAY_UPSTREAM"
     ports:
       - "${NGINX_PORT:-80}:80"
+    # 保留 host.docker.internal：升级/回退到「网关在宿主机」时无需改文件。
+    # 默认链路不依赖它，nginx 只通过容器网络访问 gateway。
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      # required: false —— gateway 属于 app profile。只起中间件（不带 --profile app）时，
+      # 这条依赖不存在也不该让 nginx 起不来。
+      gateway:
+        condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/nginx-health | grep -q '^UP'"]
       interval: 10s
@@ -29,7 +39,7 @@ services:
     image: mysql:8.4
     container_name: aihub-pro-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
       TZ: Asia/Shanghai
     command:
       - --character-set-server=utf8mb4
@@ -37,7 +47,7 @@ services:
       # A2：4 服务 × 4 worker × (pool 5 + overflow 10) = 240，默认 151 会直接连挂。
       - --max-connections=500
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql/init:/docker-entrypoint-initdb.d:ro
@@ -58,8 +68,14 @@ services:
       JVM_XMX: 512m
       TZ: Asia/Shanghai
     ports:
-      - "8848:8848"
-      - "9848:9848"
+      - "127.0.0.1:8848:8848"
+      - "127.0.0.1:9848:9848"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --max-time 3 http://127.0.0.1:8848/nacos/v1/console/health/readiness | grep -qx 'OK'"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
     restart: unless-stopped
 
   sentinel:
@@ -68,58 +84,148 @@ services:
     environment:
       TZ: Asia/Shanghai
     ports:
-      - "8858:8858"
+      - "127.0.0.1:8858:8858"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --max-time 3 -o /dev/null http://127.0.0.1:8858/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
 
   # ---------- G1：四个业务服务（profile=app，默认 up 不受影响） ----------
   # 就绪探针统一走 /health/ready：每次真查库，MySQL 未就绪时容器保持 unhealthy。
+
+  # 统一入口：Java 21 / Spring Cloud Gateway。构建上下文是 gateway/ 目录。
+  # 网关自身没有 actuator（pom 里没有 starter-actuator），所以健康检查打业务探针
+  # /api/capability/market：它同时证明「网关进程活着」+「路由与 Nacos 服务发现可用」。
+  # 代价是依赖 capability-service 已注册；start_period 给了 120s 覆盖首次注册。
+  gateway:
+    profiles: ["app"]
+    build:
+      context: ../gateway
+      args:
+        MAVEN_MIRROR_URL: "${MAVEN_MIRROR_URL:-}"
+    container_name: aihub-pro-gateway
+    environment:
+      GATEWAY_PORT: "8080"
+      # 必填：缺失时 compose 直接报错退出，而不是带着空密钥启动（弱口令签发 JWT 是安全事故）。
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_SECRET_PREVIOUS: ${JWT_SECRET_PREVIOUS:-}
+      JWT_ISSUER: ${JWT_ISSUER:-ai-capability-hub}
+      NACOS_ADDR: nacos:8848
+      SENTINEL_DASHBOARD: sentinel:8858
+      TZ: Asia/Shanghai
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      nacos: { condition: service_healthy }
+      user-service: { condition: service_healthy }
+      billing-service: { condition: service_healthy }
+      capability-service: { condition: service_healthy }
+      ai-chat-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8080/api/capability/market || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 120s
+    restart: unless-stopped
+
   user-service:
     profiles: ["app"]
-    build: ../services/user-service
+    build:
+      context: ../services/user-service
+      args:
+        PIP_INDEX_URL: "${PIP_INDEX_URL:-https://pypi.org/simple}"
     environment:
+      # 与 Dockerfile CMD 的 --port 保持一致；Nacos 注册用这个值，错一个就用 4002 招呼你。
+      SERVICE_PORT: "8081"
       DB_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/user_db?charset=utf8mb4
-      JWT_SECRET: ${JWT_SECRET}
+      # 与网关共用同一密钥：user-service 签发、网关验签，密钥不一致会全部 401。
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_SECRET_PREVIOUS: ${JWT_SECRET_PREVIOUS:-}
       NACOS_ADDR: nacos:8848
       UVICORN_WORKERS: "2"
-    ports: ["8081:8081"]
+    ports: ["127.0.0.1:8081:8081"]
     depends_on:
       mysql: { condition: service_healthy }
+      nacos: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8081/health/ready', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
 
   billing-service:
     profiles: ["app"]
-    build: ../services/billing-service
+    build:
+      context: ../services/billing-service
+      args:
+        PIP_INDEX_URL: "${PIP_INDEX_URL:-https://pypi.org/simple}"
     environment:
+      SERVICE_PORT: "8082"
       DB_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/billing_db?charset=utf8mb4
       NACOS_ADDR: nacos:8848
       UVICORN_WORKERS: "2"
-    ports: ["8082:8082"]
+    ports: ["127.0.0.1:8082:8082"]
     depends_on:
       mysql: { condition: service_healthy }
+      nacos: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8082/health/ready', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
 
   capability-service:
     profiles: ["app"]
-    build: ../services/capability-service
+    build:
+      context: ../services/capability-service
+      args:
+        PIP_INDEX_URL: "${PIP_INDEX_URL:-https://pypi.org/simple}"
     environment:
+      SERVICE_PORT: "8083"
       DB_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/capability_db?charset=utf8mb4
       NACOS_ADDR: nacos:8848
       UVICORN_WORKERS: "2"
-    ports: ["8083:8083"]
+    ports: ["127.0.0.1:8083:8083"]
     depends_on:
       mysql: { condition: service_healthy }
+      nacos: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8083/health/ready', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
 
   ai-chat-service:
     profiles: ["app"]
-    build: ../services/ai-chat-service
+    build:
+      context: ../services/ai-chat-service
+      args:
+        PIP_INDEX_URL: "${PIP_INDEX_URL:-https://pypi.org/simple}"
     environment:
+      SERVICE_PORT: "8090"
       DB_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/ai_chat_db?charset=utf8mb4
       NACOS_ADDR: nacos:8848
       UVICORN_WORKERS: "2"
+      # OpenAI 兼容层（/v1）用 API Key 换身份时要派生服务间令牌，必须有同一把 JWT_SECRET。
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       PROVIDER_MASTER_KEY_V1: ${PROVIDER_MASTER_KEY_V1:-}
       PROVIDER_ALLOWED_HOSTS: ${PROVIDER_ALLOWED_HOSTS:-}
-    ports: ["8090:8090"]
+    ports: ["127.0.0.1:8090:8090"]
     depends_on:
       mysql: { condition: service_healthy }
+      nacos: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8090/health/ready', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
 
 volumes:
   mysql_data:

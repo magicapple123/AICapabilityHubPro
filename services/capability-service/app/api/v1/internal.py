@@ -17,6 +17,18 @@ from app.service import capability_service
 router = APIRouter()
 
 
+@router.get("/openai-models", response_model=Result)
+async def get_internal_openai_models(
+    _: str = Depends(current_user_id),
+    db: Session = Depends(get_db),
+) -> Result:
+    """Return public model aliases for active chat capabilities only."""
+
+    return Result.ok(
+        capability_service.list_openai_models(db), request_id=get_request_id()
+    )
+
+
 @router.get("/{capability_id}", response_model=Result)
 async def get_internal_capability(
     capability_id: int,

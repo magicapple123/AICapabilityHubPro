@@ -22,9 +22,15 @@ ACTION_UPDATE = "update"
 ACTION_STATUS = "status"
 ACTION_ADJUST_POINTS = "adjust_points"
 ACTION_EXPORT = "export"
+ACTION_CREATE = "create"
+ACTION_DISABLE = "disable"
+# P10：日预算的配置动作单独成一个 action，审计里能直接筛出"谁改过谁的预算"。
+ACTION_BUDGET = "budget"
 
 RESOURCE_USER = "user"
 RESOURCE_POINTS = "points"
+# P6：API Key 的生命周期也要可审计；审计页已有「密钥」资源类型，这里补上写入端。
+RESOURCE_APIKEY = "apikey"
 
 
 def sanitize(payload: dict | None) -> dict | None:

@@ -1,11 +1,12 @@
-"""供应商业务逻辑（D1）。
+"""供应商业务逻辑（D1 / P15）。
 
 安全策略（已冻结）：
 1. 保存阶段就校验 `base_url`：https + 域名白名单 + 禁内网（解析后逐 IP 判断）；
 2. 草稿可存，**"启用"前必须测通**（`last_test_ok_at` 非空）；
-3. 每次真实调用前**重新校验**一次地址，缩小 DNS 重绑定的时间窗
-   （已知限制：校验与建连之间仍有极短 TOCTOU 窗口，需要 IP 钉住才能完全消除，
-   已记入契约文档"已知限制"）；
+3. 每次真实调用前**重新校验**一次地址，并把校验结果（`SafeTarget`，含已解析 IP）
+   随 `ProviderRuntime.target` 一起传给调用方，由调用方用该 IP 建连、用原域名做
+   Host 头与 TLS SNI（P15 钉扎）。校验与建连之间因此**不再有 DNS 重绑定窗口**；
+   未绑定供应商（走全局 `MODEL_BASE_URL`）不钉扎——那是部署期配置，不是运营输入；
 4. 不跟随重定向；密钥只在内存解密，不写日志、不进任何响应。
 """
 
@@ -17,8 +18,14 @@ from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BizException
+from app.core.http_client import get_http_client
 from app.core.provider_crypto import ProviderKeyError, decrypt, encrypt, mask
-from app.core.provider_guard import ProviderUrlError, validate_url
+from app.core.provider_guard import (
+    ProviderUrlError,
+    SafeTarget,
+    pinned_request_parts,
+    validate_url,
+)
 from app.models.provider import (
     PROVIDER_DISABLED,
     PROVIDER_DRAFT,
@@ -43,13 +50,19 @@ PROBE_PATHS = {
     "openai-embedding": "/models",
     # 百炼原生协议没有 /models，但兼容模式有（实测 200），用它做连通性探测。
     "dashscope-image": "/compatible-mode/v1/models",
+    # Responses 没有可 GET 的探针，用 /models 判连通（不产生计费）。
+    "openai-responses": "/models",
     "custom-http": "",
 }
 
 
 @dataclass(frozen=True)
 class ProviderRuntime:
-    """一次调用需要的供应商运行参数；`api_key` 只在内存存在。"""
+    """一次调用需要的供应商运行参数；`api_key` 只在内存存在。
+
+    `target` 是本次请求**刚校验过**的地址与解析结果；调用方必须用它建连
+    （`SafeTarget.connect_url()` + Host/SNI），否则钉扎失效。
+    """
 
     alias: str
     protocol: str
@@ -57,6 +70,7 @@ class ProviderRuntime:
     api_key: str
     model: str
     timeout: float
+    target: SafeTarget | None = None
 
 
 def _check_url(url: str) -> None:
@@ -141,14 +155,18 @@ class ProviderService:
             return ProviderTestOut(provider_id=provider_id, ok=False, reason="KEY_UNREADABLE")
 
         path = PROBE_PATHS.get(provider.protocol, "")
-        url = f"{target.url}{path}" if path else target.url
-        headers = {"Authorization": f"Bearer {api_key}"}
+        # P15：探测同样按已校验 IP 建连，Host/SNI 用原域名（否则探测通过、真实调用
+        # 走域名，等于没验证到真实建连路径）。
+        url, pinned_headers, extensions = pinned_request_parts(target, path)
+        headers = {"Authorization": f"Bearer {api_key}", **pinned_headers}
         try:
-            async with httpx.AsyncClient(
-                timeout=min(provider.timeout_ms, 15000) / 1000, follow_redirects=False
-            ) as client:
-                response = await client.get(url, headers=headers)
-                status = response.status_code
+            # 连通性测试低频，但同样复用连接池：省掉一次 200 ms 级握手。
+            client = await get_http_client()
+            response = await client.get(
+                url, headers=headers, timeout=min(provider.timeout_ms, 15000) / 1000,
+                extensions=extensions, follow_redirects=False,
+            )
+            status = response.status_code
         except httpx.TimeoutException:
             return ProviderTestOut(
                 provider_id=provider_id, ok=False, reason="TIMEOUT",
@@ -192,9 +210,15 @@ class ProviderService:
 
         provider = provider_repository.find_by_alias(db, alias)
         if provider is None or provider.status != PROVIDER_ENABLED:
-            raise BizException(2008, f"供应商 {alias} 不存在或未启用")
+            raise BizException(2009, f"供应商 {alias} 不存在或未启用")
+        resolved_model = model or provider.default_model
+        if not resolved_model or not resolved_model.strip():
+            raise BizException(
+                DEPENDENCY_CODE,
+                f"供应商 {alias} 未配置默认模型，且请求未指定 model",
+            )
         try:
-            validate_url(provider.base_url)
+            target = validate_url(provider.base_url)
         except ProviderUrlError as error:
             raise BizException(DEPENDENCY_CODE, f"供应商地址已失效：{error}") from error
         try:
@@ -206,8 +230,9 @@ class ProviderService:
             protocol=provider.protocol,
             base_url=provider.base_url,
             api_key=api_key,
-            model=model or provider.default_model,
+            model=resolved_model.strip(),
             timeout=provider.timeout_ms / 1000,
+            target=target,
         )
 
 

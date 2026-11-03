@@ -1,7 +1,5 @@
 """E2 工具调用：多轮协议、透传、无工具时响应体不变。"""
 
-from types import SimpleNamespace
-
 import pytest
 from pydantic import ValidationError
 
@@ -146,8 +144,8 @@ def test_plain_reply_has_no_tool_calls():
 def _result(reply):
     return completion_result(
         definition=definition(),
-        session=SimpleNamespace(id=7),
-        message=SimpleNamespace(id=9),
+        session_id=7,
+        message_id=9,
         reply=reply,
         duration_ms=12,
         receipt={"cost": 5, "record_id": 3},

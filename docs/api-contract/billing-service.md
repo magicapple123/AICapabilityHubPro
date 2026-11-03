@@ -12,7 +12,7 @@
 
 ## 0. 通用约定
 
-- **登录要求**：`/api/billing/records`、`/api/billing/usage`、`/api/billing/stat/overview` 均需要网关 JWT；`/health` 不需要。本服务无白名单业务接口。
+- **登录要求**：`/api/billing/records`、`/api/billing/usage`、`/api/billing/stat/overview`、`/api/billing/admin/**` 均需要网关 JWT；`/health` 不需要。本服务无白名单业务接口。
 - **内部接口**：`/internal/billing/record` 只允许其它后端服务经基座 `call_internal` 调用。网关对外部访问 `/internal/**` 一律 403；本服务另校验 `X-User-Id`（身份，必须等于 body 的 `user_id`）与 `X-Request-Id`（幂等键，必须等于 body 的 `request_id`）。
 - **身份来源**：从网关注入的 `X-User-Id` / `X-User-Name` / `X-Request-Id` 读取，服务内不重复解析 JWT。
 - **账号状态校验**：网关只校验 JWT 签名与有效期，**不知道账号是否已被禁用**，因此被禁用账号在 Token 过期前仍能通过网关。billing-service 没有 `user_db` 的访问权（禁止跨库），个人查询通过 `/internal/user/check`（`points_cost=0`）确认账号仍可用，全局统计通过实时 authorization 校验当前管理员身份：被禁用返回 `1005`，user-service 不可用返回 `4002`。校验放在参数校验之后，确保 `2001` / `1001` 的错误优先级稳定。
@@ -42,6 +42,7 @@
 | `completion_tokens` | INT | NOT NULL DEFAULT 0 | C1：输出 token，取自上游 `usage.completion_tokens`（Responses 为 `output_tokens`）；旧行为 0 |
 | `token_source` | VARCHAR(16) | NOT NULL DEFAULT 'unknown' | C1：`upstream`（上游真值）/`mock`（本地模拟）/`missing`（上游未给）/`unknown`（历史未记录） |
 | `units` | INT | NOT NULL DEFAULT 1 | C2：按件计费的数量（张/次），其余模式为 1 |
+| `images` | JSON | NULL | D3：图片产物 `[{url, revised_prompt}]`；非文生图与历史行为 NULL，出参统一归一为空数组 |
 | `call_status` | VARCHAR(16) | NOT NULL DEFAULT 'success' | `success` / `degraded` / `failed`（Pro统一调用状态） |
 | `duration_ms` | INT | NOT NULL DEFAULT 0 | 调用耗时，缺省 0 |
 | `model_name` | VARCHAR(128) | NOT NULL DEFAULT '' | 模型名；Mock 模式为请求中的 `model` |
@@ -165,7 +166,7 @@ C1/C2 新增字段全部有默认值，**旧调用方只发原有字段时行为
 - 负责人：黄禹菲
 - 是否需要登录：是
 - 查询参数：`start_date`、`end_date`（可选，缺省最近 30 天）、`service_name`（可选，精确匹配）、`call_status`（可选，`success` / `degraded` / `failed`）、`page`、`page_size`
-- 成功 data：分页结构，列表项 `{"id": 1, "request_id": "...", "user_id": 1, "capability_id": 0, "service_name": "ai-chat-service", "cost": 1, "unit_price": null, "call_status": "success", "duration_ms": 0, "model_name": "mock-model", "create_time": "2026-09-16 10:00:00"}`
+- 成功 data：分页结构，列表项 `{"id": 1, "request_id": "...", "user_id": 1, "capability_id": 0, "service_name": "ai-chat-service", "cost": 1, "unit_price": null, "call_status": "success", "duration_ms": 0, "model_name": "mock-model", "create_time": "2026-09-16 10:00:00", "billing_mode": "per_call", "prompt_tokens": 0, "completion_tokens": 0, "token_source": "", "units": 1, "images": []}`
 - 错误码：`1001` 未认证；`1005` 用户不存在或已被禁用；`2001` 参数不符合 Schema（分页越界、状态枚举非法、日期范围非法）；`4002` user-service 不可用
 - 备注：只返回当前用户的数据，按 `id` 倒序；日期过滤使用 `create_time >= start 00:00:00 AND create_time < end+1 天` 的索引友好写法。
 
@@ -220,6 +221,7 @@ C1/C2 新增字段全部有默认值，**旧调用方只发原有字段时行为
 | 1001 | 缺少或伪造的链路身份 | 内部接口缺链路头，或 `X-User-Id` 与目标用户不一致 | 1xxx |
 | 1005 | 用户不存在或已被禁用 | 查询接口的前置账号状态校验未通过（由 user-service 透传） | 1xxx |
 | 2001 | 参数不符合 Schema | 必填缺失、类型错误、枚举非法、日期范围非法（基座与范围校验统一处理） | 2xxx |
+| 2007 | 无运营权限，仅管理员可执行该操作 | 管理端接口对普通用户；由 user 侧 `1006` 映射 | 2xxx |
 | 3001 | 积分不足 | 由 user-service 扣分失败透传，此时明细与用量已回滚 | 3xxx |
 | 3002 | 重复计费：同一 requestId 已被其它调用占用 | 幂等键被不同调用复用（用户/服务/能力/实际费用/登记价/模型/耗时/状态任一不同） | 3xxx |
 | 4002 | 下游服务暂不可用 | 服务发现失败、扣分调用异常，或账号状态校验时 user-service 不可用 | 4xxx |
@@ -269,3 +271,59 @@ C1/C2 新增字段全部有默认值，**旧调用方只发原有字段时行为
 
 - 增量脚本：`services/billing-service/sql/03_add_token_usage.sql`（可重复执行）。
 - 只增列、不改旧数据；`01_init.sql` 同步更新，供全新环境直接建表。
+
+## 10. 本轮增量：F1 管理端跨用户查询（`/api/billing/admin`）
+
+运营后台需要按用户查看流水与用量；统计口径与个人接口**完全一致**，只有目标用户与权限不同。
+
+### 10.1 `GET /api/billing/admin/records`
+
+- 是否需要登录：是（**管理员**）
+- 查询参数：
+  - `user_id`（必填，正整数）：要查询的目标用户；
+  - `start_date` / `end_date`（可选，缺省最近 30 天）；
+  - `call_status`（可选，`success` / `degraded` / `failed`）；
+  - `service_name`（可选，精确匹配）；
+  - `page` / `page_size`（默认 10，最大 100）。
+- 成功 data：与 `GET /api/billing/records` 同构的分页结构，列表项含
+  `billing_mode` / `prompt_tokens` / `completion_tokens` / `units` / `images` 等 C1/C2/D3 字段。
+- 错误码：`1001` 未认证；`2001` 参数非法；`2007` 非管理员；`4002` 授权依赖不可用（失败关闭）。
+- 备注：只返回调用元数据，不含会话正文；`user_id` 过滤在 SQL 层完成，不会把其他用户的行带回前端。
+
+### 10.2 `GET /api/billing/admin/users/{user_id}/usage`
+
+- 是否需要登录：是（**管理员**）
+- 查询参数：`start_date` / `end_date`（可选，缺省最近 30 天）
+- 成功 data：与 `GET /api/billing/usage` 同构（`start_date` / `end_date` / `summary` / `by_day` / `by_service`），
+  只是目标用户由路径参数指定。
+- 错误码：同上。
+- 备注：同一统计口径——`summary` / `by_service` 取自 `t_call_record`，`by_day` 取自 `t_usage_daily`。
+
+### 10.3 权限映射
+
+- 管理员身份由 user-service 的 `/internal/user/authorization?required_role=admin` 实时校验，
+  失败关闭；user-service 返回的 `1006 权限不足` 在**本服务管理端**统一映射为平台运营口径的
+  `2007 无运营权限`（与 capability-service 一致）。`1006` 在 API Key 端点保留原语义。
+- 授权依赖超时 / 端点缺失 / 响应格式异常 → `4002`，不降级为“放行”。
+
+### P11 上游模型选择（2026-11-03）
+
+平台 `/api/chat/completions` 的显式 `model` 优先于绑定供应商的 `default_model`；只有未绑定供应商时才回退全局 `MODEL_NAME`。绑定供应商但两者均为空时返回 `4002`，明确提示补默认模型，不静默发送全局名称。`/v1` 的 `model` 是平台能力别名，只用于解析能力，绝不作为上游模型名。相同规则适用于 chat、summary 与流式；图片仍由图片供应商配置决定。供应商编辑页在默认模型为空时给出调用限制提示。
+
+### P1 供应商状态与错误码（2026-11-03）
+
+`2008` 只表示执行器未实现，原文案保留。`2009` 表示绑定供应商不存在、未启用或被停用；运行期点名alias，OpenAI/Responses兼容层映射为HTTP503、type=api_error、code=platform_2009。保存绑定时仅接受enabled供应商，draft/disabled返回2001并提示先测试启用，状态缺失按4002失败关闭。供应商变更不改变一次调用一条账单、失败不扣分的口径。无新增表字段或接口。
+
+### P6 API Key 归因（2026-11-03）
+
+- 表结构：`t_call_record` 增 `api_key_id BIGINT NULL`（索引 `idx_call_record_api_key_time (api_key_id, is_deleted, create_time)`）与 `entrypoint VARCHAR(16) NOT NULL DEFAULT ''`。历史行分别为 `NULL` / 空串，语义"未知"，**不回填**。
+- 内部入参：`POST /internal/billing/record` 增 `api_key_id`（仅接受 ≥1 的整数，`0` 视为非法）与 `entrypoint`（`web` / `platform_api` / `openai_compat`）。缺省时行为与旧调用方一致。
+- 出参：`CallRecordOut` 增 `api_key_id: int|null` 与 `entrypoint: string`。
+- 查询：`GET /api/billing/admin/records` 增 `api_key_id` 过滤参数（组合在既有 `user_id` 必填之上）。
+- 新增 `GET /api/billing/admin/users/{user_id}/keys-usage?start_date&end_date`：返回 `{"user_id","start_date","end_date","list":[{"api_key_id","call_count","total_cost","last_call_at"}]}`；只统计 `api_key_id IS NOT NULL` 的记录，避免把无 Key 身份的调用塞进某把 Key。
+- 迁移：`sql/05_add_api_key_attribution.sql`，可重复执行，已同步 `deploy/mysql/init/04_billing_service.sql`。
+
+### P5 全量用户用量聚合（2026-11-03）
+
+新增 `GET /api/billing/admin/users/usage?start_date&end_date`（管理员，`_ensure_admin`）：
+`{"start_date","end_date","list":[{"user_id","call_count","total_cost","last_call_at"}]}`，数据源 `t_usage_daily` 按 `user_id` 汇总，含零消耗用户之外的**所有有调用记录的用户**；零调用用户由 user-service 资料列表补位。`last_call_at` 是天粒度（聚合表本身只有天）。**规模边界**：用户数 ≤2000 时由前端 join 后排序分页；超过必须改为 billing 主导分页 + user-service 批量补资料（A2）。普通用户 `2007`。

@@ -244,6 +244,7 @@ def test_internal_out_from_row_excludes_target_configuration() -> None:
         "id",
         "name",
         "code",
+        "openai_alias",
         "status",
         "billing_mode",
         "price_per_1k_input",

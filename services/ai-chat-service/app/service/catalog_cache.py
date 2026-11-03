@@ -23,10 +23,17 @@ class _Entry:
     value: object
 
 
+@dataclass(frozen=True)
+class OpenAIModelCatalog:
+    aliases: dict[str, int]
+    capability_ids: frozenset[int]
+
+
 class CatalogCache:
     def __init__(self, ttl: float = TTL_SECONDS) -> None:
         self._ttl = ttl
         self._store: dict[int, _Entry] = {}
+        self._openai_models: _Entry | None = None
 
     def get(self, capability_id: int):
         entry = self._store.get(capability_id)
@@ -43,8 +50,29 @@ class CatalogCache:
     def put(self, capability_id: int, value: object) -> None:
         self._store[capability_id] = _Entry(time.monotonic() + self._ttl, value)
 
+    def get_openai_models(self) -> OpenAIModelCatalog | None:
+        entry = self._openai_models
+        if entry is None:
+            CATALOG_CACHE_EVENTS.labels(service="ai-chat-service", result="models-miss").inc()
+            return None
+        if entry.expires_at <= time.monotonic():
+            self._openai_models = None
+            CATALOG_CACHE_EVENTS.labels(service="ai-chat-service", result="models-expired").inc()
+            return None
+        CATALOG_CACHE_EVENTS.labels(service="ai-chat-service", result="models-hit").inc()
+        return entry.value  # type: ignore[return-value]
+
+    def put_openai_models(self, value: OpenAIModelCatalog) -> None:
+        self._openai_models = _Entry(time.monotonic() + self._ttl, value)
+
     def invalidate(self, capability_id: int | None = None) -> int:
         """失效单个能力或全部；返回清掉的条数。"""
+
+        if self._openai_models is not None:
+            self._openai_models = None
+            CATALOG_CACHE_EVENTS.labels(
+                service="ai-chat-service", result="models-invalidated"
+            ).inc()
 
         if capability_id is None:
             removed = len(self._store)
@@ -60,6 +88,7 @@ class CatalogCache:
 
     def clear(self) -> None:
         self._store.clear()
+        self._openai_models = None
 
 
 catalog_cache = CatalogCache()

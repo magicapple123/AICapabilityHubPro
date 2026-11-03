@@ -1,3 +1,4 @@
+import { Image } from 'antd'
 import { LoaderCircle } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { ChatCompletionData } from '@/api/chat'
@@ -30,7 +31,17 @@ export function ConversationView({ bubbles, busy, code, receipt, onExample }: {
         <button key={text} type="button" onClick={() => onExample(text)}>{summary ? ['试试：提炼文章要点', '试试：整理周报摘要'][index] : text}</button>)}</div>
     </div> : bubbles.filter((bubble) => bubble.context).map((bubble) => <article key={bubble.key} className={'message-row ' + (bubble.role === 'user' ? 'message-user' : 'message-assistant')}>
       <div className="message-body"><span className="message-author">{bubble.role === 'user' ? (summary ? '待摘要文本' : '你') : (summary ? '摘要结果' : '助手')}</span>
-        <div className="message-content"><MessageContent text={bubble.content} /></div><div className="message-meta">{bubble.meta && <span>{bubble.meta}</span>}
+        <div className="message-content"><MessageContent text={bubble.content} /></div>
+        {bubble.images?.length ? <div className="message-images" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          <Image.PreviewGroup>
+            {bubble.images.map((image, index) => <Image
+              key={image.url + index} src={image.url} width={132}
+              alt={image.revised_prompt || `生成图片 ${index + 1}`}
+              style={{ borderRadius: 8, objectFit: 'cover' }}
+            />)}
+          </Image.PreviewGroup>
+        </div> : null}
+        <div className="message-meta">{bubble.meta && <span>{bubble.meta}</span>}
           {bubble.role === 'assistant' && <CopyButton text={bubble.content} label={summary ? '复制摘要' : '复制回复'} />}</div></div>
     </article>)}
     {receipt && <ExecutionReceipt receipt={receipt} />}

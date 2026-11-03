@@ -34,15 +34,29 @@ VALUES
             'properties', JSON_OBJECT(
               'role', JSON_OBJECT(
                 'type', 'string',
-                'enum', JSON_ARRAY('system', 'user', 'assistant')
+                'enum', JSON_ARRAY('system', 'user', 'assistant', 'tool')
               ),
-              'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 12000)
+              'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 12000),
+              'tool_call_id', JSON_OBJECT('type', 'string', 'maxLength', 64),
+              'name', JSON_OBJECT('type', 'string', 'maxLength', 64),
+              'tool_calls', JSON_OBJECT(
+                'type', 'array',
+                'maxItems', 64,
+                'items', JSON_OBJECT('type', 'object')
+              )
             ),
-            'required', JSON_ARRAY('role', 'content'),
+            'required', JSON_ARRAY('role'),
             'additionalProperties', CAST('false' AS JSON)
           )
         ),
-        'temperature', JSON_OBJECT('type', 'number', 'minimum', 0, 'maximum', 2)
+        'temperature', JSON_OBJECT('type', 'number', 'minimum', 0, 'maximum', 2),
+        'tools', JSON_OBJECT(
+          'type', 'array',
+          'maxItems', 64,
+          'items', JSON_OBJECT('type', 'object')
+        ),
+        'tool_choice', JSON_OBJECT('type', JSON_ARRAY('string', 'object')),
+        'parallel_tool_calls', JSON_OBJECT('type', 'boolean')
       ),
       'required', JSON_ARRAY('messages'),
       'additionalProperties', CAST('false' AS JSON)

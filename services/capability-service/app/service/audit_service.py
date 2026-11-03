@@ -61,7 +61,7 @@ def snapshot(obj: object, fields: tuple[str, ...]) -> dict:
 
 
 CAPABILITY_AUDIT_FIELDS = (
-    "category_id", "name", "code", "service_name", "path", "param_schema",
+    "category_id", "name", "code", "openai_alias", "service_name", "path", "param_schema",
     "price_per_call", "billing_mode", "price_per_1k_input", "price_per_1k_output",
     "price_per_unit", "unit", "status", "description",
 )

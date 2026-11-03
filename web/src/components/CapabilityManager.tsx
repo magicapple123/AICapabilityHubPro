@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react'
 import { deleteCapability, fetchCategories, fetchManageCapabilities, updateCapabilityStatus, type CapabilityManageItem, type CapabilityStatus } from '@/api/capability'
 import { EmptyNote, ErrorNote, Loading, Pager, StatusTag } from '@/components/ui'
 import { CapabilityEditor } from '@/features/console/CapabilityEditor'
+import { fetchExecutors } from '@/features/chat/api'
 import { useAsyncResource } from '@/hooks/useAsyncResource'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
@@ -15,6 +16,8 @@ export function CapabilityManager({ onChanged }: { onChanged?: () => void }) {
   const [editing, setEditing] = useState<CapabilityManageItem | null>(null)
   const [busy, setBusy] = useState<number | null>(null)
   const categories = useAsyncResource(fetchCategories)
+  // P8：执行器目录（executors / executor_protocols），登记表单据此提示"能否直接执行"。
+  const executors = useAsyncResource(fetchExecutors)
   const load = useCallback(() => fetchManageCapabilities({
     status: (filters.status || undefined) as CapabilityStatus | undefined,
     category_id: Number(filters.category) || undefined, keyword: keyword || undefined, page: filters.page, page_size: SIZE,
@@ -54,6 +57,6 @@ export function CapabilityManager({ onChanged }: { onChanged?: () => void }) {
           <tr key={item.id}><td><strong className="management-name">{item.name}</strong><code className="management-code">{item.code}</code></td><td>{item.category_name}</td><td>{item.price_per_call} 积分</td><td><StatusTag value={item.status} /></td><td className="record-time">{item.update_time}</td><td><div className="row-actions">
             <button className="text-link" disabled={busy === item.id} onClick={() => changeStatus(item)}>{item.status === 'online' ? '下架' : '上架'}</button><button className="icon-button" aria-label={'编辑能力' + item.name} onClick={() => setEditing(item)}><Pencil size={14} /></button><button className="icon-button danger-icon" aria-label={'删除能力' + item.name} onClick={() => remove(item)}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div>}
     <Pager page={filters.page} pageSize={SIZE} total={data.data?.total ?? 0} onChange={(page) => setFilters((old) => ({ ...old, page }))} />
-    {(creating || editing) && <CapabilityEditor item={editing} categories={categories.data?.list ?? []} onClose={() => { setCreating(false); setEditing(null) }} onSaved={() => { setCreating(false); setEditing(null); updated() }} />}
+    {(creating || editing) && <CapabilityEditor item={editing} categories={categories.data?.list ?? []} executorCatalog={executors.data} onClose={() => { setCreating(false); setEditing(null) }} onSaved={() => { setCreating(false); setEditing(null); updated() }} />}
   </section>
 }

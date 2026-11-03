@@ -48,6 +48,18 @@ def test_prepare_uses_n_as_units():
     assert prepared.model_params == {"size": "512x512", "n": 2}
 
 
+def test_image_prepare_keeps_model_empty_for_provider_default():
+    """回归：文生图不能借用文本模型名。
+
+    `prepare_execution` 曾经把 `settings.model_name`（如 deepseek-flash）写进
+    `request.model`，`resolve_runtime(model=...)` 再让它覆盖供应商的
+    `default_model`，最终把文本模型名发给 DashScope，实测上游直接 400。
+    """
+
+    prepared = adapters.prepare_execution(definition(), request({"prompt": "猫"}))
+    assert prepared.request.model is None
+
+
 def test_image_rejects_session():
     with pytest.raises(BizException) as error:
         adapters.prepare_execution(
@@ -131,8 +143,8 @@ def test_completion_result_exposes_images():
         images=[{"url": "https://example.com/a.png"}],
     )
     data = completion_result(
-        definition=definition(), session=SimpleNamespace(id=1),
-        message=SimpleNamespace(id=2), reply=reply, duration_ms=10,
+        definition=definition(), session_id=1,
+        message_id=2, reply=reply, duration_ms=10,
         receipt={"cost": 3, "record_id": 1},
     )
     assert data["choices"][0]["images"][0]["url"].endswith("a.png")

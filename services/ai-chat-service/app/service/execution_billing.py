@@ -36,6 +36,7 @@ async def check_points(
 async def report_execution(
     user_id: str, definition: CapabilityDefinition, reply: ModelReply,
     duration_ms: int, *, units: int = 1, call_internal,
+    api_key_id: int | None = None, entrypoint: str = "web",
 ) -> dict:
     request_id = get_request_id()
     billable = not reply.degraded
@@ -72,8 +73,22 @@ async def report_execution(
         "price_per_unit": definition.price_per_unit,
         "service_name": settings.service_name, "model": reply.model_name,
         "points": points, "status": reply.call_status, "duration_ms": duration_ms,
+        # D3：文生图的图片产物随收据一起上报，调用记录才能事后预览。
+        # 只上报结构化字段（url / revised_prompt），不传二进制；非文生图为空列表。
+        "images": [
+            {
+                "url": str(item.get("url") or ""),
+                "revised_prompt": str(item.get("revised_prompt") or ""),
+            }
+            for item in (reply.images or [])
+            if isinstance(item, dict) and item.get("url")
+        ],
         "remark": f"{definition.code} mode={definition.billing_mode} price={points}"
                   + (f" degraded={reply.error_code}" if reply.degraded else ""),
+        # P6：Key 身份与入口。没有 Key 身份时为 None（billing 落 NULL），
+        # 不能用 0 占位——按 Key 聚合并不会把 0 当"未知"。
+        "api_key_id": api_key_id,
+        "entrypoint": entrypoint,
     }
     receipt = await call_internal(
         settings.billing_service_name, "POST", "/internal/billing/record", json=payload,

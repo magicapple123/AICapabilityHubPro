@@ -4,7 +4,7 @@
 其余接口需要网关 JWT；身份一律取网关注入的 `X-User-Id`，不在服务内解析 Token。
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.api.v1.deps import current_user_id
@@ -43,10 +43,12 @@ async def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> R
 
 
 @router.post("/login", response_model=Result)
-async def login(payload: LoginRequest, db: Session = Depends(get_db)) -> Result:
-    """校验凭据并签发与网关同密钥的 JWT；失败返回 1003，禁用返回 1005。"""
+async def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> Result:
+    """签发 JWT；凭据错1003，账号禁用1005，失败窗口锁定4001。"""
 
-    user, token, expire_at = user_service.login(db, payload)
+    # 只信直接连接地址；外部可伪造的 Forwarded/X-Forwarded-For 不参与绕过限流。
+    peer_ip = request.client.host if request.client else "unknown"
+    user, token, expire_at = user_service.login(db, payload, peer_ip=peer_ip)
     return Result.ok(
         LoginOut(
             token=token,

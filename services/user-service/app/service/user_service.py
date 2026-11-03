@@ -1,8 +1,9 @@
 """用户注册、登录与资料业务逻辑。
 
-错误码只用 10xx 号段，并且一律通过 `BizException` 抛出，由基座全局异常处理器
+错误码一律通过 `BizException` 抛出，由基座全局异常处理器
 转换成统一 Result（业务错误 HTTP 仍为 200）：
-`1003` 用户名或密码错误、`1004` 用户名已存在、`1005` 用户不存在或已被禁用。
+`1003` 用户名或密码错误、`1004` 用户名已存在、`1005` 用户不存在或已被禁用，
+`4001` 登录失败窗口触发的临时锁定。
 """
 
 from datetime import datetime
@@ -26,6 +27,8 @@ from app.repository import points_repository, user_repository
 from app.repository import PointsRepository, UserRepository
 from app.schemas import LoginRequest, ProfileUpdateRequest, RegisterRequest
 from app.schemas.user import is_normal_status
+from app.service.login_audit import record_failure
+from app.service.login_protection import login_protection
 
 
 def require_available_user(
@@ -116,15 +119,30 @@ class UserService:
         logger.info("用户已注册 user_id={}", user.id)
         return user, account
 
-    def login(self, db: Session, payload: LoginRequest) -> tuple[User, str, datetime]:
+    def login(
+        self, db: Session, payload: LoginRequest, *, peer_ip: str = "unknown"
+    ) -> tuple[User, str, datetime]:
         """校验凭据并签发与网关同密钥的 JWT。"""
 
+        try:
+            login_protection.check(payload.username, peer_ip)
+        except BizException:
+            record_failure(db, username=payload.username, peer_ip=peer_ip, reason="locked")
+            raise
         user = self.users.find_by_username(db, payload.username)
         # 用户不存在与口令错误返回同一个错误码，避免账号枚举。
         if user is None or not verify_password(payload.password, user.password_hash):
+            login_protection.failed(payload.username, peer_ip)
+            record_failure(
+                db, username=payload.username, peer_ip=peer_ip,
+                reason="invalid_credentials", user_id=user.id if user is not None else None,
+            )
             raise BizException(1003, "用户名或密码错误")
         if not is_normal_status(user.status):
+            record_failure(db, username=payload.username, peer_ip=peer_ip,
+                           reason="disabled", user_id=user.id)
             raise BizException(1005, "用户不存在或已被禁用")
+        login_protection.succeeded(payload.username, peer_ip)
 
         token, expire_at = create_token(user.id, user.username, role=user.role)
         logger.info("用户已登录 user_id={}", user.id)

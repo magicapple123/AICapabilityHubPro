@@ -7,10 +7,19 @@
 
 网关对外部访问 `/internal/**` 一律 403，因此这里不做 JWT 解析，但必须校验
 `X-User-Id`（身份）与 `X-Request-Id`（幂等键），见 `app/api/v1/deps.py`。
+
+两条最热的内部接口把同步 SQLAlchemy 整段丢进工作线程执行（`anyio.to_thread`）：
+本服务是 4 跳链路的第 2/3 跳，每次调用都要被走一遍，而一次带 fsync 的 commit
+在本机是 5–20 ms。留在事件循环里，20 并发时的排队时间会盖过真实耗时，
+整条链路的 QPS 上限就被这一个进程钉在 20 左右（压测复现见
+`docs/压测报告-2026-11-02.md` 7.10）。只搬家，不改事务边界与业务语义。
 """
 
 import secrets
+from functools import partial
 from typing import Literal
+
+from anyio import to_thread
 
 from app.core.exceptions import BizException
 from app.service.user_service import require_available_user
@@ -45,7 +54,7 @@ async def check_user(
 
     if caller.user_id != str(user_id):
         raise BizException(1001, "缺少或伪造的链路身份")
-    data = points_service.check(db, user_id, points_cost)
+    data = await to_thread.run_sync(points_service.check, db, user_id, points_cost)
     return Result.ok(data, request_id=caller.request_id or get_request_id())
 
 
@@ -61,7 +70,9 @@ async def deduct_points(
     `3001` 积分不足（此时流水一并回滚，不留半成功状态）。
     """
 
-    data = points_service.deduct(db, payload, caller.user_id)
+    data = await to_thread.run_sync(
+        partial(points_service.deduct, db, payload, caller.user_id)
+    )
     return Result.ok(data.model_dump(), request_id=caller.request_id or get_request_id())
 
 

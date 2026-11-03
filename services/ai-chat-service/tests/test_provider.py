@@ -8,6 +8,8 @@
 
 import base64
 import os
+from importlib import import_module
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +18,8 @@ from app.api.v1 import provider as provider_api
 from app.core import provider_crypto, provider_guard
 from app.core.exceptions import BizException
 from app.main import app
+
+provider_service_module = import_module("app.service.provider_service")
 
 client = TestClient(app)
 HEADERS = {"X-User-Id": "7", "X-User-Name": "qa-admin", "X-Request-Id": "qa-provider"}
@@ -81,9 +85,41 @@ def test_different_nonce_each_time():
 
 
 def test_missing_master_key_fails_closed(monkeypatch):
+    """主密钥两处来源（环境变量 / .env 载入的 settings）都为空时必须失败关闭。
+
+    `_master_key()` 在环境变量缺失时会回落到 `settings.provider_master_key_v1`
+    （这是给 .env 用的真实修复）。所以只 delenv 不够 —— settings 里还留着 .env
+    读到的值，必须一并置空，才真的模拟"没配主密钥"。
+    """
+
+    from app.core.config import settings
+
     monkeypatch.delenv("PROVIDER_MASTER_KEY_V1", raising=False)
+    monkeypatch.setattr(settings, "provider_master_key_v1", "")
     with pytest.raises(provider_crypto.ProviderKeyError):
         provider_crypto.encrypt("sk-x")
+
+
+def test_blank_master_key_in_env_fails_closed(monkeypatch):
+    """环境变量存在但为空白串时同样失败关闭，不能当成"已配置"。"""
+
+    from app.core.config import settings
+
+    monkeypatch.setenv("PROVIDER_MASTER_KEY_V1", "   ")
+    monkeypatch.setattr(settings, "provider_master_key_v1", "")
+    with pytest.raises(provider_crypto.ProviderKeyError):
+        provider_crypto.encrypt("sk-x")
+
+
+def test_master_key_falls_back_to_settings(monkeypatch):
+    """环境变量缺失时，.env 载入的 settings 值必须生效（D1 的真实缺陷修复）。"""
+
+    from app.core.config import settings
+
+    monkeypatch.delenv("PROVIDER_MASTER_KEY_V1", raising=False)
+    monkeypatch.setattr(settings, "provider_master_key_v1", TEST_KEY)
+    cipher = provider_crypto.encrypt("sk-from-settings")
+    assert provider_crypto.decrypt(cipher) == "sk-from-settings"
 
 
 def test_wrong_master_key_cannot_decrypt(monkeypatch):
@@ -115,9 +151,31 @@ def test_host_outside_whitelist_is_rejected():
 
 
 def test_empty_whitelist_denies_everything(monkeypatch):
+    """白名单真正为空（环境变量与 .env 的 settings 都清空）时一律拒绝。
+
+    只 `setenv("")` 是无效断言：空白环境变量会被 `allowed_hosts()` 当成"未注入"
+    而回落到 settings（.env 里的真实值），测的就不是空白名单了。
+    """
+
+    from app.core.config import settings
+
     monkeypatch.setenv("PROVIDER_ALLOWED_HOSTS", "")
+    monkeypatch.setattr(settings, "provider_allowed_hosts", "")
+    assert provider_guard.allowed_hosts() == []
     with pytest.raises(provider_guard.ProviderUrlError):
         provider_guard.validate_url("https://api.example.com/v1")
+
+
+def test_whitelist_falls_back_to_settings(monkeypatch):
+    """环境变量缺失时，.env 载入的 settings 白名单必须生效（D1 的真实缺陷修复）。"""
+
+    from app.core.config import settings
+
+    monkeypatch.delenv("PROVIDER_ALLOWED_HOSTS", raising=False)
+    monkeypatch.setattr(settings, "provider_allowed_hosts", "api.example.com")
+    assert provider_guard.allowed_hosts() == ["api.example.com"]
+    assert provider_guard.host_allowed("api.example.com")
+    assert not provider_guard.host_allowed("evil.example.org")
 
 
 def test_private_address_is_rejected_even_if_whitelisted(monkeypatch):
@@ -201,6 +259,54 @@ def test_provider_list_never_leaks_cipher(admin):
     assert response.json()["code"] == 0
     assert "v1:" not in response.text
     assert "sk-test" not in response.text
+
+
+def test_resolve_runtime_uses_provider_default_or_explicit_model(monkeypatch):
+    provider = SimpleNamespace(
+        alias="qa-qwen",
+        status="enabled",
+        base_url="https://api.example.com/v1",
+        protocol="openai-chat",
+        default_model="qwen-plus",
+        timeout_ms=12000,
+        api_key_cipher="cipher",
+    )
+    monkeypatch.setattr(
+        provider_service_module.provider_repository,
+        "find_by_alias",
+        lambda _db, _alias: provider,
+    )
+    monkeypatch.setattr(provider_service_module, "validate_url", lambda _url: None)
+    monkeypatch.setattr(provider_service_module, "decrypt", lambda _cipher: "in-memory-key")
+    service = provider_service_module.ProviderService()
+
+    configured = service.resolve_runtime(None, "qa-qwen")
+    explicit = service.resolve_runtime(None, "qa-qwen", model="qwen-turbo")
+
+    assert configured.model == "qwen-plus"
+    assert explicit.model == "qwen-turbo"
+    assert configured.api_key == explicit.api_key == "in-memory-key"
+
+
+def test_resolve_runtime_rejects_missing_default_model(monkeypatch):
+    provider = SimpleNamespace(
+        alias="qa-empty-model",
+        status="enabled",
+        base_url="https://api.example.com/v1",
+        protocol="openai-chat",
+        default_model="",
+        timeout_ms=12000,
+        api_key_cipher="cipher",
+    )
+    monkeypatch.setattr(
+        provider_service_module.provider_repository,
+        "find_by_alias",
+        lambda _db, _alias: provider,
+    )
+    with pytest.raises(BizException) as error:
+        provider_service_module.ProviderService().resolve_runtime(None, "qa-empty-model")
+    assert error.value.code == 4002
+    assert "默认模型" in error.value.message
 
 
 def test_non_admin_is_rejected(monkeypatch):

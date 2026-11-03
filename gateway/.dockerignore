@@ -1,0 +1,6 @@
+# 构建上下文是 gateway/ 目录：本地的 target/、日志、IDE 文件不必进镜像。
+target/
+*.log
+.idea/
+.vscode/
+*.iml

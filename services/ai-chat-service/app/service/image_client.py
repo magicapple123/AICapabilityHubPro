@@ -18,6 +18,7 @@ import httpx
 from loguru import logger
 
 from app.core.constants import ModelErrorCode
+from app.core.http_client import get_http_client
 
 # 轮询参数：最多等 90 秒，间隔 2 秒（百炼 turbo 模型通常 10~30 秒出图）。
 POLL_INTERVAL_SECONDS = 2.0
@@ -75,59 +76,63 @@ async def generate_dashscope(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            submit = await client.post(
-                f"{root}/api/v1/services/aigc/text2image/image-synthesis",
-                json=payload,
-                headers={**headers, "X-DashScope-Async": "enable"},
+        # 提交 + 轮询共用一条 keep-alive 连接；轮询间隔 2 s，不会占满连接池。
+        client = await get_http_client()
+        submit = await client.post(
+            f"{root}/api/v1/services/aigc/text2image/image-synthesis",
+            json=payload,
+            headers={**headers, "X-DashScope-Async": "enable"},
+            timeout=timeout,
+        )
+        if submit.status_code >= 400:
+            logger.warning("文生图提交失败 status={}", submit.status_code)
+            return ImageResult(
+                model_name=model, error_code=_error_of_status(submit.status_code),
+                elapsed_ms=int((time.perf_counter() - started) * 1000),
             )
-            if submit.status_code >= 400:
-                logger.warning("文生图提交失败 status={}", submit.status_code)
+        body = submit.json()
+        task_id = (body.get("output") or {}).get("task_id")
+        if not task_id:
+            return ImageResult(model_name=model,
+                               error_code=int(ModelErrorCode.BAD_RESPONSE))
+
+        deadline = time.monotonic() + min(POLL_TIMEOUT_SECONDS, timeout)
+        while time.monotonic() < deadline:
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            poll = await client.get(
+                f"{root}/api/v1/tasks/{task_id}", headers=headers, timeout=timeout
+            )
+            if poll.status_code >= 400:
+                logger.warning("文生图轮询失败 status={}", poll.status_code)
                 return ImageResult(
-                    model_name=model, error_code=_error_of_status(submit.status_code),
+                    model_name=model, error_code=_error_of_status(poll.status_code),
                     elapsed_ms=int((time.perf_counter() - started) * 1000),
                 )
-            body = submit.json()
-            task_id = (body.get("output") or {}).get("task_id")
-            if not task_id:
-                return ImageResult(model_name=model,
-                                   error_code=int(ModelErrorCode.BAD_RESPONSE))
-
-            deadline = time.monotonic() + min(POLL_TIMEOUT_SECONDS, timeout)
-            while time.monotonic() < deadline:
-                await asyncio.sleep(POLL_INTERVAL_SECONDS)
-                poll = await client.get(f"{root}/api/v1/tasks/{task_id}", headers=headers)
-                if poll.status_code >= 400:
-                    logger.warning("文生图轮询失败 status={}", poll.status_code)
-                    return ImageResult(
-                        model_name=model, error_code=_error_of_status(poll.status_code),
-                        elapsed_ms=int((time.perf_counter() - started) * 1000),
-                    )
-                output = poll.json().get("output") or {}
-                status = str(output.get("task_status") or "").upper()
-                if status in ("SUCCEEDED", "SUCCESS"):
-                    images = [
-                        {"url": item.get("url"), "revised_prompt": item.get("orig_prompt")}
-                        for item in output.get("results") or []
-                        if isinstance(item, dict) and item.get("url")
-                    ]
-                    if not images:
-                        return ImageResult(
-                            model_name=model,
-                            error_code=int(ModelErrorCode.BAD_RESPONSE),
-                            elapsed_ms=int((time.perf_counter() - started) * 1000),
-                        )
-                    return ImageResult(
-                        images=images, model_name=model,
-                        elapsed_ms=int((time.perf_counter() - started) * 1000),
-                    )
-                if status in ("FAILED", "CANCELED", "UNKNOWN"):
-                    logger.warning("文生图任务失败 status={} task_id={}", status, task_id)
+            output = poll.json().get("output") or {}
+            status = str(output.get("task_status") or "").upper()
+            if status in ("SUCCEEDED", "SUCCESS"):
+                images = [
+                    {"url": item.get("url"), "revised_prompt": item.get("orig_prompt")}
+                    for item in output.get("results") or []
+                    if isinstance(item, dict) and item.get("url")
+                ]
+                if not images:
                     return ImageResult(
                         model_name=model,
-                        error_code=int(ModelErrorCode.UPSTREAM_FAULT),
+                        error_code=int(ModelErrorCode.BAD_RESPONSE),
                         elapsed_ms=int((time.perf_counter() - started) * 1000),
                     )
+                return ImageResult(
+                    images=images, model_name=model,
+                    elapsed_ms=int((time.perf_counter() - started) * 1000),
+                )
+            if status in ("FAILED", "CANCELED", "UNKNOWN"):
+                logger.warning("文生图任务失败 status={} task_id={}", status, task_id)
+                return ImageResult(
+                    model_name=model,
+                    error_code=int(ModelErrorCode.UPSTREAM_FAULT),
+                    elapsed_ms=int((time.perf_counter() - started) * 1000),
+                )
     except httpx.TimeoutException:
         return ImageResult(model_name=model, error_code=int(ModelErrorCode.TIMEOUT),
                            elapsed_ms=int((time.perf_counter() - started) * 1000))
@@ -149,12 +154,13 @@ async def generate_openai(
 
     started = time.perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            response = await client.post(
-                f"{base_url.rstrip('/')}/images/generations",
-                json={"model": model, "prompt": prompt, "n": max(1, n), "size": size},
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
+        client = await get_http_client()
+        response = await client.post(
+            f"{base_url.rstrip('/')}/images/generations",
+            json={"model": model, "prompt": prompt, "n": max(1, n), "size": size},
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=timeout,
+        )
     except httpx.TimeoutException:
         return ImageResult(model_name=model, error_code=int(ModelErrorCode.TIMEOUT))
     except Exception as exc:  # noqa: BLE001

@@ -1,0 +1,56 @@
+/* P8/P9：能力登记与编辑表单专用样式。
+   只作用于 .cap-* 与 .capability-editor-modal，不修改全局 .data-table / dashboard.css。 */
+
+.cap-editor .field-label { white-space: nowrap; }
+
+.cap-section {
+  display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  padding-top: 14px; border-top: 1px solid var(--border);
+}
+.cap-section:first-of-type { padding-top: 0; border-top: 0; }
+.cap-section-title { margin: 0; font-size: 11.5px; font-weight: 600; color: var(--ink); }
+.cap-section-hint { margin: 0; font-size: 10.5px; line-height: 1.6; color: var(--ink-3); }
+.cap-section-body { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+.field-error {
+  display: flex; align-items: flex-start; gap: 4px; margin: 0;
+  font-size: 10.5px; line-height: 1.6; color: #b42318;
+}
+.field-error svg { flex: none; margin-top: 2px; }
+
+.cap-hint-ready { color: #15803d; }
+.cap-hint-warn { color: #b45309; }
+
+.cap-billing-modes { display: flex; flex-wrap: wrap; gap: 8px; }
+.cap-billing-modes button {
+  height: 32px; padding: 0 14px; font-size: 11.5px; color: var(--ink-2);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--r-input); cursor: pointer; transition: color .15s, border-color .15s;
+}
+.cap-billing-modes button:hover { color: var(--ink); }
+.cap-billing-modes button[aria-pressed='true'] {
+  color: var(--accent, #2563eb); border-color: var(--accent, #2563eb);
+  background: color-mix(in srgb, var(--accent, #2563eb) 8%, transparent);
+}
+
+.cap-schema-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cap-schema-toolbar .cap-label { margin: 0; white-space: nowrap; }
+.cap-schema-template { width: auto; min-width: 148px; height: 32px; min-height: 32px; font-size: 11.5px; }
+.cap-schema-action { height: 32px; padding: 0 12px; font-size: 11.5px; }
+.cap-inline-note { margin: 0; }
+.cap-schema-input { min-height: 170px; font-size: 11.5px; line-height: 1.7; }
+
+.cap-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-2); cursor: pointer; }
+.cap-switch input { width: 15px; height: 15px; accent-color: var(--accent, #2563eb); }
+
+.cap-editor .editor-advanced summary { margin-bottom: 0; }
+.cap-editor .editor-advanced > * + * { margin-top: 10px; }
+.cap-editor .field-hint .text-link { color: var(--accent, #2563eb); }
+
+/* P9.7：窄屏单列、无横向滚动 */
+@media (max-width: 767px) {
+  .cap-editor .editor-row { grid-template-columns: minmax(0, 1fr); }
+  .cap-schema-toolbar { align-items: flex-start; }
+  .cap-schema-template { flex: 1 1 148px; }
+  .cap-schema-input { min-height: 130px; }
+}

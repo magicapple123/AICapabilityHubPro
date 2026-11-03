@@ -1,0 +1,66 @@
+# 干净环境验证用的编排覆盖文件（G2）。
+#
+# 用途：在**已经有一套开发栈占着 8080/3306/8848 的机器上**，把整栈再拉起来一套，
+# 验证「空库 → 迁移 → 四服务 → 网关 → nginx」能否一次走通，而不碰现有容器。
+#
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.verify.yml \
+#     --profile app -p aihubverify up -d --build
+#   curl -s http://127.0.0.1:28088/api/capability/market      # 经 nginx → gateway
+#   docker compose -f docker-compose.yml -f docker-compose.verify.yml \
+#     --profile app -p aihubverify down -v
+#
+# 与主文件的差异只有三处：容器名加 -verify、宿主机端口整体挪开、数据卷独立。
+
+services:
+  nginx:
+    container_name: aihub-verify-nginx
+    ports: !override
+        - "127.0.0.1:28088:80"
+
+  mysql:
+    container_name: aihub-verify-mysql
+    ports: !override
+        - "127.0.0.1:23307:3306"
+
+  nacos:
+    container_name: aihub-verify-nacos
+    ports: !override
+        - "127.0.0.1:28848:8848"
+        - "127.0.0.1:29848:9848"
+
+  sentinel:
+    container_name: aihub-verify-sentinel
+    ports: !override
+        - "127.0.0.1:28858:8858"
+
+  gateway:
+    container_name: aihub-verify-gateway
+    ports: !override
+        - "127.0.0.1:8080:8080"
+
+  user-service:
+    container_name: aihub-verify-user
+    ports: !override
+        - "127.0.0.1:8081:8081"
+
+  billing-service:
+    container_name: aihub-verify-billing
+    ports: !override
+        - "127.0.0.1:8082:8082"
+
+  capability-service:
+    container_name: aihub-verify-capability
+    ports: !override
+        - "127.0.0.1:8083:8083"
+
+  ai-chat-service:
+    container_name: aihub-verify-ai-chat
+    environment:
+      RATE_LIMIT_ENABLED: "false"
+    ports: !override
+        - "127.0.0.1:8090:8090"
+
+volumes:
+  mysql_data:
+    name: aihub-verify-mysql-data

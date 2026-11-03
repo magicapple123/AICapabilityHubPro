@@ -26,6 +26,11 @@ public final class TrustedIdentityHeaders {
             headers.set("X-User-Id", identity.userId());
             headers.set("X-User-Name", identity.userName());
             headers.set(ROLE, identity.role());
+            // P6：Key 身份与其它 x-user-* 一样，只有网关能写入；外部伪造的同名头
+            // 已在上面被统一剥离，因此下游可以无条件信任这个值。
+            if (identity.apiKeyId() != null && !identity.apiKeyId().isBlank()) {
+                headers.set("X-User-Key-Id", identity.apiKeyId());
+            }
         }
     }
 }

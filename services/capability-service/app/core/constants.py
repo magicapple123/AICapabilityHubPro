@@ -45,8 +45,8 @@ class Executor(str, Enum):
 
 # 执行器 → 允许绑定的供应商协议（保存阶段就拒绝错配）。
 EXECUTOR_PROTOCOLS = {
-    Executor.CHAT.value: {"openai-chat"},
-    Executor.SUMMARY.value: {"openai-chat"},
+    Executor.CHAT.value: {"openai-chat", "openai-responses"},
+    Executor.SUMMARY.value: {"openai-chat", "openai-responses"},
     Executor.IMAGE_GENERATE.value: {"openai-image", "dashscope-image"},
     Executor.EMBEDDING.value: {"openai-embedding"},
     "custom-http": {"custom-http"},

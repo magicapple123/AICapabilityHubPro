@@ -1,6 +1,194 @@
 {
   "openapi": "3.1.0",
   "paths": {
+    "/api/billing/admin/records": {
+      "get": {
+        "operationId": "admin_records_api_billing_admin_records_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "service_name",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "api_key_id",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "call_status",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/billing/admin/users/usage": {
+      "get": {
+        "operationId": "admin_users_usage_api_billing_admin_users_usage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/billing/admin/users/{user_id}/keys-usage": {
+      "get": {
+        "operationId": "admin_user_key_usage_api_billing_admin_users__user_id__keys_usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
+    "/api/billing/admin/users/{user_id}/usage": {
+      "get": {
+        "operationId": "admin_user_usage_api_billing_admin_users__user_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "start_date",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "end_date",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": false,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
     "/api/billing/ping": {
       "get": {
         "operationId": "ping_api_billing_ping_get",

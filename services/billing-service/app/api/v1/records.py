@@ -1,8 +1,8 @@
 """调用明细与用量统计接口，挂载前缀 `/api/billing`。均需要登录。
 
 - `/api/billing/records`、`/api/billing/usage`：只返回当前用户自己的数据；
-- `/api/billing/stat/overview`：运营全局统计，当前按“已登录即可访问”处理
-  （平台暂无角色体系，契约第 6 节已登记为待确认项，与 capability-service 现状一致）。
+- `/api/billing/stat/overview`：运营全局统计，**已要求实时管理员授权**
+  （`user_status_service.ensure_admin`，普通用户 2007），旧注释"已登录即可"已失真。
 """
 
 from datetime import date

@@ -57,6 +57,32 @@ def test_admin_can_list_users(admin_user):
     assert "password_hash" not in row
 
 
+# ---------------------------------------------------------------- 详情
+
+
+def test_detail_lists_api_keys_without_secret(admin_user):
+    """详情抽屉要展示该用户的 Key 元数据，但绝不能带出 secret。"""
+
+    created = admin_user.client.post(
+        "/api/user/apikeys", headers=_headers(admin_user), json={"name": "qa-detail-key"},
+    ).json()
+    assert created["code"] == 0, created
+
+    body = admin_user.client.get(
+        f"/api/user/admin/users/{admin_user.user_id}", headers=_headers(admin_user),
+    ).json()
+
+    assert body["code"] == 0, body
+    detail = body["data"]
+    assert detail["balance"] >= 0
+    keys = detail["api_keys"]
+    assert [key["name"] for key in keys] == ["qa-detail-key"]
+    key = keys[0]
+    assert key["access_key"] and key["status"]
+    for forbidden in ("secret_key", "secret_hash", "secret_mask"):
+        assert forbidden not in key
+
+
 # ---------------------------------------------------------------- 启停
 
 
@@ -179,3 +205,122 @@ def test_zero_limit_means_unlimited(qa):
     _set_limit(qa.user_id, 0)
     for _ in range(3):
         assert qa.deduct(amount=5)["code"] == 0
+
+
+# ---------------------------------------------------------------- P10 预算配置入口
+
+
+def test_admin_can_set_budget_and_it_takes_effect_immediately(admin_user):
+    """P10：配置入口生效后，拦截立刻按新预算判断（无缓存，不需要重启）。"""
+
+    admin = admin_user
+    target = type(admin)(admin.client)
+    target.register()
+
+    body = admin.client.put(
+        f"/api/user/admin/users/{target.user_id}/budget",
+        headers=_headers(admin), json={"daily_points_limit": 5},
+    ).json()
+    assert body["code"] == 0, body
+    assert body["data"]["daily_points_limit"] == 5
+
+    assert target.deduct(amount=5)["code"] == 0
+    assert target.deduct(amount=5)["code"] == 3003
+
+    # 0 = 不限：同一秒改回 0 后立即可继续扣
+    reset = admin.client.put(
+        f"/api/user/admin/users/{target.user_id}/budget",
+        headers=_headers(admin), json={"daily_points_limit": 0},
+    ).json()
+    assert reset["code"] == 0 and reset["data"]["daily_points_limit"] == 0
+    assert target.deduct(amount=5)["code"] == 0
+
+    audit = admin.client.get(
+        "/api/user/admin/audit", headers=_headers(admin),
+        params={"resource_type": "user", "resource_id": target.user_id,
+                "action": "budget"},
+    ).json()["data"]["list"]
+    assert [row["after_json"]["daily_points_limit"] for row in audit] == [0, 5]
+    assert audit[0]["before_json"]["daily_points_limit"] == 5
+
+
+def test_budget_rejects_negative_and_huge_values(admin_user):
+    admin = admin_user
+    for value in (-1, 1_000_001):
+        body = admin.client.put(
+            f"/api/user/admin/users/{admin.user_id}/budget",
+            headers=_headers(admin), json={"daily_points_limit": value},
+        ).json()
+        assert body["code"] == 2001
+
+
+def test_budget_requires_admin(qa):
+    qa.register()
+    body = qa.client.put(
+        f"/api/user/admin/users/{qa.user_id}/budget",
+        headers=_headers(qa), json={"daily_points_limit": 10},
+    ).json()
+    assert body["code"] == 2007
+
+
+def test_same_budget_value_writes_no_duplicate_audit(admin_user):
+    """同值重复提交不该产生"改了但其实没改"的审计噪声。"""
+
+    admin = admin_user
+    target = type(admin)(admin.client)
+    target.register()
+    for _ in range(2):
+        body = admin.client.put(
+            f"/api/user/admin/users/{target.user_id}/budget",
+            headers=_headers(admin), json={"daily_points_limit": 20},
+        ).json()
+        assert body["code"] == 0
+    audit = admin.client.get(
+        "/api/user/admin/audit", headers=_headers(admin),
+        params={"resource_type": "user", "resource_id": target.user_id,
+                "action": "budget"},
+    ).json()["data"]["list"]
+    assert len(audit) == 1
+
+
+# ---------------------------------------------------------------- P6 Key 生命周期审计
+
+
+def test_api_key_create_and_disable_are_audited_without_secrets(admin_user):
+    admin = admin_user
+    created = admin.client.post(
+        "/api/user/apikeys", headers=_headers(admin), json={"name": "qa-audit-key"},
+    ).json()
+    assert created["code"] == 0, created
+    key_id = created["data"]["id"]
+    secret = created["data"]["secret_key"]
+
+    audit = admin.client.get(
+        "/api/user/admin/audit", headers=_headers(admin),
+        params={"resource_type": "apikey", "resource_id": key_id},
+    ).json()["data"]["list"]
+    assert [row["action"] for row in audit] == ["create"]
+    payload = str(audit[0]["after_json"])
+    assert "qa-audit-key" in payload
+    assert secret not in payload
+    assert "secret" not in payload.lower()
+
+    disabled = admin.client.put(
+        f"/api/user/apikeys/{key_id}/disable", headers=_headers(admin),
+    ).json()
+    assert disabled["code"] == 0, disabled
+
+    audit = admin.client.get(
+        "/api/user/admin/audit", headers=_headers(admin),
+        params={"resource_type": "apikey", "resource_id": key_id},
+    ).json()["data"]["list"]
+    assert [row["action"] for row in audit] == ["disable", "create"]
+    assert audit[0]["after_json"]["status"] == "disabled"
+
+    # 重复禁用幂等，且不再多写一条审计
+    admin.client.put(f"/api/user/apikeys/{key_id}/disable", headers=_headers(admin))
+    audit = admin.client.get(
+        "/api/user/admin/audit", headers=_headers(admin),
+        params={"resource_type": "apikey", "resource_id": key_id},
+    ).json()["data"]["list"]
+    assert len(audit) == 2

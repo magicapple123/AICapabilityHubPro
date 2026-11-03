@@ -184,6 +184,38 @@
         ]
       }
     },
+    "/api/user/admin/users/{user_id}/budget": {
+      "put": {
+        "operationId": "set_user_budget_api_user_admin_users__user_id__budget_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "X-User-Id",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-User-Name",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": false
+          }
+        ],
+        "requestBody": true,
+        "responses": [
+          "200",
+          "422"
+        ]
+      }
+    },
     "/api/user/admin/users/{user_id}/points": {
       "post": {
         "operationId": "adjust_points_api_user_admin_users__user_id__points_post",

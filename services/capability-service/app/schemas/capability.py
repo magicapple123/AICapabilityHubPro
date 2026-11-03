@@ -34,7 +34,21 @@ UNIT_MAX_LENGTH = 16
 
 
 ALIAS_PATTERN = r"^[a-z0-9][a-z0-9-]*$"
+OPENAI_ALIAS_PATTERN = r"^[a-z][a-z0-9._-]{1,63}$"
 MAX_OUTPUT_TOKENS_LIMIT = 32768
+
+
+def normalize_openai_alias(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("对外模型名必须是字符串")
+    alias = value.strip()
+    if not alias:
+        return None
+    if not re.fullmatch(OPENAI_ALIAS_PATTERN, alias):
+        raise ValueError("对外模型名需以小写字母开头，且只允许小写字母、数字、点、下划线、连字符")
+    return alias
 
 
 def validate_executor(executor: str, provider_alias: str) -> None:
@@ -95,6 +109,7 @@ class CapabilityCreateRequest(BaseModel):
     category_id: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     code: str = Field(min_length=1, max_length=CODE_MAX_LENGTH, pattern=CODE_PATTERN)
+    openai_alias: str | None = Field(default=None, max_length=64)
     service_name: str = Field(min_length=1, max_length=SERVICE_NAME_MAX_LENGTH)
     path: str = Field(min_length=1, max_length=PATH_MAX_LENGTH)
     param_schema: dict[str, Any] | None = None
@@ -118,6 +133,11 @@ class CapabilityCreateRequest(BaseModel):
     def check_param_schema(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         return validate_param_schema(value)
 
+    @field_validator("openai_alias", mode="before")
+    @classmethod
+    def check_openai_alias(cls, value: Any) -> str | None:
+        return normalize_openai_alias(value)
+
     @model_validator(mode="after")
     def check_billing(self) -> "CapabilityCreateRequest":
         validate_billing_fields(
@@ -139,6 +159,7 @@ class CapabilityUpdateRequest(BaseModel):
     code: str | None = Field(
         default=None, min_length=1, max_length=CODE_MAX_LENGTH, pattern=CODE_PATTERN
     )
+    openai_alias: str | None = Field(default=None, max_length=64)
     service_name: str | None = Field(
         default=None, min_length=1, max_length=SERVICE_NAME_MAX_LENGTH
     )
@@ -178,6 +199,11 @@ class CapabilityUpdateRequest(BaseModel):
     def check_param_schema(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
         return validate_param_schema(value)
 
+    @field_validator("openai_alias", mode="before")
+    @classmethod
+    def check_openai_alias(cls, value: Any) -> str | None:
+        return normalize_openai_alias(value)
+
 
 class CapabilityStatusUpdateRequest(BaseModel):
     """上下架请求；只接受指南 5.5 定义的三个能力状态。"""
@@ -193,6 +219,7 @@ class CapabilityManageOut(BaseOut):
     category_name: str
     name: str
     code: str
+    openai_alias: str | None = None
     service_name: str
     path: str
     param_schema: dict[str, Any] | None
@@ -221,6 +248,7 @@ class CapabilityManageOut(BaseOut):
             category_name=category_name,
             name=capability.name,
             code=capability.code,
+            openai_alias=capability.openai_alias,
             service_name=capability.service_name,
             path=capability.path,
             param_schema=capability.param_schema,
@@ -257,6 +285,9 @@ class CapabilityMarketOut(BaseOut):
     price_per_call: int
     billing_mode: str = BillingMode.PER_CALL.value
     unit: str = ""
+    # P8：市场卡片要判断"能不能调试"，必须以 executor 为准而不是猜 code。
+    # 只暴露执行器名（chat/summary/image-generate），不含 service_name / path / 供应商密钥。
+    executor: str = ""
     update_time: datetime
 
     @classmethod
@@ -273,6 +304,7 @@ class CapabilityMarketOut(BaseOut):
             price_per_call=capability.price_per_call,
             billing_mode=_billing_mode_of(capability),
             unit=capability.unit or "",
+            executor=capability.executor or "",
             update_time=capability.update_time,
         )
 
@@ -307,6 +339,11 @@ class CapabilityMarketDetailOut(CapabilityMarketOut):
             price_per_1k_input=capability.price_per_1k_input,
             price_per_1k_output=capability.price_per_1k_output,
             price_per_unit=capability.price_per_unit,
+            # P8：这三个字段早就声明在出参上，但 from_row 一直没赋值，
+            # 运行期恒为 ""/""/1024，前端只能靠 code 回退猜执行器。
+            executor=capability.executor or "",
+            provider_alias=capability.provider_alias or "",
+            max_output_tokens=capability.max_output_tokens or 1024,
         )
 
 
@@ -335,6 +372,9 @@ class CapabilityInternalOut(BaseModel):
     id: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     code: str = Field(min_length=1, max_length=CODE_MAX_LENGTH, pattern=CODE_PATTERN)
+    openai_alias: str | None = Field(
+        default=None, min_length=2, max_length=64, pattern=OPENAI_ALIAS_PATTERN
+    )
     status: Literal["draft", "online", "offline"]
     param_schema: dict[str, Any]
     price_per_call: int = Field(ge=0, le=PRICE_MAX_VALUE)
@@ -362,6 +402,7 @@ class CapabilityInternalOut(BaseModel):
             id=capability.id,
             name=capability.name,
             code=capability.code,
+            openai_alias=capability.openai_alias,
             status=capability.status,
             param_schema=capability.param_schema,
             price_per_call=capability.price_per_call,

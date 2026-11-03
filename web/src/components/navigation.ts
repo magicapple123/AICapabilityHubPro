@@ -7,7 +7,7 @@ export const workspaceLinks = [
   { href: '/usage', label: '调用记录', description: '查看用量、费用和调用详情', icon: BarChart3 },
 ]
 export const accountLinks = [
-  { href: '/console', label: '运营后台', description: '分类、能力和平台用量', icon: SlidersHorizontal },
+  { href: '/console', label: '运营后台', description: '分类、能力与用户用量', icon: SlidersHorizontal },
   { href: '/settings', label: '账号设置', description: '个人资料、积分和 API Key', icon: Settings2 },
 ]
 export const navigationLinks = [...workspaceLinks, ...accountLinks]

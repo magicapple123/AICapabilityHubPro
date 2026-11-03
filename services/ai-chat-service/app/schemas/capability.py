@@ -9,6 +9,7 @@ class CapabilityDefinition(BaseModel):
     id: int = Field(ge=1, strict=True)
     code: str = Field(min_length=1, max_length=64, strict=True)
     name: str = Field(default="", max_length=64)
+    openai_alias: str | None = Field(default=None, max_length=64)
     status: Literal["online", "offline", "draft"]
     param_schema: dict[str, Any]
     price_per_call: int = Field(ge=0, le=1_000_000, strict=True)

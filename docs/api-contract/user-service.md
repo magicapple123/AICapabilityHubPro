@@ -213,6 +213,42 @@
   - **顺序**：先插入流水占位（抢占幂等键）→ 条件更新扣减 → 回写 `balance_after` → 提交。任一步失败整体回滚，**不会留下流水但没扣分**的半成功状态。
   - 并发同 `request_id` 时，后到者命中唯一索引冲突，按重放返回首次结果。
 
+## 9.1 本轮增量：F1 运营后台用户管理（`/api/user/admin`）
+
+全部接口需登录且调用方必须是**管理员**（本服务内直接读 `t_user.role='admin'` 且
+`status='normal'`，不绕远端）；普通用户 `2007`，未认证 `1001`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/user/admin/users` | 分页列表（`keyword` / `status` / `page` / `page_size`），含余额与日预算 |
+| `GET` | `/api/user/admin/users/export` | 按同样筛选导出 CSV（不含任何密钥字段） |
+| `GET` | `/api/user/admin/users/{id}` | 详情：余额、今日消耗、用量汇总、**该用户的 Key 元数据** |
+| `PUT` | `/api/user/admin/users/{id}/status` | 启用 / 禁用，写审计 |
+| `POST` | `/api/user/admin/users/{id}/points` | 调分（必填 `reason`），写 `admin_adjust` 流水与审计 |
+| `GET` | `/api/user/admin/audit` | 运营审计只读列表 |
+
+### `GET /api/user/admin/users/{id}` 详情出参
+
+```json
+{
+  "id": 2, "username": "demo", "nickname": "演示账号", "role": "user",
+  "status": "normal", "balance": 95, "daily_points_limit": 0,
+  "today_used": 5, "create_time": "2026-10-01 09:00:00",
+  "usage": {"start_date": "2026-10-03", "end_date": "2026-11-02",
+            "summary": {"call_count": 3, "total_cost": 15, "success_count": 3,
+                        "degraded_count": 0, "failed_count": 0},
+            "by_day": [{"stat_date": "2026-11-02", "call_count": 1, "total_cost": 5}],
+            "by_service": [{"service_name": "ai-chat-service", "call_count": 3, "total_cost": 15}]},
+  "api_keys": [{"id": 7, "name": "default", "access_key": "ak_xxx",
+                "status": "enabled", "create_time": "2026-10-02 10:00:00"}]
+}
+```
+
+- `usage` 来自 billing 的统计口径（内部接口），对端不可用时为 `null`，不阻断详情其它字段。
+- `api_keys` **只含 `id` / `name` / `access_key` / `status` / `create_time`**；
+  绝不下发 `secret_key`、`secret_hash` 或 `secret_mask`，运营端无法查看或重置 secret。
+- 错误码：`1001` 未认证；`1005` 用户不存在；`2007` 非管理员；`2001` 参数非法。
+
 ## 6. 错误码
 
 | code | message | 触发场景 | 号段 |
@@ -224,6 +260,7 @@
 | 1005 | 用户不存在或已被禁用 | 用户不存在、已软删除、`status=disabled`；命中所有需要登录的接口（资料 / API Key / 积分 / 内部接口） | 1xxx |
 | 1006 | API Key 不存在 | Key 不存在、已软删除或不属于当前用户 | 1xxx |
 | 2001 | 参数不符合 Schema | 必填缺失、类型错误、枚举非法（基座统一处理） | 2xxx |
+| 2007 | 无运营权限，仅管理员可执行该操作 | 非管理员访问 `/api/user/admin/**` | 2xxx |
 | 3001 | 积分不足 | 余额 < `points_cost`，或扣分时条件更新影响行数为 0 | 3xxx |
 | 4003 | 系统内部错误 | 未预期异常、`JWT_SECRET` 未正确配置 | 4xxx |
 
@@ -249,3 +286,25 @@
 | `demodisabled` | `disabled` | 50 | 禁用用户分支：`1005` |
 
 脚本重复执行会更新同名示例数据，不是保留业务数据的迁移。口令哈希为 PBKDF2-HMAC-SHA256 真实演示哈希；只用于明确的隔离/首次示例环境，现有业务库升级必须走增量迁移。
+
+### P11 上游模型选择（2026-11-03）
+
+平台 `/api/chat/completions` 的显式 `model` 优先于绑定供应商的 `default_model`；只有未绑定供应商时才回退全局 `MODEL_NAME`。绑定供应商但两者均为空时返回 `4002`，明确提示补默认模型，不静默发送全局名称。`/v1` 的 `model` 是平台能力别名，只用于解析能力，绝不作为上游模型名。相同规则适用于 chat、summary 与流式；图片仍由图片供应商配置决定。供应商编辑页在默认模型为空时给出调用限制提示。
+
+### P1 供应商状态与错误码（2026-11-03）
+
+`2008` 只表示执行器未实现，原文案保留。`2009` 表示绑定供应商不存在、未启用或被停用；运行期点名alias，OpenAI/Responses兼容层映射为HTTP503、type=api_error、code=platform_2009。保存绑定时仅接受enabled供应商，draft/disabled返回2001并提示先测试启用，状态缺失按4002失败关闭。供应商变更不改变一次调用一条账单、失败不扣分的口径。无新增表字段或接口。
+
+### P10 日预算配置（2026-11-03）
+
+新增 `PUT /api/user/admin/users/{user_id}/budget`（管理员）：body `{"daily_points_limit": int}`，`ge=0 le=1_000_000`；`0` 表示不限。返回 `{"id","daily_points_limit"}`。写审计 `resource_type=user, action=budget`，before/after 各记 `daily_points_limit`；同值重复提交不写审计。变更即时生效（`points_service` 每次读库，无缓存）。普通用户 `2007`；越界 `2001`；用户不存在 `1005`。超预算拦截仍是既有 `3003`。
+
+### P6 Key 生命周期审计（2026-11-03）
+
+- `POST /api/user/apikeys` 与 `PUT /api/user/apikeys/{id}/disable` 现在写审计：`resource_type=apikey`，`action=create|disable`，after 只含 `name` / 掩码后的 `access_key` / `status` / `expire_time`。**绝不记录 secret、secret_hash 或完整 access_key**。重复禁用幂等且不重复留痕。
+- `POST /api/user/apikeys/exchange` 签发的短 JWT 增加 `key_id` claim（值为 Key 主键）；普通登录 JWT 不带该 claim，行为不变。网关据此注入 `X-User-Key-Id`。
+- `GET /api/user/admin/users` 的 `keyword` 增按 **ID 精确匹配**（纯数字时与用户名/昵称模糊匹配 OR）；`page_size` 上限对**该管理端列表**放宽到 2000（P5 join 需要），普通分页仍按契约 100。
+
+### P14 账号生命周期（2026-11-03）
+
+`current_user_id` 统一校验账号为 `normal`，禁用后旧 JWT 访问 profile/apikey/points/admin 一律 `1005`。登录增加账号级 5 次/300s、来源 IP 级 25 次/300s 的滑动窗口，达阈值锁定 900s；锁定返回既有 `4001` 并在文案点名锁定，第 6 次在查库与 PBKDF2 之前就拒绝。失败与锁定写 `resource_type=user, action=login_failed` 审计，JSON 只含指纹与原因，不含用户名/原始 IP/密码/令牌。`/ping` 保持诊断语义不校验状态。

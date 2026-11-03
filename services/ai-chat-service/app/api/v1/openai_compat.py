@@ -35,11 +35,13 @@ from app.core.service_call import call_internal
 from app.db.session import get_db
 from app.schemas.chat import ChatCompletionRequest, ChatMessage
 from app.service.chat_service import chat_service
+from app.service.capability_client import capability_client
+from app.service.catalog_cache import OpenAIModelCatalog
 from app.service.stream_service import DONE_FRAME, parse_sse_line, sse_frame
 
 router = APIRouter()
 
-ROLE_SET = {"system", "user", "assistant"}
+ROLE_SET = {"system", "user", "assistant", "tool"}
 
 # 平台错误码 -> (HTTP 状态码, OpenAI 错误类型)
 _ERROR_MAP: dict[int, tuple[int, str]] = {
@@ -49,6 +51,7 @@ _ERROR_MAP: dict[int, tuple[int, str]] = {
     2001: (400, "invalid_request_error"),
     2002: (404, "model_not_found"),
     2008: (400, "invalid_request_error"),
+    2009: (503, "api_error"),
     3001: (402, "insufficient_quota"),
     4001: (429, "rate_limit_exceeded"),
 }
@@ -61,8 +64,8 @@ def _error(status: int, message: str, code: str, kind: str) -> JSONResponse:
     )
 
 
-def _model_map() -> dict[str, int]:
-    """解析 `别名=能力ID` 配置；非法片段直接忽略，避免启动期因配置笔误崩溃。"""
+def _configured_model_map() -> dict[str, int]:
+    """Parse explicit alias overrides; malformed fragments are ignored."""
 
     mapping: dict[str, int] = {}
     for item in settings.openai_compat_model_map.split(","):
@@ -71,6 +74,18 @@ def _model_map() -> dict[str, int]:
         if alias and raw_id.isdigit() and int(raw_id) >= 1:
             mapping[alias] = int(raw_id)
     return mapping
+
+
+async def _model_map() -> dict[str, int]:
+    """Resolve dynamic directory aliases with configured values taking precedence."""
+
+    try:
+        catalog = await capability_client.openai_model_catalog()
+    except BizException as error:
+        logger.warning("动态模型目录不可用 error_code={}", error.code)
+        raise
+    mapping = {**catalog.aliases, **_configured_model_map()}
+    return {alias: target for alias, target in mapping.items() if target in catalog.capability_ids}
 
 
 def _content_text(content: Any) -> str:
@@ -111,10 +126,14 @@ async def _authenticate(header: str | None) -> UserContext:
         json={"secret_hash": digest},
         headers={"X-Internal-Token": internal_token},
     )
+    key_id = payload.get("key_id")
     return UserContext(
         user_id=str(payload["user_id"]),
         user_name=str(payload.get("username", "")),
         request_id=get_request_id(),
+        # P6：兼容层是最容易泄露 Key 的入口，必须把 Key 身份带到账单上。
+        api_key_id=int(key_id) if isinstance(key_id, int) and key_id > 0 else None,
+        entrypoint="openai_compat",
     )
 
 
@@ -130,6 +149,20 @@ def _openai_error(error: BizException) -> JSONResponse:
             }
         },
     )
+
+
+
+def _capability_message(message: "ChatMessage") -> dict[str, Any]:
+    """把内部消息转成能力 Schema 可接受的 dict。
+
+    纯工具调用的 assistant 消息 content 为空，而能力 Schema 的 content 声明了
+    `minLength: 1`（有值时才有约束）。直接带上空串会撞 2001，所以这里省掉。
+    """
+
+    body = message.model_dump(exclude_none=True)
+    if body.get("role") == "assistant" and not body.get("content"):
+        body.pop("content", None)
+    return body
 
 
 async def _stream_response(
@@ -159,24 +192,45 @@ async def _stream_response(
         return sse_frame(frame)
 
     async def _generate():
-        with use_identity(user.user_id, user.user_name):
+        with use_identity(user.user_id, user.user_name, user.api_key_id):
             yield _chunk({"role": "assistant"}, None)
             usage: dict | None = None
-            async for line in chat_service.stream(db, request, user):
-                frame = parse_sse_line(line)
-                if frame is None:
-                    continue
-                if isinstance(frame.get("model"), str):
-                    model_name = frame["model"]
-                if isinstance(frame.get("usage"), dict):
-                    usage = frame["usage"]
-                choices = frame.get("choices")
-                if not isinstance(choices, list) or not choices:
-                    continue
-                delta = choices[0].get("delta") if isinstance(choices[0], dict) else None
-                text = delta.get("content") if isinstance(delta, dict) else None
-                if isinstance(text, str) and text:
-                    yield _chunk({"content": text}, None)
+            try:
+                async for line in chat_service.stream(db, request, user):
+                    frame = parse_sse_line(line)
+                    if frame is None:
+                        continue
+                    if isinstance(frame.get("model"), str):
+                        model_name = frame["model"]
+                    if isinstance(frame.get("usage"), dict):
+                        usage = frame["usage"]
+                    choices = frame.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    delta = choices[0].get("delta") if isinstance(choices[0], dict) else None
+                    text = delta.get("content") if isinstance(delta, dict) else None
+                    if isinstance(text, str) and text:
+                        yield _chunk({"content": text}, None)
+            except BizException as error:
+                # 响应头已经发出去了，改不了 HTTP 状态码；这里补一个 OpenAI 风格的
+                # error 帧再正常收尾，避免客户端收到"半截流"（实测会一直等到超时）。
+                logger.warning("流式执行中断 code={}", error.code)
+                yield sse_frame({"error": {
+                    "message": error.message,
+                    "type": "invalid_request_error" if error.code < 5000 else "api_error",
+                    "code": f"platform_{error.code}",
+                }})
+                yield DONE_FRAME
+                return
+            except Exception as error:  # noqa: BLE001 - 保住流的收尾，不让异常穿透成断连
+                logger.error("流式执行异常 type={}", type(error).__name__)
+                yield sse_frame({"error": {
+                    "message": "平台执行失败，请稍后重试",
+                    "type": "api_error",
+                    "code": "platform_error",
+                }})
+                yield DONE_FRAME
+                return
             yield _chunk({}, "stop", usage)
             yield DONE_FRAME
 
@@ -189,18 +243,25 @@ async def _stream_response(
 
 @router.get("/models")
 async def list_models(authorization: str | None = Header(default=None)) -> Any:
-    """返回配置里可用的模型别名，供客户端下拉框使用。"""
+    """Return aliases for online chat capabilities with an explicit public name."""
 
     try:
         await _authenticate(authorization)
     except BizException as error:
         return _openai_error(error)
+    try:
+        catalog = await capability_client.openai_model_catalog()
+    except BizException as error:
+        return _openai_error(error)
+    mapping = {**catalog.aliases, **_configured_model_map()}
+    eligible_ids = catalog.capability_ids
     created = int(time.time())
     return {
         "object": "list",
         "data": [
             {"id": alias, "object": "model", "created": created, "owned_by": "aicapabilityhub"}
-            for alias in _model_map()
+            for alias, capability_id in mapping.items()
+            if capability_id in eligible_ids
         ],
     }
 
@@ -216,7 +277,7 @@ async def chat_completions(
     try:
         user = await _authenticate(authorization)
         alias = str(payload.get("model") or "").strip()
-        capability_id = _model_map().get(alias)
+        capability_id = (await _model_map()).get(alias)
         if capability_id is None:
             raise BizException(2002, f"模型 {alias or '(空)'} 未在平台注册")
 
@@ -234,16 +295,34 @@ async def chat_completions(
             if role not in ROLE_SET:
                 raise BizException(2001, f"不支持的角色：{role}")
             content = _content_text(item.get("content"))
-            if not content.strip():
+            # E2：assistant 只回工具调用时 content 为空，这是合法的 OpenAI 形态。
+            tool_calls = item.get("tool_calls")
+            if not content.strip() and not (role == "assistant" and isinstance(tool_calls, list) and tool_calls):
                 raise BizException(2001, "消息内容不能为空")
-            messages.append(ChatMessage(role=role, content=content))
+            # E2：工具回灌消息必须带上 tool_call_id，否则 ChatMessage 的校验会拒。
+            tool_call_id = item.get("tool_call_id")
+            name = item.get("name")
+            messages.append(ChatMessage(
+                role=role,
+                content=content,
+                tool_call_id=str(tool_call_id).strip() if tool_call_id else None,
+                name=str(name).strip() if name else None,
+                tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+            ))
 
         capability_input: dict[str, Any] = {
-            "messages": [item.model_dump() for item in messages]
+            # exclude_none 是必需的：ChatMessage 还有 tool_call_id/name 两个可选字段，
+            # 带 null 落进能力 Schema 会撞 `additionalProperties: false`（实测 2001）。
+            "messages": [_capability_message(item) for item in messages]
         }
         temperature = payload.get("temperature")
         if isinstance(temperature, (int, float)):
             capability_input["temperature"] = min(max(float(temperature), 0.0), 2.0)
+        # E2：工具参数原样透传给执行器；平台不执行工具，只把上游 tool_calls 交回客户端。
+        # 之前兼容层只搬 messages/temperature，导致 tools 被静默丢弃（实测模型答"没有工具"）。
+        for name in ("tools", "tool_choice", "parallel_tool_calls"):
+            if payload.get(name) is not None:
+                capability_input[name] = payload[name]
 
         request = ChatCompletionRequest(
             capability_id=capability_id, input=capability_input
@@ -251,7 +330,7 @@ async def chat_completions(
         # 兼容层不带网关注入的身份头，执行前补上上下文，后续内部调用才会带上 X-User-Id。
         if payload.get("stream"):
             return await _stream_response(db, request, user, alias)
-        with use_identity(user.user_id, user.user_name):
+        with use_identity(user.user_id, user.user_name, user.api_key_id):
             data = await chat_service.complete(db, request, user)
     except BizException as error:
         return _openai_error(error)

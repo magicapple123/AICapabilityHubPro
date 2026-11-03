@@ -11,7 +11,7 @@
 
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import BaseOut
 
@@ -39,6 +39,35 @@ class CallRecordOut(BaseOut):
     completion_tokens: int = 0
     token_source: str = ""
     units: int = 1
+    # P6：哪把 Key 产生这次调用、从哪个入口进来。历史记录为 null / 空串。
+    api_key_id: int | None = None
+    entrypoint: str = ""
+    # D3：文生图的图片产物 `[{url, revised_prompt}]`；非文生图与历史记录为空列表。
+    images: list[dict] = Field(default_factory=list)
+
+    @field_validator("images", mode="before")
+    @classmethod
+    def _null_images_to_empty(cls, value):
+        """历史行该列为 NULL，统一归一成空列表，保持出参恒为数组。"""
+        return [] if value is None else value
+
+
+class ApiKeyUsageOut(BaseModel):
+    """按 API Key 聚合的用量（P6）；`last_call_at` 为最近一次调用时间。"""
+
+    api_key_id: int
+    call_count: int
+    total_cost: int
+    last_call_at: datetime | None = None
+
+
+class UserAggregateOut(BaseModel):
+    """全量用户的用量聚合（P5）；`user_id` 由调用方与 user-service 资料 join。"""
+
+    user_id: int
+    call_count: int
+    total_cost: int
+    last_call_at: datetime | None = None
 
 
 class UsageDailyOut(BaseOut):

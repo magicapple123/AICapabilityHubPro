@@ -4,6 +4,9 @@ from fastapi import Depends
 
 from app.core.exceptions import BizException
 from app.core.security import UserContext, current_user
+from app.db.session import get_db
+from app.service.user_service import require_available_user
+from sqlalchemy.orm import Session
 
 
 def _parse_user_id(raw: str) -> int:
@@ -22,12 +25,16 @@ def _parse_user_id(raw: str) -> int:
     return user_id
 
 
-def current_user_id(user: UserContext = Depends(current_user)) -> int:
-    """要求请求已通过网关认证；缺 `X-User-Id` 返回 1001。"""
+def current_user_id(
+    user: UserContext = Depends(current_user), db: Session = Depends(get_db)
+) -> int:
+    """统一登录依赖：身份合法且账号仍启用；禁用后的旧 JWT 返回 1005。"""
 
     if not user.user_id:
         raise BizException(1001, "未认证或登录已过期")
-    return _parse_user_id(user.user_id)
+    user_id = _parse_user_id(user.user_id)
+    require_available_user(db, user_id)
+    return user_id
 
 
 def internal_caller(user: UserContext = Depends(current_user)) -> UserContext:

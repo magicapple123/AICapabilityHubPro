@@ -78,6 +78,7 @@ def test_internal_detail_returns_contract_fields(qa: QaCatalog) -> None:
     assert data["id"] == capability["id"]
     assert data["name"] == capability["name"]
     assert data["code"] == capability["code"]
+    assert data["openai_alias"] is None
     assert data["status"] == "online"
     assert data["price_per_call"] == 5
     assert data["param_schema"] == CHAT_SCHEMA
@@ -86,6 +87,7 @@ def test_internal_detail_returns_contract_fields(qa: QaCatalog) -> None:
         "id",
         "name",
         "code",
+        "openai_alias",
         "status",
         "param_schema",
         "price_per_call",
@@ -107,6 +109,60 @@ def test_internal_detail_requires_trusted_identity(qa: QaCatalog) -> None:
     body = qa.internal_detail(capability["id"], headers={})
 
     assert body["code"] == 1001
+
+
+def test_internal_openai_models_only_lists_online_chat_aliases(qa: QaCatalog) -> None:
+    category = qa.category()
+    chat = qa.create_capability_raw(
+        category["id"],
+        code=qa.code("alias-chat"),
+        status="online",
+        executor="chat",
+        openai_alias=f"qa-{qa.token}-chat",
+        param_schema=CHAT_SCHEMA,
+    )["data"]
+    draft = qa.create_capability_raw(
+        category["id"],
+        code=qa.code("alias-draft"),
+        status="draft",
+        executor="chat",
+        openai_alias=f"qa-{qa.token}-draft",
+    )["data"]
+    summary = qa.create_capability_raw(
+        category["id"],
+        code=qa.code("alias-summary"),
+        status="online",
+        executor="summary",
+        openai_alias=f"qa-{qa.token}-summary",
+        param_schema=CHAT_SCHEMA,
+    )["data"]
+
+    body = qa.internal_openai_models()
+
+    assert body["code"] == 0
+    rows = {row["id"]: row["openai_alias"] for row in body["data"]}
+    assert rows[chat["id"]] == f"qa-{qa.token}-chat"
+    assert draft["id"] not in rows
+    assert rows.get(summary["id"]) is None
+    assert draft["id"] != chat["id"] and summary["id"] != chat["id"]
+
+
+def test_openai_alias_is_validated_and_unique(qa: QaCatalog) -> None:
+    category = qa.category()
+    alias = f"qa-{qa.token}-unique"
+    first = qa.create_capability_raw(
+        category["id"], code=qa.code("alias-first"), openai_alias=alias
+    )
+    duplicate = qa.create_capability_raw(
+        category["id"], code=qa.code("alias-duplicate"), openai_alias=alias
+    )
+    invalid = qa.create_capability_raw(
+        category["id"], code=qa.code("alias-invalid"), openai_alias="Bad Alias"
+    )
+
+    assert first["code"] == 0
+    assert duplicate["code"] == 2006
+    assert invalid["code"] == 2001
 
 
 # ---------------------------------------------------------------- 状态

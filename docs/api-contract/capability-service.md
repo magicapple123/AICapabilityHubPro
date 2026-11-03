@@ -41,6 +41,7 @@
 | `category_id` | BIGINT | NOT NULL, INDEX | 所属分类 |
 | `name` | VARCHAR(64) | NOT NULL | 能力名称 |
 | `code` | VARCHAR(64) | NOT NULL | 能力编码，未删除范围内唯一 |
+| `openai_alias` | VARCHAR(64) | NULL, UNIQUE | OpenAI 兼容公开模型名；仅在线 chat 能力进入 `/v1/models` |
 | `service_name` | VARCHAR(64) | NOT NULL | 承载能力的服务名，如 `ai-chat-service` |
 | `path` | VARCHAR(255) | NOT NULL | 调用路径，如 `/api/chat/completions` |
 | `param_schema` | JSON | NULL | 参数 Schema（JSON 对象）；draft/offline 可为空，online 必须有合法 Schema |
@@ -49,7 +50,7 @@
 | `description` | VARCHAR(512) | NOT NULL DEFAULT '' | 能力描述 |
 | `create_time` / `update_time` / `is_deleted` | — | 通用字段 | 见Pro开发指南第9节及当前sql/01_init.sql |
 
-**索引**：`t_capability` 需建 `UNIQUE(code, is_deleted)` 等价唯一保护，以及 `INDEX(category_id, status)` 供市场筛选。
+**索引**：`t_capability` 使用 `uk_capability_active_code` 保证未删除 code 唯一，`uk_capability_openai_alias` 保证非空模型别名唯一，以及 `INDEX(category_id, status)` 供市场筛选。
 
 ## 2. 分类接口
 
@@ -103,6 +104,7 @@
   "category_id": 1,
   "name": "多轮对话",
   "code": "chat-completions",
+  "openai_alias": "team-chat-v1",
   "service_name": "ai-chat-service",
   "path": "/api/chat/completions",
   "param_schema": {"type": "object", "properties": {"messages": {"type": "array"}}},
@@ -113,7 +115,7 @@
 ```
 
 - 成功 data：登记后的能力对象（含 `id`、`create_time`）
-- 错误码：`2001` 参数不符合 Schema；`2003` 分类不存在；`2006` 能力编码已存在；`2007` 非管理员；`4002` 授权依赖不可用
+- 错误码：`2001` 参数不符合 Schema；`2003` 分类不存在；`2006` 能力编码或对外模型名已存在；`2007` 非管理员；`4002` 授权依赖不可用
 - 备注：`status` 缺省为 `draft`；`price_per_call` 必须为 0–1000000 的整数；`code` 只允许小写字母、数字和连字符；`param_schema` 只接受对象根类型、合法 Draft 2020-12 的内联 JSON Schema，禁止 `$ref/$dynamicRef/$recursiveRef/$id`。`status=online` 时必须同时提供合法 Schema，否则 2001；draft/offline 可暂不提供。登记后默认不上架，需再由 `PUT /{id}/status` 上架。需实时管理员授权。
 
 ### `PUT /api/capability/{capability_id}`
@@ -123,7 +125,7 @@
 - 路径参数：`capability_id`（int）
 - 请求体：同 `POST /api/capability`，字段均可选（不含 `status`）
 - 成功 data：更新后的能力对象
-- 错误码：`2001` 参数不符合 Schema；`2002` 能力不存在；`2003` 分类不存在；`2006` 能力编码已存在；`2007` 非管理员；`4002` 授权依赖不可用
+- 错误码：`2001` 参数不符合 Schema；`2002` 能力不存在；`2003` 分类不存在；`2006` 能力编码或对外模型名已存在；`2007` 非管理员；`4002` 授权依赖不可用
 - 备注：状态变更必须走 `PUT /{id}/status`，此接口忽略 `status` 字段；`param_schema` 边界同登记接口。online 能力不能把 `param_schema` 清空，需先下架。需实时管理员授权。
 
 ### `DELETE /api/capability/{capability_id}`
@@ -202,6 +204,14 @@
 - 错误码：`2001` 参数错误；`2007` 非管理员；`4002` 授权依赖不可用
 - 备注：运营列表，仅管理员可读，返回全部状态；更新时间倒序。
 
+### `GET /internal/capability/openai-models`
+
+- 负责人：capability-service
+- 是否需要登录：服务间接口；网关对外部 `/internal/**` 一律 403，直连服务时要求链路 `X-User-Id`
+- 成功 data：`[{"id": 1, "openai_alias": "team-chat-v1"}]`；未配置别名的在线 chat 能力会以 `openai_alias: null` 返回，供兼容映射校验目标状态。
+- 过滤条件：`status=online`、`executor=chat` 且未软删除；不依赖市场展示开关
+- 备注：只返回模型路由所需的最小字段，不包含供应商、地址或其他内部配置。只有非空 `openai_alias` 会进入动态别名表。
+
 ### `GET /internal/capability/{capability_id}`
 
 - 负责人：夏思凯
@@ -214,6 +224,7 @@
   "id": 1,
   "name": "多轮对话",
   "code": "chat-completions",
+  "openai_alias": "team-chat-v1",
   "status": "online",
   "param_schema": {"type": "object", "properties": {"messages": {"type": "array"}}},
   "price_per_call": 5
@@ -236,7 +247,7 @@
 | 2003 | 分类不存在 | `category_id` 不存在或已软删除 |
 | 2004 | 分类名称或编码已存在 | 分类 `name` / `code` 冲突 |
 | 2005 | 分类下仍有能力，不可删除 | 删除前引用检查未通过 |
-| 2006 | 能力编码已存在 | 能力 `code` 冲突 |
+| 2006 | 能力编码或对外模型名已存在 | 能力 `code` 或 `openai_alias` 冲突 |
 | 2007 | 无运营权限 | 非管理员访问运营列表/写接口，由实时授权结果决定 |
 
 > `4002` 不属于业务 2xxx 号段，表示授权/目录依赖不可用或目录配置异常；出现时一律拒绝操作，不降级放行。
@@ -246,6 +257,7 @@
 1. 运营列表与分类/能力全部写操作已接入 GET `/internal/user/authorization?user_id=<当前用户ID>&required_role=admin`。只有返回 ID 匹配、`normal`/`admin`/`authorized=true` 才放行；普通用户 `2007`，超时、端点缺失、响应格式异常 `4002` 失败关闭。Gateway 透传的 role 不作为授权依据，也不存在本地管理员白名单。
 2. 授权码以[共享契约](pro-shared.md)和 user-service PR #4 为准：授权上下文中的 `1006` 表示权限不足，capability 映射为对外 `2007`。API Key 业务的 `1006` 仍保留原语义；错误码只在各自端点上下文解释。capability 为兼容分支/旧版本也会把 user 返回的 `1007` 视作拒绝，不能放行。
 3. 已提供 GET `/internal/capability/{capability_id}`，成功 data 为匹配正整数 id、name、code、真实 status、内联 param_schema、0–1000000 整数 price_per_call。不返回可供任意代理的 URL；未知/软删除 `2002`，draft/offline 如实标识，AI 会拒绝。
+4. P2 新增 GET `/internal/capability/openai-models`，只返回在线 chat 能力 ID 与 `openai_alias`；动态别名在 ai-chat 复用 5 秒目录缓存，能力写入后通过既有失效接口清除。`OPENAI_COMPAT_MODEL_MAP` 中的兼容别名仅在目标仍是在线 chat 能力时返回。
 4. AI 客户端、allowlist 和目录价计量已实现，默认 internal 缺失端点失败关闭。质量门禁分别运行 market 与 internal 两种模式的完整真实服务/浏览器验收；internal `summary.json` 必须同时记录 `passed=true`、`browser_verified=true`、`member_internal_contract_verified=true`。market 主链成功或单独探针不能替代完整 internal 验收。
 5. code 固定 chat-completions / long-summary，对应 input.messages / input.text 与可选 max_length。Schema 按现有执行器内联结构（对象根类型、无 `$ref/$dynamicRef/$recursiveRef/$id`、大小≤32768、深度≤20、节点≤2000），登记与内部详情都通过 Draft 2020-12 元 Schema 校验；非法关键字在登记时返回 2001、在内部详情返回 4002，不会留到执行期。上架要求已有合法 Schema，避免市场展示必然失败的配置。状态/单价一改在下一次调用生效，不缓存旧状态。
 6. 市场使用真实目录接口。按钮传 `/chat?capability_id=<id>`，Chat 已接受；未实现执行器的视觉等能力明确不可体验，不补虚构延迟或耗时。
@@ -368,3 +380,28 @@ repository 没有 update/delete 方法。写入由业务 repository 在**同一�
 
 `sql/06_add_executor.sql`：增 3 列，并按已知 code 回填 `chat-completions → chat`、
 `long-summary → summary`（幂等，不猜测其它编码）。
+
+## 11. 本轮增量：P2 OpenAI 动态模型别名
+
+- `t_capability.openai_alias` 可空，格式为 `^[a-z][a-z0-9._-]{1,63}$`，非空值唯一；软删除时清空，避免占用可复用别名。
+- 新建/编辑返回 `2006` 表示能力编码或对外模型名冲突；市场公开字段保持不变，运营列表与服务间目录包含该字段。
+- `GET /v1/models` 从在线 chat 目录产生动态别名，并合并 `OPENAI_COMPAT_MODEL_MAP` 覆盖；兼容映射目标不是在线 chat 能力时不展示。
+- 增量迁移：`services/capability-service/sql/10_add_openai_alias.sql`；新装 MySQL 基线由 `scripts/devtools/sync_mysql_baseline.py` 从服务 SQL 同步到 `deploy/mysql/init/03_capability_service.sql`。两者均可重复执行。
+
+### P11 上游模型选择（2026-11-03）
+
+平台 `/api/chat/completions` 的显式 `model` 优先于绑定供应商的 `default_model`；只有未绑定供应商时才回退全局 `MODEL_NAME`。绑定供应商但两者均为空时返回 `4002`，明确提示补默认模型，不静默发送全局名称。`/v1` 的 `model` 是平台能力别名，只用于解析能力，绝不作为上游模型名。相同规则适用于 chat、summary 与流式；图片仍由图片供应商配置决定。供应商编辑页在默认模型为空时给出调用限制提示。
+
+### P1 供应商状态与错误码（2026-11-03）
+
+`2008` 只表示执行器未实现，原文案保留。`2009` 表示绑定供应商不存在、未启用或被停用；运行期点名alias，OpenAI/Responses兼容层映射为HTTP503、type=api_error、code=platform_2009。保存绑定时仅接受enabled供应商，draft/disabled返回2001并提示先测试启用，状态缺失按4002失败关闭。供应商变更不改变一次调用一条账单、失败不扣分的口径。无新增表字段或接口。
+
+### P3 对外模型名清单（2026-11-03）
+
+新增 `GET /api/capability/models`（需登录，普通用户可读）：返回 `{"list":[{"alias","capability_id","name"}],"total":n}`，只包含 `status=online`、`executor=chat`、`openai_alias` 非空的能力，顺序按 alias 升序。用途是设置页「使用方法」抽屉自动填充 `model`；抽屉按安全约定不读取 Secret，因此不能调 `/v1/models`。该接口不返回 `service_name` / `path` / `base_url` / 密钥 / 执行参数。未登录 `1001`；过滤口径必须与 `/v1/models` 一致（摘要与文生图不出现）。
+
+### P8/P9 能力登记表单字段（2026-11-03）
+
+创建与更新接口的字段集已对齐（`executor` / `provider_alias` / `billing_mode` / `price_per_1k_input` / `price_per_1k_output` / `price_per_unit` / `unit` / `max_output_tokens` / `exposed_to_market`），本轮只补前端表单与"可执行性"判定：判定口径为 `executor = 能力.executor || CODE_TO_EXECUTOR[code]`，再判断 `executor ∈ /api/chat/executors.executors`。历史 executor 为空的能力靠 code→executor 回退，行为不变。供应商协议匹配仅作前端提示，最终仍由本服务 `2001` 拒绝。
+
+**市场出参补字段（加法，2026-11-03）**：`GET /api/capability/market` 列表项新增 `executor`（`chat` / `summary` / `image-generate` / 空串）；`GET /api/capability/market/{id}` 详情此前已声明 `executor` / `provider_alias` / `max_output_tokens` 但 `from_row` 未赋值（运行期恒为空/1024），本轮补齐。市场仍不含 `service_name` / `path` / 密钥；列表新增的 `executor` 只表明"用哪个受控执行器跑"，不泄露上游地址。历史能力 `executor` 为空时原样返回空串，由前端 code 回退，不伪造值。

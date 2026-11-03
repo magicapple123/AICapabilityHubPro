@@ -16,7 +16,9 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.config import settings
 from app.core.constants import MOCK_REPLY, CallStatus, Executor, TokenSource
+from app.core.deadline import Deadline
 from app.core.exceptions import BizException
+from app.core.provider_breaker import provider_breaker
 from app.schemas.capability import (
     CapabilityDefinition,
     ChatInput,
@@ -85,6 +87,8 @@ class PreparedExecution:
     units: int = 1
     # D4：白名单透传给上游的可选参数。
     model_params: dict[str, Any] | None = None
+    # P11：只有调用方显式提供的上游模型名；平台别名不进入此字段。
+    requested_model: str | None = None
 
 
 def resolve_executor(definition: CapabilityDefinition) -> str:
@@ -108,6 +112,7 @@ def prepare_execution(
     validate_capability_input(definition.param_schema, payload)
     try:
         validated = spec.input_model.model_validate(payload)
+        requested_model = request.model.strip() if request.model and request.model.strip() else None
         if executor == Executor.CHAT.value:
             effective = request.model_copy(update={
                 "messages": validated.messages,
@@ -116,32 +121,38 @@ def prepare_execution(
                     if validated.temperature is not None
                     else request.temperature
                 ),
-                "model": request.model or settings.model_name,
+                "model": requested_model,
             })
             return PreparedExecution(
                 effective, definition.code, executor,
                 model_params=validated.upstream_params(),
+                requested_model=requested_model,
             )
         if executor == Executor.IMAGE_GENERATE.value:
             # 文生图按件计费：件数来自 n，必须是单次执行（无会话）。
             if request.session_id is not None:
                 raise BizException(2001, "文生图为单次执行，请勿传入会话 ID")
+            # 不回落 `settings.model_name`：那是文本模型名，会把 `deepseek-flash`
+            # 传给图片上游（实测 DashScope 直接 400）。未显式指定时留空，
+            # 由 `resolve_runtime` 用供应商的 `default_model` 补齐。
             effective = request.model_copy(update={
                 "messages": [ChatMessage(role="user", content=validated.prompt)],
-                "model": request.model or settings.model_name,
+                "model": requested_model,
             })
             return PreparedExecution(
                 effective, definition.code, executor,
                 units=validated.n, model_params={"size": validated.size, "n": validated.n},
+                requested_model=requested_model,
             )
         if request.session_id is not None:
             raise BizException(2001, "摘要为单次执行，请勿传入会话 ID")
         effective = request.model_copy(update={
             "messages": [ChatMessage(role="user", content=validated.text)],
-            "model": request.model or settings.model_name,
+            "model": requested_model,
         })
         return PreparedExecution(
-            effective, definition.code, executor, validated.max_length
+            effective, definition.code, executor, validated.max_length,
+            requested_model=requested_model,
         )
     except ValidationError as error:
         raise BizException(2001, "输入与所选执行器不兼容") from error
@@ -170,6 +181,20 @@ def local_summary(text: str, max_length: int) -> str:
     return result if len(result) <= max_length else result[:max_length - 1].rstrip() + "…"
 
 
+def resolve_upstream_model(
+    execution: PreparedExecution, provider: Any | None
+) -> str:
+    """Resolve explicit request → provider default; only unbound calls use global config."""
+
+    if provider is not None:
+        model = execution.requested_model or provider.model
+        if model:
+            return model
+        alias = getattr(provider, "alias", "供应商")
+        raise BizException(4002, f"供应商 {alias} 未配置默认模型，且请求未指定 model")
+    return execution.requested_model or settings.model_name
+
+
 def effective_max_tokens(definition: CapabilityDefinition, requested: int | None) -> int:
     """D4：`min(请求值, 能力配置)`；能力未配置时用全局默认。"""
 
@@ -186,8 +211,10 @@ async def execute_prepared(
     model_client,
     provider: Any | None = None,
     definition: CapabilityDefinition | None = None,
+    deadline: Deadline | None = None,
 ) -> ModelReply:
     request = execution.request
+    upstream_model = resolve_upstream_model(execution, provider)
     if runtime.use_mock:
         content = (
             local_summary(request.messages[-1].content, execution.summary_length or 200)
@@ -197,7 +224,7 @@ async def execute_prepared(
         return ModelReply(
             content=content,
             call_status=CallStatus.SUCCESS.value,
-            model_name=request.model,
+            model_name=upstream_model,
             prompt_tokens=max(1, len(prompt_text) // 2),
             completion_tokens=max(1, len(content) // 2),
             usage_source=TokenSource.MOCK.value,
@@ -209,26 +236,34 @@ async def execute_prepared(
             raise BizException(2008, "文生图能力未绑定可用的图片供应商")
         prompt = request.messages[-1].content
         params = execution.model_params or {}
+        # P16：图片执行器与文本共用同一套按 alias 的熔断（image_client 内部不发判定）。
+        breaker_key = getattr(provider, "alias", None)
+        provider_breaker.guard(breaker_key)
+        timeout = deadline.clamp(provider.timeout) if deadline else provider.timeout
         common = {
             "base_url": provider.base_url,
             "api_key": provider.api_key,
-            "model": provider.model or request.model,
+            "model": upstream_model,
             "prompt": prompt,
             "n": execution.units,
             "size": str(params.get("size") or "1024x1024"),
-            "timeout": provider.timeout,
+            "timeout": timeout,
         }
         result = (
             await generate_dashscope(**common)
             if provider.protocol == "dashscope-image"
             else await generate_openai(**common)
         )
+        if result.ok:
+            provider_breaker.record_success(breaker_key)
+        else:
+            provider_breaker.record_failure(breaker_key, result.error_code)
         return ModelReply(
             content="",
             call_status=(
                 CallStatus.SUCCESS.value if result.ok else CallStatus.DEGRADED.value
             ),
-            model_name=result.model_name or request.model,
+            model_name=result.model_name or upstream_model,
             error_code=result.error_code,
             images=result.images or None,
         )
@@ -236,7 +271,7 @@ async def execute_prepared(
     max_tokens = effective_max_tokens(definition, None) if definition else None
     return await model_client.complete(
         model_messages(execution),
-        model=provider.model if provider and provider.model else request.model,
+        model=upstream_model,
         temperature=request.temperature,
         runtime=runtime,
         base_url=provider.base_url if provider else None,
@@ -244,4 +279,11 @@ async def execute_prepared(
         timeout=provider.timeout if provider else None,
         params=execution.model_params,
         max_tokens=max_tokens,
+        # 供应商协议决定端点（chat/completions vs responses）；无供应商时走全局配置。
+        protocol=provider.protocol if provider else None,
+        # P15：用刚校验过的 IP 建连（Host/SNI 仍是原域名）。
+        target=getattr(provider, "target", None) if provider else None,
+        # P16：按 alias 熔断 + 整体预算。
+        breaker_key=getattr(provider, "alias", None) if provider else None,
+        deadline=deadline,
     )

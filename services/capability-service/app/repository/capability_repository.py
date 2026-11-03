@@ -6,12 +6,51 @@
 """
 
 from sqlalchemy import desc, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.constants import CapabilityStatus
+from app.core.constants import CapabilityStatus, CategoryStatus
 from app.models import Capability, CapabilityCategory, OperationLog
 
 CapabilityRow = tuple[Capability, str]
+
+#: MySQL 唯一键冲突的错误码。
+MYSQL_DUPLICATE_ENTRY = 1062
+
+
+class DuplicateCapabilityCodeError(RuntimeError):
+    """未删除范围内 code 重复（撞上 `uk_capability_active_code`）。
+
+    仓储层不认识业务错误码，只把数据库异常翻译成这个领域异常；
+    由 service 层映射成对外业务码 2006，保持"编码重复 → 2006"的口径不变。
+    """
+
+    def __init__(self, code: str) -> None:
+        super().__init__(f"capability code already exists: {code}")
+        self.code = code
+
+
+class DuplicateCapabilityOpenAIAliasError(RuntimeError):
+    """An active capability already owns the OpenAI model alias."""
+
+
+def _is_duplicate_entry(exc: IntegrityError) -> bool:
+    """判断异常是否是 MySQL 1062（唯一键冲突）。"""
+
+    original = getattr(exc, "orig", None)
+    args = getattr(original, "args", ())
+    return bool(args) and args[0] == MYSQL_DUPLICATE_ENTRY
+
+
+def _duplicate_constraint(exc: IntegrityError) -> str:
+    original = getattr(exc, "orig", None)
+    args = getattr(original, "args", ())
+    detail = str(args[1]) if len(args) > 1 else ""
+    if "uk_capability_openai_alias" in detail:
+        return "openai_alias"
+    if "uk_capability_active_code" in detail:
+        return "code"
+    return ""
 
 
 class CapabilityRepository:
@@ -27,6 +66,10 @@ class CapabilityRepository:
             # E4：运营可把能力从市场隐藏，但保留 online 以继续被已授权调用方使用。
             Capability.exposed_to_market == 1,
             CapabilityCategory.is_deleted == 0,
+            # D5：分类停用（status='disabled'）后，其下能力一并不再出现在市场。
+            # 停用只影响"市场可见性"，不动能力的 status，也不影响已授权调用方的执行；
+            # 运营列表（_manage_conditions）不看分类状态，仍能查到并恢复。
+            CapabilityCategory.status == CategoryStatus.ENABLED.value,
         ]
         if category_id is not None:
             conditions.append(Capability.category_id == category_id)
@@ -115,6 +158,45 @@ class CapabilityRepository:
         )
         return self._paginate(db, conditions, page=page, page_size=page_size)
 
+    def list_openai_models(self, db: Session) -> list[tuple[int, str | None]]:
+        """List online chat targets for dynamic aliases and legacy configured aliases."""
+
+        statement = (
+            select(Capability.id, Capability.openai_alias)
+            .where(
+                Capability.is_deleted == 0,
+                Capability.status == CapabilityStatus.ONLINE.value,
+                Capability.executor == "chat",
+            )
+            .order_by(Capability.openai_alias, Capability.id)
+        )
+        return [
+            (int(capability_id), str(alias) if alias else None)
+            for capability_id, alias in db.execute(statement)
+        ]
+
+    def list_published_models(self, db: Session) -> list[tuple[str, int, str]]:
+        """P3：登录用户可见的对外模型名清单：(alias, capability_id, name)。
+
+        只取 `status=online`、`executor=chat` 且填了对外模型名的能力——摘要/文生图
+        放进去只会让用户"选了再报参数错"。这与 `/v1/models` 的过滤口径一致。
+        """
+
+        statement = (
+            select(Capability.openai_alias, Capability.id, Capability.name)
+            .where(
+                Capability.is_deleted == 0,
+                Capability.status == CapabilityStatus.ONLINE.value,
+                Capability.executor == "chat",
+                Capability.openai_alias.is_not(None),
+            )
+            .order_by(Capability.openai_alias, Capability.id)
+        )
+        return [
+            (str(alias), int(capability_id), str(name))
+            for alias, capability_id, name in db.execute(statement)
+        ]
+
     def find_market_by_id(self, db: Session, capability_id: int) -> CapabilityRow | None:
         """市场详情：未上架或已软删除的能力一律返回 None，不暴露存在性。"""
 
@@ -149,6 +231,14 @@ class CapabilityRepository:
             conditions.append(Capability.id != exclude_id)
         return bool(db.scalar(select(func.count(Capability.id)).where(*conditions)))
 
+    def exists_openai_alias(
+        self, db: Session, alias: str, *, exclude_id: int | None = None
+    ) -> bool:
+        conditions = [Capability.openai_alias == alias, Capability.is_deleted == 0]
+        if exclude_id is not None:
+            conditions.append(Capability.id != exclude_id)
+        return bool(db.scalar(select(func.count(Capability.id)).where(*conditions)))
+
     def count_by_category(self, db: Session, category_id: int) -> int:
         """统计分类下未删除的能力数，供删除分类前的引用检查使用。"""
 
@@ -163,7 +253,11 @@ class CapabilityRepository:
         )
 
     def list_online_category_ids(self, db: Session) -> list[int]:
-        """存在已上架能力的分类 ID，供市场分类筛选栏使用。"""
+        """存在"市场里真能看到的能力"的分类 ID，供市场分类筛选栏使用。
+
+        条件与 `_market_conditions` 保持完全一致：否则会出现"筛选栏有分类、
+        点进去却是空列表"的割裂（例如能力被 E4 隐藏、或分类被 D5 停用）。
+        """
 
         statement = (
             select(Capability.category_id)
@@ -171,7 +265,9 @@ class CapabilityRepository:
             .where(
                 Capability.is_deleted == 0,
                 Capability.status == CapabilityStatus.ONLINE.value,
+                Capability.exposed_to_market == 1,
                 CapabilityCategory.is_deleted == 0,
+                CapabilityCategory.status == CategoryStatus.ENABLED.value,
             )
             .distinct()
         )
@@ -183,7 +279,17 @@ class CapabilityRepository:
         db.add(capability)
         # 先 flush 拿到自增 id，审计行才能记录真实 resource_id；
         # 审计与业务写在同一个 commit 内，不会出现"改了没留痕"。
-        db.flush()
+        # 并发下 service 的 exists_code 预检可能双双通过，最终仍由数据库唯一键兜底：
+        # 1062 → DuplicateCapabilityCodeError，由 service 映射为 2006（不是 500）。
+        try:
+            db.flush()
+        except IntegrityError as exc:
+            db.rollback()
+            if _is_duplicate_entry(exc):
+                if _duplicate_constraint(exc) == "openai_alias":
+                    raise DuplicateCapabilityOpenAIAliasError() from exc
+                raise DuplicateCapabilityCodeError(capability.code) from exc
+            raise
         self._attach_audit(db, audit, capability.id)
         db.commit()
         db.refresh(capability)
@@ -202,7 +308,15 @@ class CapabilityRepository:
         for field, value in values.items():
             setattr(capability, field, value)
         self._attach_audit(db, audit, capability.id)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            if _is_duplicate_entry(exc):
+                if _duplicate_constraint(exc) == "openai_alias":
+                    raise DuplicateCapabilityOpenAIAliasError() from exc
+                raise DuplicateCapabilityCodeError(str(values.get("code", capability.code))) from exc
+            raise
         db.refresh(capability)
         return capability
 
@@ -210,6 +324,7 @@ class CapabilityRepository:
         self, db: Session, capability: Capability, *, audit: OperationLog | None = None
     ) -> None:
         capability.is_deleted = 1
+        capability.openai_alias = None
         self._attach_audit(db, audit, capability.id)
         db.commit()
 

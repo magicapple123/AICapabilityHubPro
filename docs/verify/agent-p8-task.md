@@ -1,0 +1,11 @@
+# P8 capability form and executor detection
+
+Read frozen docs/升级需求清单-2026-11-03.md P8/P9 and appendices first. Implementation can start ONLY after docs/verify/P1-gate-ready.flag exists. You may inspect/plan while waiting. P1 runtime already passes; root is running its mandatory gate now.
+
+You own web/src/features/console/CapabilityEditor.tsx, web/src/api/capability.ts, web/src/features/chat/ChatWorkspace.tsx, web/src/pages/CapabilitiesPage.tsx; may add an executor-resolution module under web/src/features/capabilities and capability-editor-specific CSS/components. Do not edit ModelServicePanel, ProviderEditor, shared dashboard.css, backend, primary log or shared verification helper. Preserve all current edits including openai_alias.
+
+Implement P8 completely: executor chat/summary/image-generate, enabled providers fetched only for admin; protocol compatibility via executor_protocols; billing mode and correct corresponding prices; max_output_tokens, exposed_to_market; edit and create types aligned. Executor detection uses executor first, legacy code->executor fallback, three old abilities unchanged. Online preflight should be clear and reject incompatible provider with backend final authority. Do not copy backend validation wholesale.
+
+Keep component modules focused (<300 lines ideally, do not grow giant file). Back up original files first. No deletion or weakened tests/types; no any/ignore. P9 full UX refinements remain root's later task, but sensible P8 groups/styles are permitted.
+
+Add scripts/verify/p8_capability_ui.mjs (exclusive) for real Playwright UI create bound chat per_token capability, online, market supports debug, successful receipt tokens. Runtime currently MOCK by default: real per_token verification will require main temporarily enabling isolated Nacos real config via runtime_support; do NOT toggle it yourself yet. Use actual enabled provider list (P11 providers), no secrets printed. Capture UI form, marketplace, receipt P8-*.png when root authorizes runtime. You may syntax/lint/build locally but do not run full gate or DB tests. Write docs/verify/P8-implementation.md with READY marker, absolute file list, exact commands/results, expected runtime instructions. No commit. Main runs per-item real acceptance/fullgate/log.

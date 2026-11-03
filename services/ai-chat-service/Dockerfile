@@ -2,9 +2,9 @@
 FROM python:3.12-slim AS deps
 WORKDIR /app
 COPY requirements.txt requirements.lock.txt ./
-# 有 lock 就用 lock（可复现）；没有则退回范围约束，便于新服务渐进接入。
-# lock 由 Windows venv 生成时会含平台专属包；Linux 装不上时回退到范围约束。
-RUN pip install --no-cache-dir -r requirements.lock.txt \n    || pip install --no-cache-dir -r requirements.txt
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN python -m pip install --disable-pip-version-check --no-cache-dir --retries 10 --timeout 60 \
+    --index-url "${PIP_INDEX_URL}" -r requirements.lock.txt
 
 FROM python:3.12-slim
 WORKDIR /app

@@ -1,0 +1,9 @@
+# P13 remaining delivery gaps
+
+Implement remaining P13 issues in frozen requirement; read requirement and current implementation log first. You own ONLY deploy/docker-compose.yml, deploy/README.md, scripts/bootstrap_stack.sh, deploy/.env.template, deploy/.env.example plus a new docs/verify/P13-followup.md handoff. Other files are not yours. Back up existing bytes first and preserve all current work. Do not delete files or clean/reset. Do not commit or stage.
+
+1. Add actual health probes for Nacos and Sentinel so all nine containers have health status (currently only seven). Inspect available binaries inside current containers and use dependable local endpoint probes. Keep contracts/ports and other healthchecks unchanged. May change corresponding depends_on to healthy.
+2. Make deploy/README.md accurately give four copyable commands from a clean Linux Docker+Compose host through isolated acceptance 9/9 without Windows. Existing acceptance_check.py needs Python/httpx; either use an existing suitable service container for this step or explain install prerequisites accurately. Do not claim POSIX when bootstrap uses Bash. Add environment/host command explanations. Do not weaken validation.
+3. Record which critical previously untracked files still need version control, rather than falsely claiming they are committed.
+
+You may run docker exec read-only probe commands and docker compose config --quiet. DO NOT run up/build/recreate or full gate while main does P11 real runtime. Report READY in docs/verify/P13-followup.md with files, command/results, failures, proposed full validation. Main preserves the ephemeral QA provider master key from the current ai-chat container on every recreation via scripts/verify/runtime_support.mjs compose helper. Never print it. Never touch deploy/.env.

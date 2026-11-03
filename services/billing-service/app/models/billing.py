@@ -12,7 +12,7 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Integer, String, func
+from sqlalchemy import JSON, BigInteger, Date, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.constants import CallStatus, DEFAULT_CAPABILITY_ID
@@ -54,6 +54,17 @@ class CallRecord(Base):
     )
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     model_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    # D3：文生图的图片产物 `[{url, revised_prompt}]`；非文生图与历史记录为 NULL。
+    # 存 JSON 而不是另建表：一次调用最多 4 张，随调用记录一起读最自然。
+    images: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # P6：API Key 归因与入口标记。历史行前者为 NULL、后者为空串，语义都是"未知"，
+    # 前端显示 "—" 且不参与按 Key 统计；不做回填，避免伪造溯源信息。
+    api_key_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, index=True
+    )
+    entrypoint: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="", server_default=""
+    )
     create_time: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )

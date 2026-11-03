@@ -1,0 +1,45 @@
+.audit-table-wrap { width: 100%; }
+.data-table--audit { table-layout: fixed; white-space: normal; }
+.data-table--audit .audit-col-time { width: 96px; }
+.data-table--audit .audit-col-operator { width: 80px; }
+.data-table--audit .audit-col-resource { width: 88px; }
+.data-table--audit .audit-col-action { width: 52px; }
+.data-table--audit .audit-col-request { width: 96px; }
+.data-table--audit .audit-col-controls { width: 64px; }
+.data-table--audit th, .data-table--audit td { padding: 12px 8px; overflow-wrap: anywhere; vertical-align: top; }
+.data-table--audit .audit-time span { display: block; line-height: 1.65; font-variant-numeric: tabular-nums; }
+.data-table--audit .audit-diff { gap: 4px; }
+.data-table--audit .audit-diff li { display: block; min-width: 0; line-height: 1.2; }
+.data-table--audit .audit-diff code { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+.data-table--audit .audit-diff li > div { margin-top: 1px; overflow-wrap: anywhere; }
+.data-table--audit .audit-diff span, .data-table--audit .audit-diff strong { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.data-table--audit .audit-changes-preview { max-height: 96px; overflow: hidden; }
+.data-table--audit .audit-snapshots { margin-top: 7px; min-width: 0; font-size: 10.5px; }
+.data-table--audit .audit-snapshots summary { cursor: pointer; color: var(--accent, #2563eb); overflow-wrap: anywhere; }
+.data-table--audit .audit-snapshots section { margin-top: 8px; max-height: 360px; overflow-y: auto; }
+.data-table--audit .audit-snapshots h3 { margin: 8px 0 4px; font-size: 11px; }
+.data-table--audit .audit-snapshots pre { margin: 0; padding: 8px; background: var(--surface-2); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; }
+.data-table--audit .audit-request > div { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; font-size: 10px; }
+.data-table--audit .audit-request .copy-button { padding: 2px; flex: 0 0 auto; }
+.data-table--audit .audit-request .copy-button svg { width: 12px; height: 12px; }
+.data-table--audit td:last-child .text-button { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+
+@media (max-width: 900px) {
+  .data-table--audit .audit-operator, .data-table--audit .audit-col-operator { display: none; }
+}
+
+@media (max-width: 767px) {
+  .data-table--audit, .data-table--audit tbody, .data-table--audit tr, .data-table--audit td { display: block; width: auto; white-space: normal; }
+  .data-table--audit colgroup, .data-table--audit thead { display: none; }
+  .data-table--audit tbody tr { padding: 14px; border-bottom: 1px solid var(--hairline); }
+  .data-table--audit tbody tr:last-child { border-bottom: 0; }
+  .data-table--audit td { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding: 5px 0; border: 0; }
+  .data-table--audit td::before { content: attr(data-label); color: var(--ink-3); font-size: 10.5px; }
+  .data-table--audit .audit-operator { display: grid; }
+  .data-table--audit tbody tr:hover td:first-child { box-shadow: none; }
+  .data-table--audit .audit-time { grid-template-columns: 64px auto 1fr; }
+  .data-table--audit .audit-changes { display: block; }
+  .data-table--audit .audit-changes::before { display: block; margin-bottom: 6px; }
+  .data-table--audit .audit-changes-preview { max-height: none; }
+  .data-table--audit .audit-request > div { font-size: 11px; }
+}
