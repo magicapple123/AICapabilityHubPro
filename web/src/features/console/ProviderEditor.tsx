@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import {
   createProvider, updateProvider, type ModelProvider, type ProviderPayload,
+  type ProviderUpdatePayload,
 } from '@/api/provider'
 
 const PROTOCOLS: { value: ProviderPayload['protocol']; label: string; hint: string }[] = [
@@ -43,6 +44,8 @@ export function ProviderEditor({ provider, onClose, onSaved }: Props) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
+  const isEdit = provider !== null
+
   useEffect(() => {
     if (provider) {
       setForm({
@@ -59,25 +62,43 @@ export function ProviderEditor({ provider, onClose, onSaved }: Props) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 
+  /** 编辑态 alias / protocol 由服务端保持原值，前端只读展示。 */
+  const lockedStyle = isEdit ? { opacity: 0.6, cursor: 'not-allowed' } : undefined
+
   const submit = async () => {
     setError('')
-    if (!form.name.trim() || !form.alias.trim() || !form.base_url.trim()) {
-      setError('名称、别名、地址为必填项')
+    if (!form.name.trim() || !form.base_url.trim()) {
+      setError('名称、地址为必填项')
       return
     }
-    if (!ALIAS_PATTERN.test(form.alias)) {
-      setError('别名需为小写字母开头、只含小写字母/数字/短横线，2-64 位')
-      return
-    }
-    if (!provider && !form.api_key.trim()) {
-      setError('新增时必须填写 API Key')
-      return
+    // 别名只在创建时校验/提交：编辑态别名不可变，校验它只会造成误拦截。
+    if (!provider) {
+      if (!form.alias.trim()) {
+        setError('别名不能为空')
+        return
+      }
+      if (!ALIAS_PATTERN.test(form.alias)) {
+        setError('别名需为小写字母开头、只含小写字母/数字/短横线，2-64 位')
+        return
+      }
+      if (!form.api_key.trim()) {
+        setError('新增时必须填写 API Key')
+        return
+      }
     }
     setSubmitting(true)
     try {
       if (provider) {
-        const payload = { ...form }
-        if (!payload.api_key) delete (payload as Partial<ProviderPayload>).api_key
+        // 后端 ProviderUpdateRequest 为 extra="forbid"，只接受下面这几个字段；
+        // 显式构造而非展开 form，避免 alias / protocol 泄漏进去触发 422（code 2001）。
+        const payload: ProviderUpdatePayload = {
+          name: form.name,
+          base_url: form.base_url,
+          default_model: form.default_model,
+          timeout_ms: form.timeout_ms,
+        }
+        // api_key 留空 = 不轮换，字段直接不出现在请求体里。
+        if (form.api_key) payload.api_key = form.api_key
         await updateProvider(provider.id, payload)
       } else {
         await createProvider(form)
@@ -106,18 +127,32 @@ export function ProviderEditor({ provider, onClose, onSaved }: Props) {
           </label>
           <label className="field">
             <span>别名（能力绑定用）</span>
-            <input value={form.alias} onChange={(e) => set('alias', e.target.value)} placeholder="dashscope" />
+            <input
+              value={form.alias}
+              onChange={(e) => set('alias', e.target.value)}
+              placeholder="dashscope"
+              disabled={isEdit}
+              style={lockedStyle}
+            />
+            {isEdit
+              ? <span className="field-hint">别名创建后不可修改，如需变更请新建供应商。</span>
+              : null}
           </label>
           <label className="field">
             <span>协议</span>
             <select
               value={form.protocol}
               onChange={(e) => set('protocol', e.target.value as FormState['protocol'])}
+              disabled={isEdit}
+              style={lockedStyle}
             >
               {PROTOCOLS.map((item) => (
                 <option key={item.value} value={item.value}>{item.label} — {item.hint}</option>
               ))}
             </select>
+            {isEdit
+              ? <span className="field-hint">协议创建后不可修改，如需变更请新建供应商。</span>
+              : null}
           </label>
           <label className="field">
             <span>Base URL</span>

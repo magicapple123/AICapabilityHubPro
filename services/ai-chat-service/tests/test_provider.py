@@ -241,6 +241,64 @@ def test_unsafe_base_url_is_rejected_at_save(admin):
     assert body["code"] == 2001
 
 
+def test_update_rejects_extra_alias_and_protocol(admin):
+    """回归：前端曾用 `{...form}` 提交，多带 alias/protocol 触发 422 → code 2001。"""
+
+    created = client.post(
+        "/api/chat/providers", headers=HEADERS, json=_payload(alias="qa-update-extra")
+    ).json()["data"]
+
+    body = client.put(
+        f"/api/chat/providers/{created['id']}", headers=HEADERS,
+        json={
+            "name": "改名不应生效",
+            "base_url": "https://api.example.com/v1",
+            "default_model": "test-model-2",
+            "timeout_ms": 30000,
+            # alias / protocol 创建后不可变，后端 extra="forbid" 必须拒绝
+            "alias": "qa-update-extra-2",
+            "protocol": "openai-responses",
+        },
+    ).json()
+    assert body["code"] == 2001, body
+    assert body["message"] == "参数不符合 Schema", body
+
+    # 被拒时不得产生任何写入
+    listed = client.get("/api/chat/providers", headers=HEADERS).json()["data"]["list"]
+    kept = next(item for item in listed if item["id"] == created["id"])
+    assert kept["alias"] == "qa-update-extra"
+    assert kept["name"] == "示例供应商"
+
+
+def test_update_accepts_payload_without_alias_and_protocol(admin):
+    """修复后的编辑写入体：只含可变字段，alias/protocol 不出现。"""
+
+    created = client.post(
+        "/api/chat/providers", headers=HEADERS, json=_payload(alias="qa-update-ok")
+    ).json()["data"]
+
+    body = client.put(
+        f"/api/chat/providers/{created['id']}", headers=HEADERS,
+        json={
+            "name": "改名后的供应商",
+            "base_url": "https://api.example.com/v2/",
+            "default_model": "test-model-2",
+            "timeout_ms": 45000,
+        },
+    ).json()
+    assert body["code"] == 0, body
+    data = body["data"]
+    assert data["name"] == "改名后的供应商"
+    assert data["base_url"] == "https://api.example.com/v2"
+    assert data["default_model"] == "test-model-2"
+    assert data["timeout_ms"] == 45000
+    # alias/protocol 创建后不可变
+    assert data["alias"] == "qa-update-ok"
+    assert data["protocol"] == "openai-chat"
+    # 未传 api_key = 不轮换密钥（编辑其他字段不应逼用户重填密钥）
+    assert data["api_key_mask"] == created["api_key_mask"]
+
+
 def test_enable_requires_successful_test(admin):
     created = client.post(
         "/api/chat/providers", headers=HEADERS, json=_payload(alias="qa-enable-check")

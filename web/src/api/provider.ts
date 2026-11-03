@@ -35,10 +35,19 @@ export interface ProviderPayload {
   timeout_ms: number
 }
 
+/**
+ * 编辑写入体。
+ *
+ * 后端 `ProviderUpdateRequest` 是 `extra="forbid"`，且**不含** alias / protocol
+ * （两者创建后不可变）。多传任何一个字段都会被判为多余字段并返回 422 → code 2001，
+ * 因此这里用 Omit 在类型层面禁止携带 alias / protocol。
+ */
+export type ProviderUpdatePayload = Omit<ProviderPayload, 'alias' | 'protocol'>
+
 export const createProvider = (payload: ProviderPayload) =>
   request<ModelProvider>({ method: 'POST', url: '/chat/providers', data: payload })
 
-export const updateProvider = (id: number, payload: ProviderPayload) =>
+export const updateProvider = (id: number, payload: ProviderUpdatePayload) =>
   request<ModelProvider>({ method: 'PUT', url: `/chat/providers/${id}`, data: payload })
 
 export const setProviderStatus = (id: number, status: 'enabled' | 'disabled') =>
