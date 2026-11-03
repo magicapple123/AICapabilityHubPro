@@ -12,7 +12,7 @@ export function EditorModal({ title, onClose, children }: {
 }) {
   return <AntModal title={title} open centered width={720} onCancel={onClose} footer={null}
     className="capability-editor-modal"
-    styles={{ body: { paddingTop: 18, maxHeight: 'calc(100vh - 190px)', overflowY: 'auto' } }}>
+    styles={{ body: { paddingTop: 18, paddingInline: 24, paddingBottom: 0, maxHeight: 'calc(100vh - 190px)', overflowY: 'auto' } }}>
     {children}
   </AntModal>
 }

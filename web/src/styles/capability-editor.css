@@ -47,6 +47,21 @@
 .cap-editor .editor-advanced > * + * { margin-top: 10px; }
 .cap-editor .field-hint .text-link { color: var(--accent, #2563eb); }
 
+/*
+ * 吸底操作栏（P9 回归修复）：失焦校验会在字段下方插入/移除错误行，
+ * 若操作栏随内容位移，用户按下鼠标的瞬间按钮被顶走、mouseup 落空，
+ * click 事件丢失 → 表单"点了没反应"。吸底让按钮在滚动容器内保持原位，
+ * 既避免位移，也让长表单的保存/取消始终可见。
+ * EditorModal 的 body 已显式设置 padding: 18px 24px 0，因此这里的负边距与之配对。
+ */
+.cap-editor .form-actions {
+  position: sticky; bottom: 0; z-index: 3;
+  margin: 0 -24px; padding: 12px 24px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 14px -14px rgba(16, 24, 40, .28);
+}
+
 /* P9.7：窄屏单列、无横向滚动 */
 @media (max-width: 767px) {
   .cap-editor .editor-row { grid-template-columns: minmax(0, 1fr); }
