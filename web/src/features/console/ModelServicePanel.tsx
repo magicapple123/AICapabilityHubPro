@@ -9,6 +9,9 @@ import { useAsyncResource } from '@/hooks/useAsyncResource'
 import { formatNumber } from '@/lib/dateRange'
 import './provider-impact.css'
 
+/** 与 capability-service `normalize_openai_alias` 同一条规则。 */
+const OPENAI_ALIAS = /^[a-z][a-z0-9._-]{1,63}$/
+
 const BILLING_LABEL: Record<string, string> = {
   per_call: '按次',
   per_token: '按 token',
@@ -118,6 +121,13 @@ export function ModelServicePanel() {
 
   const saveAlias = async (item: CapabilityManageItem) => {
     const alias = (aliasDrafts[item.id] ?? item.openai_alias ?? '').trim()
+    // P2：对外模型名是 OpenAI 客户端的 model 名，必须是 ASCII 小写标识符。
+    // 后端规则相同，但它的校验失败会被统一成 2001「参数不符合 Schema」，
+    // 运营看不出是哪个字段错了；这里先拦一次并说清规则（仍以后端为准）。
+    if (alias && !OPENAI_ALIAS.test(alias)) {
+      void message.error('对外模型名需以小写字母开头，只能用小写字母、数字、点、下划线和连字符（2–64 位），不能使用中文或空格')
+      return
+    }
     try {
       await updateCapability(item.id, { openai_alias: alias || null })
       setAliasDrafts((current) => {
@@ -158,6 +168,8 @@ export function ModelServicePanel() {
               <tbody>
                 {capabilities.map((item) => {
                   const provider = item.provider_alias ? providerByAlias.get(item.provider_alias) : undefined
+                  const aliasDraft = (aliasDrafts[item.id] ?? item.openai_alias ?? '').trim()
+                  const aliasInvalid = aliasDraft !== '' && !OPENAI_ALIAS.test(aliasDraft)
                   return (
                     <tr key={item.id}>
                       <td>
@@ -165,8 +177,10 @@ export function ModelServicePanel() {
                         <small className="muted"> {item.code}</small>
                         <div style={{ display: 'flex', gap: 6, marginTop: 6, maxWidth: 260 }}>
                           <input
-                            className="form-control mono text-xs"
+                            className={'form-control mono text-xs' + (aliasInvalid ? ' cap-alias-invalid' : '')}
                             aria-label={`对外模型名 ${item.name}`}
+                            aria-invalid={aliasInvalid || undefined}
+                            title="小写字母开头，只允许小写字母、数字、点、下划线和连字符"
                             maxLength={64}
                             pattern="[a-z][a-z0-9._-]{1,63}"
                             placeholder="对外模型名（可选）"
@@ -183,6 +197,7 @@ export function ModelServicePanel() {
                             onClick={() => { void saveAlias(item) }}
                           >保存</button>
                         </div>
+                        {aliasInvalid && <p className="cap-alias-hint">需小写字母开头，仅限小写字母、数字、点、下划线、连字符（2–64 位）</p>}
                       </td>
                       <td className="mono text-xs">{item.executor || '—'}</td>
                       <td>

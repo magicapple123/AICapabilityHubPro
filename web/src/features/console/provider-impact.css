@@ -12,6 +12,10 @@
 .data-table--providers td.admin-actions { flex-wrap: wrap; justify-content: flex-start; }
 .data-table--providers td .text-button { white-space: nowrap; }
 
+/* P2 对外模型名：就地提示格式错误，避免只弹通用的「参数不符合 Schema」 */
+.cap-alias-invalid { border-color: #b42318 !important; }
+.cap-alias-hint { margin: 4px 0 0; font-size: 10.5px; line-height: 1.5; color: #b42318; max-width: 260px; }
+
 .provider-impact {
   list-style: none; margin: 8px 0 0; padding: 8px 10px; max-height: 240px; overflow: auto;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
