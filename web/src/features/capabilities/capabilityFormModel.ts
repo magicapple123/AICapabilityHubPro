@@ -250,9 +250,10 @@ export function buildPayload(
 export function summarizeErrors(errors: FieldErrors): string {
   const keys = Object.keys(errors) as CapabilityFieldKey[]
   if (keys.length === 0) return ''
-  const first = errors[keys[0]]
-  // 底部汇总保留字段清单 + 首个问题原文，长表单里不必滚回字段也能看到原因。
-  return `${keys.length} 项需要修正：${keys.map((key) => FIELD_LABELS[key]).join('、')}。${first ? '首个问题：' + first : ''}`
+  // 底部汇总 = 字段清单 + **全部**问题原文。只放"首个问题"会让长表单里
+  // 排在后面的错误（如 Schema）在底部不可见——浏览器验收等的就是它的原文。
+  const messages = keys.map((key) => `${FIELD_LABELS[key]}：${errors[key]}`)
+  return `${keys.length} 项需要修正：${messages.join('；')}`
 }
 
 /** 表单里"编码→执行器"的提示口径（P8.6）：不再写死"会返回 2008"。 */
