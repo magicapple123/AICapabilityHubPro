@@ -47,3 +47,5 @@ test-results*.xml
 .workbuddy/
 # CodeBuddy 协作数据（含子智能体会话记录，属本地工具状态，禁止入库）
 .codebuddy/
+# 临时工作目录（文档导出、联调脚本、铸造的临时令牌等），一律不入库
+.tmp/

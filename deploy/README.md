@@ -2,6 +2,17 @@
 
 需要 Docker Engine、Docker Compose v2、Bash 4+ 与常见 GNU 工具（sha256sum、awk、id）。不需要宿主机安装 Python、Node、Java 或 PowerShell。内部服务端口默认绑定宿主机 loopback；生产环境应由 TLS 反向代理转发到 Nginx。
 
+## 演示 / 录屏环境（Windows + Docker Desktop）
+
+录屏、答辩这类「要在一台干净机器上把平台跑起来」的场景，不要走下面的 Linux 验收流程，
+按 [docs/演示环境搭建-容器版.md](../docs/演示环境搭建-容器版.md) 操作：使用负责人提供的
+`deploy/.env`（已含上游模型 Key 与固定主密钥）直接启动，首次建库会自动执行
+`mysql/init/07_demo_seed.sql`，把供应商、能力、演示账号整理成可展示状态。
+
+> ⚠️ 演示环境**不要**执行下面第 1 步的 `.env` 生成命令。它会重新生成
+> `PROVIDER_MASTER_KEY_V1`，而 07 种子里的供应商密钥正是按原主密钥加密的；
+> 换了主密钥就解不开，表现为能力调用失败（对话、摘要、生图全挂）。
+
 ## 四条命令：独立 Linux 验收栈
 
 以下四条命令在已克隆仓库的根目录、同一个 Bash 终端依次运行。使用 aihub-pro-verify 项目、独立数据卷 aihub-verify-mysql-data 与验收端口；请先确认 8080、8081、8082、8083、8090、23307、28088、28848、29848、28858 均未占用。该流程不连接已有开发库或 opsdemo 业务库。

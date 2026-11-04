@@ -216,6 +216,18 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       PROVIDER_MASTER_KEY_V1: ${PROVIDER_MASTER_KEY_V1:-}
       PROVIDER_ALLOWED_HOSTS: ${PROVIDER_ALLOWED_HOSTS:-}
+      # 上游模型。USE_MOCK 默认 true 是为了「不填 Key 也能起来」，但此时回复是内置
+      # Mock，界面上会标注来源。演示/答辩必须填真实 Key 并把 USE_MOCK 设为 false，
+      # 否则录出来的对话内容是假的。deploy/.env.example 里有填写说明。
+      USE_MOCK: "${USE_MOCK:-true}"
+      MODEL_BASE_URL: "${MODEL_BASE_URL:-https://api.deepseek.com/v1}"
+      MODEL_API_KEY: "${MODEL_API_KEY:-}"
+      MODEL_NAME: "${MODEL_NAME:-deepseek-chat}"
+      MODEL_TIMEOUT: "${MODEL_TIMEOUT:-30}"
+      MODEL_MAX_TOKENS: "${MODEL_MAX_TOKENS:-1024}"
+      # 覆盖代码内置的历史别名（deepseek-flash / chat-completions），否则
+      # GET /v1/models 会同时列出多个指向同一能力的重复模型名。
+      OPENAI_COMPAT_MODEL_MAP: "${OPENAI_COMPAT_MODEL_MAP:-deepseek-chat=1}"
     ports: ["127.0.0.1:8090:8090"]
     depends_on:
       mysql: { condition: service_healthy }
