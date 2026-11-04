@@ -36,7 +36,7 @@ SET param_schema = JSON_OBJECT(
             'type', 'string',
             'enum', JSON_ARRAY('system', 'user', 'assistant', 'tool')
           ),
-          'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 12000),
+          'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 48000),
           'tool_call_id', JSON_OBJECT('type', 'string', 'maxLength', 64),
           'name', JSON_OBJECT('type', 'string', 'maxLength', 64),
           'tool_calls', JSON_OBJECT(

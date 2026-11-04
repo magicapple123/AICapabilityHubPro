@@ -13,7 +13,7 @@ ai-chat-service连接目录、Schema、聊天/摘要adapter和计量，拥有ai_
 
 执行顺序：身份→目录→状态/code/Schema/adapter输入→积分→会话/用户消息→模型→助手消息→收据→本地提交。
 
-聊天1–40条、末条user、内容1–12000；摘要text非空白≤12000、max_length整数30–1000默认200，不续接session。stream=true和客户端价格/URL等拒绝。未知adapter2008，不执行登记service/path。
+聊天1–40条、末条user、内容1–48000（整包≤192000）；摘要text非空白≤48000、max_length整数30–1000默认200，不续接session。超过单条上限返回400/`platform_2001`并说明实际长度，不再兜底成500。stream=true和客户端价格/URL等拒绝。未知adapter2008，不执行登记service/path。
 
 目录价贯穿预检与points，degraded=0，结果返回真实能力ID、价格、费用、账单与requestId。POINTS_COST只留历史配置，不决定Pro费用。
 

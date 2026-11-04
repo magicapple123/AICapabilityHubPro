@@ -24,6 +24,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -33,7 +34,11 @@ from app.core.security import UserContext
 from app.core.service_auth import expected_internal_token
 from app.core.service_call import call_internal
 from app.db.session import get_db
-from app.schemas.chat import ChatCompletionRequest, ChatMessage
+from app.schemas.chat import (
+    MAX_MESSAGE_CONTENT_LENGTH,
+    ChatCompletionRequest,
+    ChatMessage,
+)
 from app.service.chat_service import chat_service
 from app.service.capability_client import capability_client
 from app.service.catalog_cache import OpenAIModelCatalog
@@ -165,6 +170,86 @@ def _capability_message(message: "ChatMessage") -> dict[str, Any]:
     return body
 
 
+def message_too_long_error(index: int, role: str, length: int) -> BizException:
+    """超长消息统一成 `2001`（HTTP 400），语义必须是"消息太长"。
+
+    为什么不能交给 `ChatMessage` 自己校验：它抛的是 Pydantic `ValidationError`，
+    落到本模块的 `except Exception` 兜底就变成 `500 platform_error`，客户端只会
+    看到"平台坏了"并盲目重试，运维也无法从错误码定位真实原因。
+    """
+
+    return BizException(
+        2001,
+        f"第 {index} 条消息（role={role}）内容 {length} 字符，超过单条上限 "
+        f"{MAX_MESSAGE_CONTENT_LENGTH} 字符；请拆分或缩短后重试",
+    )
+
+
+#: Pydantic 会给 `ValueError`/断言类失败自带英文前缀，直接透出去就成了
+#: "Value error, tool 角色的消息必须带 tool_call_id"。这里只剥前缀，不动正文。
+_VALIDATION_PREFIXES: tuple[str, ...] = (
+    "Value error, ",
+    "Assertion failed, ",
+    "Invalid value, ",
+)
+
+
+def _field_max_length(field_name: str | None) -> int | None:
+    """从 `ChatMessage` 的**字段定义**读取 `max_length`，不另建第二套常量表。
+
+    为什么必须回读 Schema：`content` 上限是 48000，而 `name` 与 `tool_call_id`
+    只有 64。文案里硬写 48000 会让后两者的超长提示张冠李戴（实测确实如此），
+    另建一份常量表又会立刻和 `Field(max_length=...)` 漂移。因此这里直接取
+    Pydantic 保存的 `MaxLen` 元数据，Schema 改一次，文案自动跟着改。
+    """
+
+    if not field_name:
+        return None
+    field = ChatMessage.model_fields.get(field_name)
+    if field is None:
+        return None
+    for meta in field.metadata:
+        limit = getattr(meta, "max_length", None)
+        if isinstance(limit, int) and limit > 0:
+            return limit
+    return None
+
+
+def _strip_pydantic_prefix(reason: str) -> str:
+    """剥掉 Pydantic 自带的英文前缀，让用户看到干净的中文原因。"""
+
+    for prefix in _VALIDATION_PREFIXES:
+        if reason.startswith(prefix):
+            return reason[len(prefix):].strip()
+    return reason
+
+
+def validation_reason(error: ValidationError, index: int | None = None) -> str:
+    """把 Pydantic 校验失败翻译成**不含用户输入**的可读原因。
+
+    `str(error)` 会把 `input_value=...` 整段带出来（那可能是用户的简历全文），
+    所以这里只取 `loc` 与 `msg`，绝不拼接异常字符串本体，也不写日志。
+    """
+
+    errors = error.errors()
+    first = errors[0] if errors else {}
+    parts = [part for part in first.get("loc", ()) if str(part) != "__root__"]
+    loc = ".".join(str(part) for part in parts)
+    prefix = f"第 {index} 条消息" if index is not None else "请求参数"
+    where = f"{prefix}.{loc}" if loc else prefix
+    reason = _strip_pydantic_prefix(str(first.get("msg") or "字段校验未通过").strip())
+    if first.get("type") == "string_too_long":
+        # loc 末段的字符串就是出错字段名（`('name',)`、`('messages', 0, 'name')` 都适用）。
+        field_name = next(
+            (str(part) for part in reversed(parts) if isinstance(part, str)), None
+        )
+        limit = _field_max_length(field_name)
+        if limit is not None:
+            reason = f"超过 {limit} 字符上限"
+        # 取不到字段定义时保留 Pydantic 原文，绝不猜一个数字（那正是 M1 的病根）。
+    return f"{where} 不合法：{reason}"
+
+
 async def _stream_response(
     db: Session, request: ChatCompletionRequest, user: UserContext, alias: str
 ) -> StreamingResponse:
@@ -288,13 +373,17 @@ async def chat_completions(
             raise BizException(2001, "messages 最多 40 条")
 
         messages: list[ChatMessage] = []
-        for item in raw_messages:
+        for index, item in enumerate(raw_messages, start=1):
             if not isinstance(item, dict):
                 raise BizException(2001, "messages 元素格式不正确")
             role = str(item.get("role", "")).strip()
             if role not in ROLE_SET:
                 raise BizException(2001, f"不支持的角色：{role}")
             content = _content_text(item.get("content"))
+            # 超长必须显式判在这里：交给 ChatMessage 会抛 ValidationError，
+            # 那就是 500 platform_error（长短消息的边界条件不能靠兜底异常表达）。
+            if len(content) > MAX_MESSAGE_CONTENT_LENGTH:
+                raise message_too_long_error(index, role, len(content))
             # E2：assistant 只回工具调用时 content 为空，这是合法的 OpenAI 形态。
             tool_calls = item.get("tool_calls")
             if not content.strip() and not (role == "assistant" and isinstance(tool_calls, list) and tool_calls):
@@ -302,13 +391,18 @@ async def chat_completions(
             # E2：工具回灌消息必须带上 tool_call_id，否则 ChatMessage 的校验会拒。
             tool_call_id = item.get("tool_call_id")
             name = item.get("name")
-            messages.append(ChatMessage(
-                role=role,
-                content=content,
-                tool_call_id=str(tool_call_id).strip() if tool_call_id else None,
-                name=str(name).strip() if name else None,
-                tool_calls=tool_calls if isinstance(tool_calls, list) else None,
-            ))
+            # 其余字段级校验（tool_call_id/name 长度、角色与工具字段的一致性）
+            # 同样要 400 而不是 500，所以就地转成 2001。
+            try:
+                messages.append(ChatMessage(
+                    role=role,
+                    content=content,
+                    tool_call_id=str(tool_call_id).strip() if tool_call_id else None,
+                    name=str(name).strip() if name else None,
+                    tool_calls=tool_calls if isinstance(tool_calls, list) else None,
+                ))
+            except ValidationError as error:
+                raise BizException(2001, validation_reason(error, index)) from error
 
         capability_input: dict[str, Any] = {
             # exclude_none 是必需的：ChatMessage 还有 tool_call_id/name 两个可选字段，
@@ -334,6 +428,10 @@ async def chat_completions(
             data = await chat_service.complete(db, request, user)
     except BizException as error:
         return _openai_error(error)
+    except ValidationError as error:
+        # 兜底第二道：凡是入参校验类的失败一律 400/2001，绝不落成 500。
+        logger.warning("兼容层入参校验失败 type={}", type(error).__name__)
+        return _openai_error(BizException(2001, validation_reason(error)))
     except Exception as error:  # noqa: BLE001 - 兼容层必须返回 OpenAI 错误结构而非平台包裹
         logger.error("兼容层执行失败 type={}", type(error).__name__)
         return _error(500, "平台执行失败，请稍后重试", "platform_error", "api_error")

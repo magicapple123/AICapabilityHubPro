@@ -41,7 +41,7 @@
 | `category_id` | BIGINT | NOT NULL, INDEX | 所属分类 |
 | `name` | VARCHAR(64) | NOT NULL | 能力名称 |
 | `code` | VARCHAR(64) | NOT NULL | 能力编码，未删除范围内唯一 |
-| `openai_alias` | VARCHAR(64) | NULL, UNIQUE | OpenAI 兼容公开模型名；仅在线 chat 能力进入 `/v1/models` |
+| `openai_alias` | VARCHAR(64) | NULL, UNIQUE | OpenAI 兼容公开模型名；仅在线、`executor=chat` 且入参 Schema `required` 含 `messages` 的能力进入 `/v1/models` |
 | `service_name` | VARCHAR(64) | NOT NULL | 承载能力的服务名，如 `ai-chat-service` |
 | `path` | VARCHAR(255) | NOT NULL | 调用路径，如 `/api/chat/completions` |
 | `param_schema` | JSON | NULL | 参数 Schema（JSON 对象）；draft/offline 可为空，online 必须有合法 Schema |
@@ -208,9 +208,9 @@
 
 - 负责人：capability-service
 - 是否需要登录：服务间接口；网关对外部 `/internal/**` 一律 403，直连服务时要求链路 `X-User-Id`
-- 成功 data：`[{"id": 1, "openai_alias": "team-chat-v1"}]`；未配置别名的在线 chat 能力会以 `openai_alias: null` 返回，供兼容映射校验目标状态。
-- 过滤条件：`status=online`、`executor=chat` 且未软删除；不依赖市场展示开关
-- 备注：只返回模型路由所需的最小字段，不包含供应商、地址或其他内部配置。只有非空 `openai_alias` 会进入动态别名表。
+- 成功 data：`[{"id": 1, "openai_alias": "team-chat-v1"}]`；未配置别名但通过发布门禁的能力会以 `openai_alias: null` 返回，供兼容映射校验目标状态。
+- 过滤条件：`status=online`、`executor=chat`、未软删除，且**入参 Schema 的 `required` 包含 `messages`**；不依赖市场展示开关
+- 备注：只返回模型路由所需的最小字段，不包含供应商、地址或其他内部配置。只有非空 `openai_alias` 会进入动态别名表。第三条过滤是发布门禁：借 `chat` 执行器但入参不是 `messages` 的能力（如视觉类 `required: ["image_url"]`）不返回——兼容层永远拼不出它的必填字段，发布出去只会让客户端"选了再报参数错"。Schema 解析失败按不可发布处理。
 
 ### `GET /internal/capability/{capability_id}`
 
@@ -273,7 +273,7 @@
   - `long-summary`（长文本摘要，`online`）
   - `vision-parse`（视觉理解，`draft`，用于验证市场不可见）
 - 现有聊天价格 5、摘要 3；AI 验证目录状态/Schema/price，不按固定 POINTS_COST。演示数据不包含真实凭证。
-- `chat-completions` / `long-summary` 的 `param_schema` 已与执行器约束对齐：聊天 `messages` 1–40 条、role 三选一、content 1–12000、可选 temperature 0–2；摘要 `text` 1–12000、可选 `max_length` 30–1000（默认 200）；使用布尔 `additionalProperties=false`。
+- `chat-completions` / `long-summary` 的 `param_schema` 已与执行器约束对齐：聊天 `messages` 1–40 条、role 三选一、content 1–48000、可选 temperature 0–2；摘要 `text` 1–48000、可选 `max_length` 30–1000（默认 200）；使用布尔 `additionalProperties=false`。已有库的旧值用 `sql/11_raise_message_max_length.sql` 幂等提升。
 - 已有业务库的结构升级使用独立增量脚本 `sql/03_align_executor_schema.sql`：只有 Schema 完整匹配历史 seed 默认值，或 online 能力的 Schema 为空时才应用适配器模板；不根据单个字段缺失推断“旧版”，以免覆盖自定义限制/元数据。draft/offline 的空 Schema 保持为空；单价与状态始终不改。执行前备份受影响行。`sql/02_seed.sql` 仅用于新环境或明确的隔离示例库。迁移可重复执行，迁移过滤规则另有真实 MySQL 回归测试。未知/自定义结构升级需由运营人员单独审阅，不做自动覆盖。
 - 已覆盖内部详情、公开字段最小化、状态变化、未知/软删除、Schema 引用/非法 Draft 关键字/上架必须有合法 Schema/价格边界、重复编码、非管理员直接写/管理读取、授权撤销/故障、迁移保留自定义 Schema/升级旧 Schema/幂等以及市场选中 ID 的浏览器入口。集成main `651275b` 的CI中capability-service实际 `131 passed`、零跳过；迁移也已覆盖自定义Schema保留和重复运行。真实管理员授权、严格 internal 目录链与完整浏览器运行须依据最终 CI artifact 和 `summary.json` 分开核对，替身测试不当作真实联调。
 
@@ -385,7 +385,7 @@ repository 没有 update/delete 方法。写入由业务 repository 在**同一�
 
 - `t_capability.openai_alias` 可空，格式为 `^[a-z][a-z0-9._-]{1,63}$`，非空值唯一；软删除时清空，避免占用可复用别名。
 - 新建/编辑返回 `2006` 表示能力编码或对外模型名冲突；市场公开字段保持不变，运营列表与服务间目录包含该字段。
-- `GET /v1/models` 从在线 chat 目录产生动态别名，并合并 `OPENAI_COMPAT_MODEL_MAP` 覆盖；兼容映射目标不是在线 chat 能力时不展示。
+- `GET /v1/models` 从在线 chat 目录产生动态别名，并合并 `OPENAI_COMPAT_MODEL_MAP` 覆盖；兼容映射目标不在发布集合内时不展示。发布集合见文末「兼容层发布门禁」。
 - 增量迁移：`services/capability-service/sql/10_add_openai_alias.sql`；新装 MySQL 基线由 `scripts/devtools/sync_mysql_baseline.py` 从服务 SQL 同步到 `deploy/mysql/init/03_capability_service.sql`。两者均可重复执行。
 
 ### P11 上游模型选择（2026-11-03）
@@ -398,10 +398,23 @@ repository 没有 update/delete 方法。写入由业务 repository 在**同一�
 
 ### P3 对外模型名清单（2026-11-03）
 
-新增 `GET /api/capability/models`（需登录，普通用户可读）：返回 `{"list":[{"alias","capability_id","name"}],"total":n}`，只包含 `status=online`、`executor=chat`、`openai_alias` 非空的能力，顺序按 alias 升序。用途是设置页「使用方法」抽屉自动填充 `model`；抽屉按安全约定不读取 Secret，因此不能调 `/v1/models`。该接口不返回 `service_name` / `path` / `base_url` / 密钥 / 执行参数。未登录 `1001`；过滤口径必须与 `/v1/models` 一致（摘要与文生图不出现）。
+新增 `GET /api/capability/models`（需登录，普通用户可读）：返回 `{"list":[{"alias","capability_id","name"}],"total":n}`，只包含 `status=online`、`executor=chat`、`openai_alias` 非空，且**入参 Schema `required` 含 `messages`** 的能力，顺序按 alias 升序。用途是设置页「使用方法」抽屉自动填充 `model`；抽屉按安全约定不读取 Secret，因此不能调 `/v1/models`。该接口不返回 `service_name` / `path` / `base_url` / 密钥 / 执行参数。未登录 `1001`；过滤口径必须与 `/v1/models` 一致（摘要、文生图与视觉均不出现）。
 
 ### P8/P9 能力登记表单字段（2026-11-03）
 
 创建与更新接口的字段集已对齐（`executor` / `provider_alias` / `billing_mode` / `price_per_1k_input` / `price_per_1k_output` / `price_per_unit` / `unit` / `max_output_tokens` / `exposed_to_market`），本轮只补前端表单与"可执行性"判定：判定口径为 `executor = 能力.executor || CODE_TO_EXECUTOR[code]`，再判断 `executor ∈ /api/chat/executors.executors`。历史 executor 为空的能力靠 code→executor 回退，行为不变。供应商协议匹配仅作前端提示，最终仍由本服务 `2001` 拒绝。
 
 **市场出参补字段（加法，2026-11-03）**：`GET /api/capability/market` 列表项新增 `executor`（`chat` / `summary` / `image-generate` / 空串）；`GET /api/capability/market/{id}` 详情此前已声明 `executor` / `provider_alias` / `max_output_tokens` 但 `from_row` 未赋值（运行期恒为空/1024），本轮补齐。市场仍不含 `service_name` / `path` / 密钥；列表新增的 `executor` 只表明"用哪个受控执行器跑"，不泄露上游地址。历史能力 `executor` 为空时原样返回空串，由前端 code 回退，不伪造值。
+
+### 兼容层发布门禁（2026-11-04）
+
+`GET /internal/capability/openai-models` 与 `GET /api/capability/models` 的过滤条件在原有 `status=online` + `executor=chat` + 未软删除之上，新增**入参 Schema 的 `required` 必须包含 `messages`**。
+
+原因：`executor=chat` 只表示借用聊天执行器，不代表能承载 OpenAI Chat 协议。视觉类能力（`vision-parse`）的 Schema `required` 是 `["image_url"]`，而兼容层只会拼出 `messages`，一旦发布，客户端会"选得到但调不通"，返回 400 `platform_2001`（参数不符合 Schema），语义上误导成参数错误。加门禁后这类能力不再出现在 `/v1/models`，直接指定该别名返回 404 `model_not_found`——**未发布 ≠ 参数错误**。
+
+约束：
+- 对外模型名（`openai_alias`）仍允许填写，用于平台「模型服务」页展示与能力目录完整性；发布与否由 Schema 决定，不再由"是否填了别名"决定。
+- Schema 缺失或无法解析时按**不可发布**处理（失败关闭），宁可少列一个，也不把必失败的模型推给客户端。
+- 两个接口共用同一判定函数，口径必须一致；新增/修改能力后经 5 秒目录缓存生效。
+
+对应实现：`app/repository/capability_repository.py::_accepts_chat_messages`；用例见 `tests/test_models_api.py::test_models_hides_non_chat_shape_even_with_alias`。

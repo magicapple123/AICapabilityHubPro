@@ -22,7 +22,7 @@ capability-service拥有capability_db，维护能力ID、分类、Schema、单�
 
 内部详情每次实时读取，返回匹配id、name、code、status、内联param_schema和整数price_per_call；未知/软删除2002，草稿/下架保留真实状态，配置损坏4002。AI每次读取并检查online，价格改变下一次调用生效；严格internal模式不能靠market回退假装通过。
 
-聊天code=chat-completions，Schema对应input.messages（1–40条、role三选一、content 1–12000、可选temperature 0–2）；摘要code=long-summary，对应text（1–12000）及可选max_length（30–1000）。禁止Schema远程引用，登记与内部详情共用同一组结构约束，并通过Draft 2020-12元Schema校验；非法关键字不会留到执行期才暴露。视觉code未实现，不展示可体验或虚构延迟。
+聊天code=chat-completions，Schema对应input.messages（1–40条、role三选一、content 1–48000、可选temperature 0–2）；摘要code=long-summary，对应text（1–48000）及可选max_length（30–1000）。禁止Schema远程引用，登记与内部详情共用同一组结构约束，并通过Draft 2020-12元Schema校验；非法关键字不会留到执行期才暴露。视觉code未实现，不展示可体验或虚构延迟。
 
 管理操作/列表每次调用user authorization，匹配当前用户、normal/admin/authorized=true才放行；依赖异常失败关闭，普通用户拒绝2007。user-service PR #4 按最新共享契约用1006表示授权不足；该错误码只在授权端点上下文中映射，API Key 业务的1006仍按原语义处理。
 

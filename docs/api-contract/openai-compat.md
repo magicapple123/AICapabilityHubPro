@@ -22,15 +22,25 @@ Authorization: Bearer sk_xxxxxxxx
 
 ## 模型映射
 
-`model` 不是上游模型名，而是平台登记的**别名**，映射到 `capability_id`。运营在能力中填写 `openai_alias` 后，在线且 `executor=chat` 的能力会进入动态目录；下线、软删除或清空别名后不再列出。
+`model` 不是上游模型名，而是平台登记的**别名**，映射到 `capability_id`。运营在能力中填写 `openai_alias` 后，**同时满足**以下三条的能力才会进入动态目录：
+
+1. `status=online` 且未软删除；
+2. `executor=chat`；
+3. **入参 Schema 的 `required` 包含 `messages`**——即该能力真的能承载 Chat 协议。
+
+第 3 条是发布门禁，**不能用 `executor=chat` 代替**。视觉类能力虽然借用了 chat 执行器，但它的 Schema `required` 是 `["image_url"]`，而兼容层只会拼出 `messages`，发布出去的结果是客户端"选了再报参数错"。这类能力允许在平台目录里保留对外模型名用于展示，但不会出现在 `/v1/models`；直接指定该别名调用返回 404 `model_not_found`（未发布 ≠ 参数错误，语义不能混）。下线、软删除或清空别名后同样不再列出。
+
+Schema 解析失败一律视为不可发布：宁可少列一个，也不把必然失败的模型推给客户端。
 
 | 配置项 | 默认值 |
 |---|---|
 | `OPENAI_COMPAT_MODEL_MAP` | `deepseek-flash=1,deepseek-chat=1,chat-completions=1` |
 
+默认值保留了历史兼容别名，它们与动态目录指向同一能力时会在 `/v1/models` 里表现为**重复项**（例如同一对话能力同时出现 `deepseek-flash`、`deepseek-chat`、`chat-completions`）。要求对外清单与能力目录严格一致时，用 `.env` 覆盖为只保留实际发布的别名，例如 `OPENAI_COMPAT_MODEL_MAP=deepseek-chat=1`。该项在进程启动时读取，修改后需重启 ai-chat-service。
+
 `OPENAI_COMPAT_MODEL_MAP` 保留为显式覆盖与兼容配置，覆盖动态目录里的同名别名。静态兼容别名的目标必须仍是在线 chat 能力；因此旧配置可继续服务未填写 `openai_alias` 的既有能力。动态模型目录复用 ai-chat 的 5 秒目录缓存；同一进程的并发冷 miss 使用 single-flight 合并为一次下游读取。`catalog_cache_events_total` 暴露 `models-hit`、`models-miss`、`models-fetch` 事件，可用于核对命中和实际目录回源次数。能力新建、编辑、上下架和删除会通过现有失效接口清缓存，缓存命中时不会逐请求查询 capability-service。
 
-`GET /v1/models` 只返回目标为在线 chat 能力的动态别名和显式兼容别名。新别名在保存后通常立即可见，失效通知不可用时最长等待缓存 TTL（5 秒）。未登记的模型返回 404 `model_not_found`，不做静默兜底——避免"以为调了 A 其实调了 B"。
+`GET /v1/models` 只返回通过上述发布门禁的动态别名和显式兼容别名。新别名在保存后通常立即可见，失效通知不可用时最长等待缓存 TTL（5 秒）。未登记的模型返回 404 `model_not_found`，不做静默兜底——避免"以为调了 A 其实调了 B"。
 上游实际使用的模型由平台配置（`MODEL_NAME`）决定，并在响应 `model` 字段回显。
 
 ## GET /v1/models
@@ -100,7 +110,7 @@ data: [DONE]
 | 字段 | 行为 |
 |---|---|
 | `input`（字符串或 items） | 字符串转 `user` 消息；`input_text` / `output_text` 分段都认；`function_call_output` 转 `tool` 消息 |
-| `instructions` | 作为 `system` 消息；**不参与用户消息长度限制**，超过 12000 字符截断并在 `platform_warnings` 说明（整单不失败） |
+| `instructions` | 作为 `system` 消息；**不参与用户消息长度限制**，超过 48000 字符截断并在 `platform_warnings` 说明（整单不失败） |
 | `tools` | 仅接受 `type=function`；Responses 的扁平结构 `{type,name,description,parameters}` 在此翻译成 chat 的嵌套结构 `{type:"function",function:{...}}`，执行层只认一种形态；输出 `function_call` 项（`call_id` / `arguments` 齐全），平台不执行工具 |
 | `stream` | 见下方事件顺序 |
 | `previous_response_id` | **平台支持、非 OpenAI 语义等价**：响应 id（`resp_<session>_<rand>`）里编码了平台会话 id，带上下一次即可续接同一会话；它不是 OpenAI 的服务端响应存储 |
@@ -190,4 +200,4 @@ python -m pytest services/user-service/tests/test_internal_apikey.py -q
 
 ### P3 兼容层错误文案（2026-11-03）
 
-把 exchange 换来的 JWT 填进 `/v1/**` 仍然返回 `1003`（`_bearer` 只认 `sk_` 前缀）；设置页与「使用方法」抽屉必须明确写出"Secret 用于 `/v1`、JWT 用于 `/api`，两者不可互换"，避免用户误判 Key 建错。`/v1/models` 的别名清单与 `GET /api/capability/models` 过滤口径一致（online + chat + alias 非空）。
+把 exchange 换来的 JWT 填进 `/v1/**` 仍然返回 `1003`（`_bearer` 只认 `sk_` 前缀）；设置页与「使用方法」抽屉必须明确写出"Secret 用于 `/v1`、JWT 用于 `/api`，两者不可互换"，避免用户误判 Key 建错。`/v1/models` 的别名清单与 `GET /api/capability/models` 过滤口径一致（online + chat + alias 非空 + **入参 Schema `required` 含 `messages`**）。

@@ -131,7 +131,7 @@ python scripts/start_leader_dev.py web
 {"capability_id":2,"input":{"text":"待摘要材料","max_length":200}}
 ```
 
-聊天 code 为 `chat-completions`，1–40 条消息，最后一条必须是 user，每条内容 1–12000 字符。摘要 code 为 `long-summary`，text 非空白且不超过 12000 字符，max_length 为 30–1000 整数，默认 200，不接受会话 ID。Schema 进一步缩小范围时遵守目录要求。
+聊天 code 为 `chat-completions`，1–40 条消息，最后一条必须是 user，每条内容 1–48000 字符。摘要 code 为 `long-summary`，text 非空白且不超过 48000 字符，max_length 为 30–1000 整数，默认 200，不接受会话 ID。Schema 进一步缩小范围时遵守目录要求。
 
 兼容顶层 messages 时缺省映射能力 1，仍重新查目录。`input` 与非空顶层 messages 互斥，`stream=true`、客户端单价和目标 URL 等未知字段拒绝。Schema 大小/深度受限，禁止 `$ref`、`$dynamicRef`、`$recursiveRef`、`$id`；不得触发网络或文件读取。
 

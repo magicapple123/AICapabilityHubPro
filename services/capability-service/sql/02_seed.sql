@@ -36,7 +36,7 @@ VALUES
                 'type', 'string',
                 'enum', JSON_ARRAY('system', 'user', 'assistant', 'tool')
               ),
-              'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 12000),
+              'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 48000),
               'tool_call_id', JSON_OBJECT('type', 'string', 'maxLength', 64),
               'name', JSON_OBJECT('type', 'string', 'maxLength', 64),
               'tool_calls', JSON_OBJECT(
@@ -68,7 +68,7 @@ VALUES
     JSON_OBJECT(
       'type', 'object',
       'properties', JSON_OBJECT(
-        'text', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 12000),
+        'text', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 48000),
         'max_length', JSON_OBJECT(
           'type', 'integer', 'minimum', 30, 'maximum', 1000, 'default', 200
         )

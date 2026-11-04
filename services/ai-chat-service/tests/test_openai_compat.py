@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.api.v1 import openai_compat
 from app.db.session import get_db
 from app.main import app
+from app.schemas.chat import MAX_MESSAGE_CONTENT_LENGTH
 from app.service.catalog_cache import OpenAIModelCatalog
 
 HEADERS = {"Authorization": "Bearer sk_test-only-secret-value"}
@@ -221,4 +222,54 @@ def test_static_override_cannot_route_offline_or_non_chat_target(compat, monkeyp
                            json={"model": "hidden-model", "messages": [{"role": "user", "content": "hi"}]})
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "platform_2002"
+    assert fake.calls == []
+
+
+def test_oversized_message_is_invalid_request_not_platform_failure(compat) -> None:
+    """超过单条上限的消息必须是 400 + platform_2001，且点明"太长"。
+
+    回归线上故障：超长 content 撞 Pydantic max_length，被兜底成 500
+    platform_error，第三方客户端只会看到"平台坏了"并无限重试。
+    上限已提到 48000，所以边界取 48001（**不是** 13000：那个长度现在是合法的）。
+    """
+
+    fake, client = compat
+    response = client.post("/v1/chat/completions", headers=HEADERS, json={
+        "model": "deepseek-flash",
+        "messages": [{"role": "user", "content": "简" * (MAX_MESSAGE_CONTENT_LENGTH + 1)}],
+    })
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["code"] == "platform_2001"
+    assert error["type"] == "invalid_request_error"
+    assert "超过单条上限" in error["message"]
+    assert fake.calls == []
+
+
+def test_long_message_within_the_raised_limit_is_accepted(compat) -> None:
+    """48000 字符以内的长上下文应正常进入执行链（不是 400 也不是 500）。"""
+
+    fake, client = compat
+    response = client.post("/v1/chat/completions", headers=HEADERS, json={
+        "model": "deepseek-flash",
+        "messages": [{"role": "user", "content": "简" * 40000}],
+    })
+    assert response.status_code == 200
+    assert len(fake.calls[0]["input"]["messages"][0]["content"]) == 40000
+
+
+def test_other_field_violations_are_also_invalid_request(compat) -> None:
+    """非长度类字段校验失败同样是 400/2001，不能漏到 500 兜底。"""
+
+    fake, client = compat
+    response = client.post("/v1/chat/completions", headers=HEADERS, json={
+        "model": "deepseek-flash",
+        "messages": [{
+            "role": "tool",
+            "content": "结果",
+            "tool_call_id": "x" * 100,
+        }],
+    })
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "platform_2001"
     assert fake.calls == []

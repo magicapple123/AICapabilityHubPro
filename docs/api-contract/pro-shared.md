@@ -46,8 +46,8 @@ id 为匹配请求的正整数，价格为 0–1000000 整数，Schema 为对象
 
 | code | input | 行为 |
 |---|---|---|
-| chat-completions | messages：1–40 条，role system/user/assistant，content 1–12000；最后一条 user；可选 temperature 0–2 | 多轮聊天 |
-| long-summary | text 非空白 ≤12000；max_length 可选严格整数 30–1000，默认 200 | 单次摘要，不接受 session_id |
+| chat-completions | messages：1–40 条，role system/user/assistant，content 1–48000；最后一条 user；可选 temperature 0–2 | 多轮聊天 |
+| long-summary | text 非空白 ≤48000；max_length 可选严格整数 30–1000，默认 200 | 单次摘要，不接受 session_id |
 
 JSON Schema 使用内联 Draft 2020-12，不含 `$ref/$dynamicRef/$recursiveRef/$id`。目录校验后仍要通过 adapter 的强类型规则；未实现 code 返回 2008，未知/下架 2002，输入不匹配 2001，目录配置异常 4002。
 

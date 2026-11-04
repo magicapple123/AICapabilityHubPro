@@ -6,6 +6,22 @@
 
 from tests.conftest import USER_HEADERS
 
+#: 真正能承载 Chat 协议的最小 Schema：`required` 必须含 `messages`。
+#: `/api/capability/models` 与 `/v1/models` 都按这一条判定"可对外发布"。
+CHAT_PARAM_SCHEMA = {
+    "type": "object",
+    "required": ["messages"],
+    "properties": {"messages": {"type": "array"}},
+    "additionalProperties": False,
+}
+
+#: 借用 chat 执行器、但入参完全不同的能力（视觉）：只收 image_url。
+IMAGE_ONLY_PARAM_SCHEMA = {
+    "type": "object",
+    "required": ["image_url"],
+    "properties": {"image_url": {"type": "string"}},
+}
+
 
 def test_models_requires_identity(api) -> None:
     body = api.get("/api/capability/models").json()
@@ -18,7 +34,7 @@ def test_models_lists_only_online_chat_with_alias(qa) -> None:
 
     online = qa.create_capability_raw(
         category["id"], code=qa.code("model"), status="online",
-        executor="chat", openai_alias=alias,
+        executor="chat", openai_alias=alias, param_schema=CHAT_PARAM_SCHEMA,
     )
     assert online["code"] == 0, online
 
@@ -55,7 +71,7 @@ def test_models_hides_capability_after_offline(qa) -> None:
     alias = f"qa-offline-{qa.token}"
     created = qa.create_capability_raw(
         category["id"], code=qa.code("model"), status="online",
-        executor="chat", openai_alias=alias,
+        executor="chat", openai_alias=alias, param_schema=CHAT_PARAM_SCHEMA,
     )
     assert created["code"] == 0, created
 
@@ -65,3 +81,23 @@ def test_models_hides_capability_after_offline(qa) -> None:
     assert qa.set_status(created["data"]["id"], "offline")["code"] == 0
     after = qa.client.get("/api/capability/models", headers=USER_HEADERS).json()
     assert alias not in {item["alias"] for item in after["data"]["list"]}
+
+
+def test_models_hides_non_chat_shape_even_with_alias(qa) -> None:
+    """视觉类能力虽 executor=chat、已上架且填了别名，但 Schema 只收 image_url。
+
+    兼容层永远只会拼出 `messages`，发布出去就是"客户端选了再报参数错"，
+    因此不应出现在可选模型清单里。与 `/v1/models` 同一口径。
+    """
+    category = qa.category()
+    alias = f"qa-vision-{qa.token}"
+    created = qa.create_capability_raw(
+        category["id"], code=qa.code("model"), status="online",
+        executor="chat", openai_alias=alias,
+        param_schema=IMAGE_ONLY_PARAM_SCHEMA,
+    )
+    assert created["code"] == 0, created
+
+    body = qa.client.get("/api/capability/models", headers=USER_HEADERS).json()
+    assert body["code"] == 0, body
+    assert alias not in {item["alias"] for item in body["data"]["list"]}

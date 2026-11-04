@@ -45,10 +45,10 @@ POST /api/chat/completions：
 
 | code | input 规则 | 行为 |
 |---|---|---|
-| chat-completions | messages 1–40；role system/user/assistant；单条 content 1–12000；末条为 user；可选 temperature 0–2 | 聊天，无 system 时可注入默认提示 |
-| long-summary | text 非空白 ≤12000；max_length 严格整数30–1000，默认200 | 独立摘要提示与 text 映射；拒绝 session_id |
+| chat-completions | messages 1–40；role system/user/assistant；单条 content 1–48000；末条为 user；可选 temperature 0–2 | 聊天，无 system 时可注入默认提示 |
+| long-summary | text 非空白 ≤48000；max_length 严格整数30–1000，默认200 | 独立摘要提示与 text 映射；拒绝 session_id |
 
-目录 Schema 需 object，使用内联 Draft 2020-12，大小≤32768、深度≤20、节点≤2000；引用 $ref/$dynamicRef/$recursiveRef/$id 均禁止。输入序列化大小≤65536，再通过 adapter 强类型/长度约束。目录 Schema 无效为4002，输入不符合为2001。不执行目录 service/path 或用户任意 URL。
+目录 Schema 需 object，使用内联 Draft 2020-12，大小≤32768、深度≤20、节点≤2000；引用 $ref/$dynamicRef/$recursiveRef/$id 均禁止。输入序列化大小≤192000 字符（单条上限 48000 × 4，覆盖"长文档 + 多轮历史"），再通过 adapter 强类型/长度约束。目录 Schema 无效为4002，输入不符合为2001。不执行目录 service/path 或用户任意 URL。
 
 Mock 聊天使用模拟话术；Mock 摘要从输入提取并明确 mock=true，不访问模型接口。真实模式经过模型客户端，模型超时/响应异常转换为降级结果，不把 HTTP 替身测试冒称真实供应商验收。
 
@@ -255,7 +255,7 @@ DNS 重绑定没有窗口**。
 
 ### P12 Responses 兼容（2026-11-03）
 
-`store` 只在值为 `true` 时拒绝（`4001`）；`store:false` 放行。`reasoning` / `background` 改为接受并忽略，响应体增 `platform_warnings: string[]` 说明被忽略的字段，不整单失败。Responses 扁平 `tools[{type:"function",name,description,parameters}]` 在执行前翻译为 chat 嵌套结构，上游 `function_call` 反向映射为 Responses `output` 项。SSE 顺序冻结为：`response.created` → `response.output_item.added` → `response.content_part.added` → `response.output_text.delta`* → `response.output_text.done` → `response.output_item.done` → `response.completed` → `[DONE]`。`instructions` 属系统提示，不计入 `input` 消息的 12000 字符上限。不支持的 `input` 条目类型与内置工具仍 `4001`。
+`store` 只在值为 `true` 时拒绝（`4001`）；`store:false` 放行。`reasoning` / `background` 改为接受并忽略，响应体增 `platform_warnings: string[]` 说明被忽略的字段，不整单失败。Responses 扁平 `tools[{type:"function",name,description,parameters}]` 在执行前翻译为 chat 嵌套结构，上游 `function_call` 反向映射为 Responses `output` 项。SSE 顺序冻结为：`response.created` → `response.output_item.added` → `response.content_part.added` → `response.output_text.delta`* → `response.output_text.done` → `response.output_item.done` → `response.completed` → `[DONE]`。`instructions` 属系统提示，不计入 `input` 消息的 48000 字符上限。不支持的 `input` 条目类型与内置工具仍 `4001`。
 
 ### P15 出站 IP 钉扎（2026-11-03）
 

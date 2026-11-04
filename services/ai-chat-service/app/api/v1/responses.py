@@ -40,14 +40,25 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.api.v1.openai_compat import _authenticate, _model_map, _openai_error
+from app.api.v1.openai_compat import (
+    _authenticate,
+    _model_map,
+    _openai_error,
+    message_too_long_error,
+    validation_reason,
+)
 from app.core.exceptions import BizException
 from app.core.logging import use_identity
 from app.core.security import UserContext
 from app.db.session import get_db
-from app.schemas.chat import ChatCompletionRequest, ChatMessage
+from app.schemas.chat import (
+    MAX_MESSAGE_CONTENT_LENGTH,
+    ChatCompletionRequest,
+    ChatMessage,
+)
 from app.service.chat_service import chat_service
 from app.service.stream_service import DONE_FRAME, parse_sse_line, sse_frame
 
@@ -55,8 +66,9 @@ router = APIRouter()
 
 ROLE_SET = {"system", "user", "assistant", "tool"}
 
-#: `instructions` 与单条消息 ``content`` 的上限一致（能力 Schema 的 maxLength）。
-MAX_INSTRUCTIONS_LENGTH = 12000
+#: `instructions` 的上限**必须**等于单条消息 `content` 的上限：两者都会变成一条
+#: `ChatMessage`，阈值更小只会让前一半系统提示被悄悄截断。所以直接引用同一个常量。
+MAX_INSTRUCTIONS_LENGTH = MAX_MESSAGE_CONTENT_LENGTH
 
 #: 语义与平台不兼容、必须拒绝的顶层字段：字段名 -> 人话标签。
 UNSUPPORTED_FIELDS: dict[str, str] = {
@@ -151,6 +163,19 @@ def _text_of(content: Any) -> str:
     return ""
 
 
+def _append_message(messages: list[ChatMessage], index: int, **fields: Any) -> None:
+    """构造一条消息，字段非法时统一成 `2001`。
+
+    与 `/v1/chat/completions` 同一口径：输入问题必须是 400 + `platform_2001`，
+    不能因为内部用的是 Pydantic 就冒出一个 500 `platform_error`。
+    """
+
+    try:
+        messages.append(ChatMessage(**fields))
+    except ValidationError as error:
+        raise BizException(2001, validation_reason(error, index)) from error
+
+
 def _messages_of(payload: dict, warnings: list[str]) -> list[ChatMessage]:
     """`input` + `instructions` → 平台消息列表；非法结构一律 2001。"""
 
@@ -169,13 +194,15 @@ def _messages_of(payload: dict, warnings: list[str]) -> list[ChatMessage]:
             )
             text = text[:MAX_INSTRUCTIONS_LENGTH]
         if text.strip():
-            messages.append(ChatMessage(role="system", content=text))
+            _append_message(messages, len(messages) + 1, role="system", content=text)
 
     raw_input = payload.get("input")
     if isinstance(raw_input, str):
         if not raw_input.strip():
             raise BizException(2001, "input 不能为空")
-        messages.append(ChatMessage(role="user", content=raw_input))
+        if len(raw_input) > MAX_MESSAGE_CONTENT_LENGTH:
+            raise message_too_long_error(len(messages) + 1, "user", len(raw_input))
+        _append_message(messages, len(messages) + 1, role="user", content=raw_input)
     elif isinstance(raw_input, list) and raw_input:
         for item in raw_input:
             if not isinstance(item, dict):
@@ -190,10 +217,13 @@ def _messages_of(payload: dict, warnings: list[str]) -> list[ChatMessage]:
                 call_id = str(item.get("call_id") or "").strip()
                 if not call_id:
                     raise BizException(2001, "function_call_output 缺少 call_id")
-                messages.append(ChatMessage(
-                    role="tool", content=_text_of(item.get("output")),
-                    tool_call_id=call_id,
-                ))
+                output = _text_of(item.get("output"))
+                if len(output) > MAX_MESSAGE_CONTENT_LENGTH:
+                    raise message_too_long_error(len(messages) + 1, "tool", len(output))
+                _append_message(
+                    messages, len(messages) + 1,
+                    role="tool", content=output, tool_call_id=call_id,
+                )
                 continue
             role = str(item.get("role") or "user").strip()
             if role not in ROLE_SET:
@@ -201,13 +231,18 @@ def _messages_of(payload: dict, warnings: list[str]) -> list[ChatMessage]:
             text = _text_of(item.get("content"))
             if not text.strip():
                 raise BizException(2001, "消息内容不能为空")
+            if len(text) > MAX_MESSAGE_CONTENT_LENGTH:
+                raise message_too_long_error(len(messages) + 1, role, len(text))
             if role == "tool":
                 call_id = str(item.get("tool_call_id") or item.get("call_id") or "").strip()
                 if not call_id:
                     raise BizException(2001, "tool 消息必须带 call_id")
-                messages.append(ChatMessage(role="tool", content=text, tool_call_id=call_id))
+                _append_message(
+                    messages, len(messages) + 1,
+                    role="tool", content=text, tool_call_id=call_id,
+                )
             else:
-                messages.append(ChatMessage(role=role, content=text))
+                _append_message(messages, len(messages) + 1, role=role, content=text)
     else:
         raise BizException(2001, "input 不能为空")
 
@@ -397,6 +432,10 @@ async def create_response(
         )
     except BizException as error:
         return _openai_error(error)
+    except ValidationError as error:
+        # 与 chat/completions 同一口径：入参校验失败是 400/2001，不是平台故障。
+        logger.warning("Responses 入参校验失败 type={}", type(error).__name__)
+        return _openai_error(BizException(2001, validation_reason(error)))
     except Exception:  # noqa: BLE001 - 兼容层必须返回 OpenAI 错误结构
         return JSONResponse(
             status_code=500,

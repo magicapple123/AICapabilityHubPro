@@ -15,7 +15,7 @@ SET NAMES utf8mb4;
 -- 如需回滚，按备份中的 id 写回 param_schema。
 USE capability_db;
 
--- chat-completions：messages 1–40 条，role 三选一，content 1–12000，
+-- chat-completions：messages 1–40 条，role 三选一，content 1–48000，
 -- 可选 temperature 0–2；最后一条必须是 user 由执行器校验。
 UPDATE t_capability
 SET param_schema = JSON_OBJECT(
@@ -32,7 +32,7 @@ SET param_schema = JSON_OBJECT(
             'type', 'string',
             'enum', JSON_ARRAY('system', 'user', 'assistant')
           ),
-          'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 12000)
+          'content', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 48000)
         ),
         'required', JSON_ARRAY('role', 'content'),
         'additionalProperties', CAST('false' AS JSON)
@@ -54,13 +54,13 @@ WHERE code = 'chat-completions'
     )
   );
 
--- long-summary：text 1–12000（非空白仍由执行器校验），
+-- long-summary：text 1–48000（非空白仍由执行器校验），
 -- max_length 可选整数 30–1000，默认 200。
 UPDATE t_capability
 SET param_schema = JSON_OBJECT(
   'type', 'object',
   'properties', JSON_OBJECT(
-    'text', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 12000),
+    'text', JSON_OBJECT('type', 'string', 'minLength', 1, 'maxLength', 48000),
     'max_length', JSON_OBJECT(
       'type', 'integer', 'minimum', 30, 'maximum', 1000, 'default', 200
     )

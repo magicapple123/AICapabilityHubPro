@@ -2,6 +2,20 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+#: 单条消息 `content` 的**字符**上限。
+#:
+#: 这是唯一的代码内事实来源：`openai_compat` 的入参预校验、`responses` 的
+#: `instructions` 截断阈值、`SummaryInput.text` 的上限都从这里取值，避免同一个
+#: 数字散落多处。要改它必须**同时**改下面三处，否则会在另一层被拒：
+#:
+#: 1. capability-service 目录 Schema 的 `maxLength`（`sql/02_seed.sql`、
+#:    `sql/03_align_executor_schema.sql`、`sql/09_allow_tools_in_chat_schema.sql`，
+#:    以及已有库的增量脚本 `sql/11_raise_message_max_length.sql`）；
+#: 2. `t_chat_message.content` 的列宽（`ai-chat-service/sql/04_widen_message_content.sql`，
+#:    MEDIUMTEXT 才装得下 48000 个中文：48000 × 3 字节 ≈ 144 KB > TEXT 的 65535 字节）；
+#: 3. `input_validation.validate_capability_input` 的整包上限（65536 字符，见该模块）。
+MAX_MESSAGE_CONTENT_LENGTH = 48000
+
 
 class ChatMessage(BaseModel):
     """一条消息。
@@ -14,7 +28,8 @@ class ChatMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     role: Literal["system", "user", "assistant", "tool"]
     # 纯工具调用的 assistant 消息 content 为空（OpenAI 允许 null），由校验器放行。
-    content: str = Field(default="", max_length=12000)
+    # 上限见模块常量 MAX_MESSAGE_CONTENT_LENGTH（与目录 Schema / DB 列宽联动）。
+    content: str = Field(default="", max_length=MAX_MESSAGE_CONTENT_LENGTH)
     # 仅 `role="tool"` 使用：对应上一轮 assistant 的 tool_call id。
     tool_call_id: str | None = Field(default=None, max_length=64)
     # 可选的名字（OpenAI 的 name 字段），工具结果回灌时常用。

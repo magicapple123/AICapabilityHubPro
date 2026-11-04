@@ -1,7 +1,7 @@
 """Trusted catalog snapshots and bounded inputs for the two implemented adapters."""
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from app.schemas.chat import ChatMessage
+from app.schemas.chat import MAX_MESSAGE_CONTENT_LENGTH, ChatMessage
 
 
 class CapabilityDefinition(BaseModel):
@@ -82,7 +82,9 @@ class ImageInput(BaseModel):
 
 class SummaryInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    text: str = Field(min_length=1, max_length=12000, strict=True)
+    # 与目录 Schema（long-summary 的 text.maxLength）和 ChatMessage.content 同源，
+    # 否则长文本会先过 JSON Schema、再在这里撞 2001。
+    text: str = Field(min_length=1, max_length=MAX_MESSAGE_CONTENT_LENGTH, strict=True)
     max_length: int = Field(default=200, ge=30, le=1000, strict=True)
 
     @model_validator(mode="after")

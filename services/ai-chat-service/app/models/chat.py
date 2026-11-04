@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.constants import DEFAULT_SESSION_TITLE, CallStatus
@@ -46,7 +47,13 @@ class ChatMessage(Base):
     )
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # 列宽必须装得下 `MAX_MESSAGE_CONTENT_LENGTH`：48000 个中文字符在 utf8mb4 下
+    # 约 144 KB，超过 TEXT 的 65535 **字节**上限，所以 MySQL 侧用 MEDIUMTEXT
+    # （16 MB）。`with_variant` 让 SQLite 等非 MySQL 后端继续用 TEXT，
+    # 单元测试与生产口径互不影响。迁移见 sql/04_widen_message_content.sql。
+    content: Mapped[str] = mapped_column(
+        Text().with_variant(MEDIUMTEXT, "mysql"), nullable=False
+    )
     # 助手消息的能力执行状态：success / degraded / failed（指南 5.5 统一枚举）。
     call_status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=CallStatus.SUCCESS.value

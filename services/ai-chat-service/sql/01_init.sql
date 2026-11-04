@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS t_chat_message (
   session_id BIGINT NOT NULL COMMENT '会话 ID',
   user_id VARCHAR(64) NOT NULL COMMENT '用户标识',
   role VARCHAR(16) NOT NULL COMMENT '消息角色 system/user/assistant',
-  content TEXT NOT NULL COMMENT '消息内容',
+  content MEDIUMTEXT NOT NULL COMMENT '消息内容（单条上限 48000 字符，utf8mb4 约 144KB，TEXT 装不下）',
   call_status VARCHAR(16) NOT NULL DEFAULT 'success' COMMENT '调用状态 success/degraded/failed',
   token_count INT NOT NULL DEFAULT 0 COMMENT 'token 总数（上游 usage total；Mock 为估算，见响应 usage_source）',
   error_code INT NULL COMMENT '失败错误码，仅 failed 占位消息写入',

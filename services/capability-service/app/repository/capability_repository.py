@@ -5,6 +5,8 @@
 分类名通过显式 join 取得，而不是 ORM 关系映射，以便一起过滤分类的 is_deleted。
 """
 
+import json
+
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,6 +18,29 @@ CapabilityRow = tuple[Capability, str]
 
 #: MySQL 唯一键冲突的错误码。
 MYSQL_DUPLICATE_ENTRY = 1062
+
+
+def _accepts_chat_messages(param_schema: object) -> bool:
+    """能力是否接受 OpenAI Chat 的 `messages` 入参——对外发布模型名的门禁。
+
+    `executor == "chat"` 只说明它借用聊天执行器，不代表它能承载 Chat 协议：
+    视觉能力的 Schema `required` 是 `["image_url"]`，兼容层永远只会拼出
+    `messages`，发布出去就是"客户端选了再报参数错"。因此 `/v1/models` 与
+    设置页"可用模型"都按 `required` 是否包含 `messages` 来过滤，贴近真实可调用性。
+
+    解析失败一律视为不可发布：宁可少列一个，也不要把必失败的模型推给客户端。
+    """
+
+    schema: object = param_schema
+    if isinstance(schema, str):
+        try:
+            schema = json.loads(schema)
+        except (TypeError, ValueError):
+            return False
+    if not isinstance(schema, dict):
+        return False
+    required = schema.get("required")
+    return isinstance(required, list) and "messages" in required
 
 
 class DuplicateCapabilityCodeError(RuntimeError):
@@ -159,10 +184,10 @@ class CapabilityRepository:
         return self._paginate(db, conditions, page=page, page_size=page_size)
 
     def list_openai_models(self, db: Session) -> list[tuple[int, str | None]]:
-        """List online chat targets for dynamic aliases and legacy configured aliases."""
+        """List online chat targets that genuinely accept Chat `messages`."""
 
         statement = (
-            select(Capability.id, Capability.openai_alias)
+            select(Capability.id, Capability.openai_alias, Capability.param_schema)
             .where(
                 Capability.is_deleted == 0,
                 Capability.status == CapabilityStatus.ONLINE.value,
@@ -172,7 +197,8 @@ class CapabilityRepository:
         )
         return [
             (int(capability_id), str(alias) if alias else None)
-            for capability_id, alias in db.execute(statement)
+            for capability_id, alias, param_schema in db.execute(statement)
+            if _accepts_chat_messages(param_schema)
         ]
 
     def list_published_models(self, db: Session) -> list[tuple[str, int, str]]:
@@ -183,7 +209,12 @@ class CapabilityRepository:
         """
 
         statement = (
-            select(Capability.openai_alias, Capability.id, Capability.name)
+            select(
+                Capability.openai_alias,
+                Capability.id,
+                Capability.name,
+                Capability.param_schema,
+            )
             .where(
                 Capability.is_deleted == 0,
                 Capability.status == CapabilityStatus.ONLINE.value,
@@ -194,7 +225,8 @@ class CapabilityRepository:
         )
         return [
             (str(alias), int(capability_id), str(name))
-            for alias, capability_id, name in db.execute(statement)
+            for alias, capability_id, name, param_schema in db.execute(statement)
+            if _accepts_chat_messages(param_schema)
         ]
 
     def find_market_by_id(self, db: Session, capability_id: int) -> CapabilityRow | None:
