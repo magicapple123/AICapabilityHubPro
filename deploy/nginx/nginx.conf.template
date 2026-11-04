@@ -59,6 +59,30 @@ server {
         proxy_send_timeout 120s;
     }
 
+    # OpenAI 兼容端点：外部客户端（Cherry Studio / Continue / Codex 等）把 Base URL 直接填成
+    # `http://<host>/v1`，这些请求必须真正到达网关，不能落到下面 `location /` 的 SPA 兜底
+    # （try_files → index.html，客户端解析 JSON 失败会报“没有模型列表接口”）。
+    # 用 `^~` 前缀匹配：命中后不再尝试正则 location，也不影响静态资源段与 `location /` 的语义。
+    location ^~ /v1/ {
+        proxy_pass http://api_gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # `Authorization: Bearer sk_...` 是 /v1/** 的唯一鉴权方式，必须原样透传。
+        proxy_set_header Authorization $http_authorization;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        # /v1/chat/completions 与 /v1/responses 是真流式（SSE）：必须逐块下发，
+        # 一旦开启缓冲会把整个响应攒齐再吐，客户端表现为“卡住不输出”。
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }
+
     location ~* \.(?:js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$ {
         expires 1h;
         add_header Cache-Control "public, max-age=3600";

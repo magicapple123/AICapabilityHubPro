@@ -43,8 +43,15 @@ async function loadModels(secretKey?: string): Promise<PublishedModel[]> {
       return response.data.data.map((item) => ({
         alias: item.id, capability_id: 0, name: '',
       }))
-    } catch {
-      // 开发环境没有代理 /v1、或 Secret 过期：退回平台侧清单，不让抽屉整体报错。
+    } catch (cause: unknown) {
+      // 不再完全静默：dev 环境记录一次失败原因，避免"Base URL 打到了前端端口 / 代理缺失"
+      // 这类问题被 swallow 掉。用户可见行为不变——依旧回退平台侧清单，不弹 toast。
+      if (import.meta.env.DEV) {
+        console.warn(
+          '[ApiKeyUsageDrawer] /v1/models 直连失败，回退平台侧模型清单：',
+          cause instanceof Error ? cause.message : cause,
+        )
+      }
     }
   }
   const data = await request<{ list: PublishedModel[] }>({

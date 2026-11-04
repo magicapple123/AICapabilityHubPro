@@ -29,7 +29,9 @@ pnpm --dir web install --frozen-lockfile
 python scripts/start_leader_dev.py web
 ```
 
-默认访问 `http://localhost:5173`；`/api` 由 Vite 代理到 `VITE_DEV_GATEWAY_URL`，默认网关为 `http://localhost:8080`。Pro 并行开发使用 MySQL 3307、Nacos 8849/9849、Sentinel 8859，前端仍通过 Gateway 8080。
+默认访问 `http://localhost:5173`（端口取 `web/.env` 的 `VITE_PORT`，5173 被占用时常用 5174）；`/api` 与 `/v1` 都由 Vite 代理到 `VITE_DEV_GATEWAY_URL`，默认网关为 `http://localhost:8080`。Pro 并行开发使用 MySQL 3307、Nacos 8849/9849、Sentinel 8859，前端仍通过 Gateway 8080。
+
+`/v1/**` 是 OpenAI 兼容入口，供 Cherry Studio、Continue 等外部客户端直连，鉴权用设置页创建的 Secret（`sk_...`）。因此设置页展示的 `Base URL = http://localhost:5174/v1` 在 dev 下可直接使用；但 dev server 只监听 `localhost`，跨机联调或长期使用请改填网关地址 `http://<主机IP>:8080/v1`。
 
 `VITE_USE_MOCK_LOGIN=false` 为默认值，使用真实演示账号 `demo / demo123456`。模型的 `USE_MOCK` 只控制执行方式，与占位登录无关。
 
