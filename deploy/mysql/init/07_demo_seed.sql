@@ -118,9 +118,13 @@ SET name = '长文本摘要',
     description = '把长文档压缩为结论与行动项，适用于报告与会议纪要'
 WHERE code = 'long-summary' AND is_deleted = 0;
 
--- 2.4 视觉理解：展示位。对外模型名照填（后台好看），但它入参 required 是
---     image_url，不是 messages，因此不会进入 /v1/models（发布门禁会拦掉）。
---     现场不要点「去调试」，多模态通道尚未接入。
+-- 2.4 视觉理解：展示位。对外模型名照填（后台好看），但两处都要管住：
+--     1) exposed_to_market = 0 —— 它进不了能力市场。市场的过滤条件是
+--        status=online AND exposed_to_market=1，二者是独立开关；保留 online
+--        是为了让它继续出现在运营后台，只是不对外展示。
+--     2) 入参 required 是 image_url 而不是 messages，所以即便填了别名，
+--        发布门禁也会把它挡在 /v1/models 之外。
+--     现场不要点它的「去调试」，多模态通道尚未接入。
 UPDATE t_capability
 SET name = '视觉理解',
     openai_alias = 'deepseek-vision',
@@ -129,7 +133,7 @@ SET name = '视觉理解',
     price_per_call = 8,
     billing_mode = 'per_call',
     max_output_tokens = 1024,
-    exposed_to_market = 1,
+    exposed_to_market = 0,
     status = 'online',
     description = '图片内容识别与结构化提取（多模态通道接入后开放）'
 WHERE code = 'vision-parse' AND is_deleted = 0;
