@@ -135,6 +135,39 @@ docker exec -e MYSQL_PWD=$dbpwd aihub-pro-mysql mysql -uroot --default-character
 **验收门**：输出里 `DeepSeek` 与 `DashScope 通义万相` 的 `referenced_capabilities` 都是 `1`。
 若 DeepSeek 是 0，说明这条没执行成功，重跑一次。
 
+## Step 5.6 · 创建管理员账号（录后台必需）
+
+容器栈**不会**自动建管理员：建库种子只有 `demo` / `demopoor` / `demodisabled` 三个账号，
+而 `/console` 后台的所有接口都要求 `role='admin'`，普通用户会收到 `2007`。
+管理员需要「先用注册接口建号（走服务自己的口令哈希），再在库里提权」两步。
+
+```powershell
+$B = "http://localhost"
+$adminUser = (Select-String -Path .env -Pattern '^BOOTSTRAP_ADMIN_USERNAME=').Line -replace '^BOOTSTRAP_ADMIN_USERNAME=',''
+$adminPwd  = (Select-String -Path .env -Pattern '^BOOTSTRAP_ADMIN_PASSWORD=').Line -replace '^BOOTSTRAP_ADMIN_PASSWORD=',''
+$reg = Invoke-RestMethod -Method Post -Uri "$B/api/user/register" -ContentType "application/json" -Body (@{username=$adminUser;password=$adminPwd;nickname="Admin"} | ConvertTo-Json)
+Write-Output ("register code=" + $reg.code)
+docker exec -e MYSQL_PWD=$dbpwd aihub-pro-mysql mysql -uroot -e "UPDATE user_db.t_user SET role='admin' WHERE username='$adminUser' AND is_deleted=0;"
+$adminLogin = Invoke-RestMethod -Method Post -Uri "$B/api/user/login" -ContentType "application/json" -Body (@{username=$adminUser;password=$adminPwd} | ConvertTo-Json)
+Write-Output ("role=" + $adminLogin.data.role)
+```
+
+**验收门**：
+1. `register code=0`（若返回 `1004` 表示账号已存在，可以继续，但下一步登录必须成功）
+2. 最后一行输出 `role=admin`
+3. 用该 token 调后台接口应返回 `code=0`：
+
+```powershell
+Invoke-RestMethod -Uri "$B/api/user/admin/users?page=1&page_size=3" -Headers @{Authorization="Bearer $($adminLogin.data.token)"} | Select-Object -ExpandProperty code
+```
+
+若第 2 步输出还是 `role=user`，说明提权 SQL 没生效（用户名变量为空或账号被软删），停下来报告。
+若第 3 步返回 `2007`，说明角色没写进库，同样停下来报告。
+
+> **特殊情况**：如果 `register code=1004` 且随后登录报 `1003`（口令错误），说明库里已有同名账号
+> 但口令与 `.env` 不一致——这是旧数据卷留下的。**不要猜口令、不要改 `.env`**，停下来告诉我，
+> 我给你一条重置命令。全新初始化的数据库不会遇到这种情况。
+
 ## Step 6 · 业务冒烟（最关键，必须真实调用）
 
 ### 6.1 登录并创建 API Key
@@ -146,7 +179,13 @@ $token = $login.data.token
 $keyResp = Invoke-RestMethod -Method Post -Uri "$B/api/user/apikeys" -Headers @{Authorization="Bearer $token"} -ContentType "application/json" -Body '{"name":"video-demo"}'
 $key = $keyResp.data.secret_key
 "key prefix: " + $key.Substring(0,6)
+# 录屏脚本要用：把 Secret 落到本地文件（.gitignore 已排除，不会入库）
+[IO.File]::WriteAllText("D:\AICapabilityHubPro\deploy\demo\demo-key.txt", $key, (New-Object System.Text.UTF8Encoding($false)))
+Write-Output ("demo-key.txt written, len=" + (Get-Item "D:\AICapabilityHubPro\deploy\demo\demo-key.txt").Length)
 ```
+
+**验收门**：打印的 prefix 以 `sk_` 开头；`demo-key.txt` 的 `len` 大于 40（**不要把文件内容打印出来**）。
+这个文件供 `deploy\demo\demo-v1.ps1` 在录屏时读取，命令行因此不会出现明文 Key。
 
 若接口路径报 404，先查 `D:\AICapabilityHubPro\services\user-service\app\api\v1\apikeys.py` 确认实际路由，不要猜。
 
@@ -203,6 +242,8 @@ curl.exe -N -s -X POST "$B/v1/chat/completions" -H "Authorization: Bearer $key" 
 | 代码版本 | ≥ 9a70373 | | |
 | 容器健康 | 9/9 healthy | | |
 | 供应商/能力 | 2 / 4 | | |
+| 供应商影响面 | 两个供应商各 1 | | |
+| 管理员账号 | role=admin，后台接口 code=0 | | |
 | demo 余额（调用前） | 100 | | |
 | /v1/models | 仅 deepseek-chat | | |
 | 真实对话 | 非 mock，tokens>0 | | |
@@ -211,7 +252,7 @@ curl.exe -N -s -X POST "$B/v1/chat/completions" -H "Authorization: Bearer $key" 
 
 最后再给三行：
 1. 入口地址（含端口，若改过 `NGINX_PORT` 要说明）
-2. 你创建的 Key 名称与掩码前缀（不要给完整值）
+2. 管理员用户名（**不要给口令**）与你创建的 API Key 名称 + 掩码前缀
 3. 仍需人工处理的事项（若有）
 
 # 故障处置速查

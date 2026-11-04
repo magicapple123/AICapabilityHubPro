@@ -49,3 +49,6 @@ test-results*.xml
 .codebuddy/
 # 临时工作目录（文档导出、联调脚本、铸造的临时令牌等），一律不入库
 .tmp/
+
+# 录屏演示用的 API Key（本地文件，禁止入库）
+deploy/demo/demo-key.txt
