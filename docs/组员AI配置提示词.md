@@ -119,6 +119,22 @@ docker exec -e MYSQL_PWD=$dbpwd aihub-pro-mysql mysql -uroot -N -e "SELECT COUNT
 若供应商是 0、能力是 3：说明数据库卷是旧的（种子只在首次建库执行）。
 先问我，得到同意后再执行 `docker compose --env-file .env --profile app down -v` 重建。
 
+## Step 5.5 · 应用演示态绑定（必做，别跳过）
+
+建库种子刻意把「多轮对话」的 `provider_alias` 留空——如果写死在种子里，CI 会因为
+绑到外网、绕过本地模型替身而失败。演示环境需要这一步来还原「被 1 个能力引用」的展示效果。
+
+```powershell
+docker cp demo\bind_chat_provider.sql aihub-pro-mysql:/tmp/bind_demo.sql
+docker exec -e MYSQL_PWD=$dbpwd aihub-pro-mysql mysql -uroot --default-character-set=utf8mb4 -t -e "source /tmp/bind_demo.sql"
+```
+
+> 用 `docker cp` + `source`，不要用 `<` 重定向（PowerShell 不支持，会直接报错），
+> 也不要用管道喂 SQL（中文会被编码破坏）。
+
+**验收门**：输出里 `DeepSeek` 与 `DashScope 通义万相` 的 `referenced_capabilities` 都是 `1`。
+若 DeepSeek 是 0，说明这条没执行成功，重跑一次。
+
 ## Step 6 · 业务冒烟（最关键，必须真实调用）
 
 ### 6.1 登录并创建 API Key
@@ -223,5 +239,8 @@ curl.exe -N -s -X POST "$B/v1/chat/completions" -H "Authorization: Bearer $key" 
 
 ```powershell
 cd D:\AICapabilityHubPro\deploy
-docker compose --env-file .env exec -T mysql mysql -uroot -p你的密码 --default-character-set=utf8mb4 < mysql/init/07_demo_seed.sql
+docker cp mysql\init\07_demo_seed.sql aihub-pro-mysql:/tmp/demo_seed.sql
+docker exec aihub-pro-mysql mysql -uroot -p你的密码 --default-character-set=utf8mb4 -e "source /tmp/demo_seed.sql"
+docker cp demo\bind_chat_provider.sql aihub-pro-mysql:/tmp/bind_demo.sql
+docker exec aihub-pro-mysql mysql -uroot -p你的密码 --default-character-set=utf8mb4 -e "source /tmp/bind_demo.sql"
 ```

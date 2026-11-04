@@ -88,12 +88,17 @@ ON DUPLICATE KEY UPDATE
   description      = new.description,
   is_deleted       = 0;
 
--- 2.2 多轮对话：绑到 DeepSeek 供应商通道（走供应商档案而不是全局默认）。
+-- 2.2 多轮对话：默认走全局配置。
+--     注意 provider_alias 这里刻意留空：供应商是**环境相关**的，CI 用本地模型
+--     替身（MODEL_BASE_URL 指向替身进程），一旦绑定到 api.deepseek.com 就会绕过
+--     替身，e2e 的 model_invocations 直接为 0 并报 4002。
+--     演示环境需要「被 1 个能力引用」的展示效果时，启动后单独执行
+--     deploy/demo/bind_chat_provider.sql（不进 init，CI 不会跑到）。
 UPDATE t_capability
 SET name = '多轮对话',
     openai_alias = 'deepseek-chat',
     executor = 'chat',
-    provider_alias = 'deepseek',
+    provider_alias = '',
     price_per_call = 5,
     billing_mode = 'per_call',
     max_output_tokens = 1024,
